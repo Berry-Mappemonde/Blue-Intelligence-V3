@@ -18,6 +18,11 @@ from app.services.poe_bestof import (  # noqa: E402
 from app.core.extract import allow_tinyfish_fetch  # noqa: E402
 
 
+@pytest.fixture(autouse=True)
+def _no_tavily_key(monkeypatch):
+    monkeypatch.delenv("TAVILY_API_KEY", raising=False)
+
+
 class TestNormalizeVariant:
     def test_aliases(self):
         assert poe.normalize_variant("v1") == "v1"

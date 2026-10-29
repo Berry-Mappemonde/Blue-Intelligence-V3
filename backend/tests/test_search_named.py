@@ -20,6 +20,11 @@ def _run(coro):
     return asyncio.run(coro)
 
 
+@pytest.fixture(autouse=True)
+def _no_tavily_key(monkeypatch):
+    monkeypatch.delenv("TAVILY_API_KEY", raising=False)
+
+
 DDG_HTML = """
 <html><body>
 <div class="result results_links web-result">

@@ -1,4 +1,5 @@
-"""Named search: TinyFish Search, serp_filter, DuckDuckGo if no key.
+"""Named search: TinyFish Search, Tavily if TAVILY_API_KEY, serp_filter,
+DuckDuckGo if no TinyFish key and Tavily returned nothing.
 
 Entry point: ``search_named``. Same question everywhere ("where is the
 official page for *this* name"). Queries and domain lists stay
@@ -7,8 +8,11 @@ mode-specific. No SearXNG here: that is the top-down tool
 a harbormaster.
 
   1. TinyFish Search (paginated) if a key is present.
-  2. ``serp_filter`` — forums, OTAs, social: already the top-down / AMP filter.
-  3. DuckDuckGo HTML only if the TinyFish key is missing (free net).
+  2. Tavily Search when TAVILY_API_KEY is set (alongside TinyFish, or
+     before DuckDuckGo).
+  3. ``serp_filter`` — forums, OTAs, social: already the top-down / AMP filter.
+  4. DuckDuckGo HTML only if the TinyFish key is missing and Tavily
+     returned nothing (free net).
 
 DuckDuckGo is not a second opinion after an empty TinyFish: if the key
 exists, trust TinyFish. The caller's ``include_domains`` / ``exclude_domains``
@@ -23,6 +27,7 @@ import httpx
 from bs4 import BeautifulSoup
 
 from app.core.extract import serp_filter
+from app.core.tavily import tavily_api_key, tavily_search
 from app.core.tinyfish import tf_api_key, tf_search_pages
 
 DDG_HTML_URL = "https://html.duckduckgo.com/html/"
@@ -214,10 +219,11 @@ def _apply_domain_filters(hits: list[dict], *, include_domains=None,
     excluded = domain_list(exclude_domains)
     included = domain_list(include_domains)
     # TinyFish already applies include_domains at the API; DDG does not.
-    apply_include = bool(included) and engine != "tinyfish"
     out = []
     for h in hits:
         u = h.get("url") or ""
+        eng = h.get("engine") or engine or ""
+        apply_include = bool(included) and eng != "tinyfish"
         if excluded and url_matches_domains(u, excluded):
             continue
         if apply_include and not url_matches_domains(u, included):
@@ -255,7 +261,9 @@ async def search_named(
 ) -> list[dict]:
     """Official page of an already named place. No SearXNG, no Serper.
 
-    ``key=None`` resolves ``TINYFISH_API_KEY``. ``key=""`` forces the DuckDuckGo net.
+    ``key=None`` resolves ``TINYFISH_API_KEY``. ``key=""`` skips TinyFish.
+    Tavily runs when ``TAVILY_API_KEY`` is set. DuckDuckGo runs only when
+    TinyFish is skipped and Tavily returned nothing.
     """
     log = log or (lambda m: None)
     q = (query or "").strip()
@@ -265,7 +273,20 @@ async def search_named(
         key = tf_api_key()
     key = (key or "").strip()
 
-    engine = "tinyfish" if key else "duckduckgo"
+    tv_raw: list[dict] = []
+    if tavily_api_key():
+        try:
+            cap = int(max_results) if max_results else 8
+            tv_raw = await tavily_search(
+                q, max_results=max(1, cap),
+                include_domains=include_domains,
+                exclude_domains=exclude_domains, log=log)
+        except Exception as e:
+            log(f"search_named Tavily {type(e).__name__}")
+            tv_raw = []
+        log(f"search_named Tavily {len(tv_raw or [])} hit(s) for {q[:80]}")
+
+    engine = "tinyfish" if key else ("tavily" if tv_raw else "duckduckgo")
     raw: list[dict] = []
     if key:
         try:
@@ -277,7 +298,7 @@ async def search_named(
             log(f"search_named TinyFish {type(e).__name__}: {str(e)[:80]}")
             raw = []
         log(f"search_named TinyFish {len(raw)} hit(s) for {q[:80]}")
-    else:
+    elif not tv_raw:
         cap = int(max_results or DDG_DEFAULT_CAP)
         if max_pages and max_pages > 1:
             cap = max(cap, min(30, int(max_pages) * 10))
@@ -291,7 +312,7 @@ async def search_named(
         log(f"search_named DDG {len(raw)} hit(s) for {q[:80]}")
 
     hits = []
-    for r in raw or []:
+    for r in list(raw or []) + list(tv_raw or []):
         n = _normalize_hit(r, default_engine=engine)
         if n:
             hits.append(n)
