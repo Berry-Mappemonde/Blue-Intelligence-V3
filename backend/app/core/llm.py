@@ -141,13 +141,16 @@ def _public_engine(engine: str, kind: str) -> str:
         return f"Nightshift {kind}"
     if (engine or "").startswith("nvidia"):
         return f"NVIDIA {kind}"
+    if (engine or "").startswith("tokenfactory"):
+        return f"TokenFactory {kind}"
     if (engine or "").startswith("claude"):
         return f"Claude {kind}"
     return f"OpenRouter {kind}"
 
 
 # Nemotron through Meterless Nightshift is the first hop of every completion.
-GENERATOR_PROVIDERS = ("nightshift", "nvidia")  # a "sample" result means no model answered
+# tokenfactory: Nebius EU host served the call (generator fallback or forced provider).
+GENERATOR_PROVIDERS = ("nightshift", "nvidia", "tokenfactory")  # "sample" means no model answered
 LLM_TRACE_RUN_ID = "llm-calls"  # MeterlessGenerator events: logs/trace-llm-calls.jsonl
 
 
@@ -196,16 +199,21 @@ async def ask_json_tracked(prompt: str, system: str = JSON_SYSTEM,
 
     # FALLBACK: NVIDIA NIM role chain (direct NIM calls, not via Nightshift)
     from app.core.nvidia import get_nvidia_key, complete_json_nvidia_tracked, models_for
-    if get_nvidia_key(settings):
-        for model in models_for(role or "json"):
+    from app.core.tokenfactory import active as tf_active, to_tf
+    if tf_active(settings) or get_nvidia_key(settings):
+        for model in models_for(role or "json", settings=settings):
             try:
                 data, served_model = await complete_json_nvidia_tracked(
                     system, prompt, settings, model=model, role=role,
                     fallback=False, max_tokens=max_tokens)
-                return data, f"nvidia-nim-{(served_model or model).split('/')[-1]}"
+                served = served_model or model
+                if tf_active(settings) and to_tf(served):
+                    return data, f"tokenfactory-{served.split('/')[-1]}"
+                return data, f"nvidia-nim-{served.split('/')[-1]}"
             except Exception as e:
                 if log:
-                    log(f"NVIDIA NIM {model}: {type(e).__name__}: {str(e)[:80]}")
+                    hop = "Token Factory" if tf_active(settings) and to_tf(model) else "NVIDIA NIM"
+                    log(f"{hop} {model}: {type(e).__name__}: {str(e)[:80]}")
                 continue
 
     from app.core.judge import complete_json_cascade

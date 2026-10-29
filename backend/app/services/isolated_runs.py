@@ -296,6 +296,8 @@ async def finalize_run(db, dataset: str, run_id: str, *, cancelled: bool = False
         "cancelled": cancelled,
         **(extra or {}),
     }
+    from app.core.tokenfactory import attach
+    attach(summary, run_id)
     state = "cancelled" if cancelled else ("failed" if error else "done")
     meta = coll(db, spec.meta_coll)
     existing = None

@@ -2,7 +2,17 @@
 import asyncio
 from unittest.mock import AsyncMock
 
+import pytest
+
 from app.core import nvidia
+
+
+@pytest.fixture(autouse=True)
+def nim_catalogue_ids(monkeypatch):
+    """These assertions describe NIM ids. Token Factory is covered separately."""
+    for name in ("NEBIUS_API_KEY", "LLM_PROVIDER", "TF_MODEL_JUDGE", "TF_MODEL_PAGE",
+                 "TF_MODEL_FILTER", "BI_TF_BASE"):
+        monkeypatch.delenv(name, raising=False)
 
 
 def test_nemotron_ids_are_chat_models_from_the_catalogue():

@@ -101,6 +101,8 @@ async def open_run(db, *, mode: str, label: str = "", settings: dict | None = No
         upsert=True,
     )
     await rec.event("run_start", mode=mode, label=doc["label"], wrote_projects=False)
+    from app.core.tokenfactory import bind_run
+    bind_run(rid)
     return {"run_id": rid, "recorder": rec, "wrote_projects": False}
 
 
@@ -161,6 +163,8 @@ async def finalize_run(db, run_id: str, *, cancelled: bool = False, error: str |
         "cancelled": cancelled,
         **(extra or {}),
     }
+    from app.core.tokenfactory import attach
+    attach(summary, run_id)
     state = "cancelled" if cancelled else ("failed" if error else "done")
     await db.project_runs.update_one({"_id": run_id}, {"$set": {
         "state": state,
