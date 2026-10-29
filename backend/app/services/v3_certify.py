@@ -1,0 +1,378 @@
+"""Certification levels C0..C4.
+
+Same ladder as the V3 prototype (`certify.level`): a level never rests on an
+LLM-only point above C1. C1 needs an official extracted source, C2 a
+non-LLM corroboration or an explicit judge "supported", C3 two agreeing
+geo sources, C4 a human confirmation on top of C3.
+
+`confidence_level` applies that ladder after a verified-quote check: the
+quoted evidence must literally appear in the fetched page (whitespace and
+case normalized). Otherwise that evidence is not extracted and the level
+is recomputed — it can only fall.
+
+`level_from_v2` maps a port already scored by `poe_confidence` onto the
+same scale. The numeric 0–100 score is left untouched.
+"""
+from __future__ import annotations
+
+import re
+from collections.abc import Mapping
+
+LEVELS = ("C0", "C1", "C2", "C3", "C4")
+_RANK = {name: i for i, name in enumerate(LEVELS)}
+
+GOV_HINTS = (
+    ".gouv.fr", ".gov", "gouv.", "douane", "customs", "prefecture",
+    "collectivite", "cacem", "ville-", "mairie",
+)
+AGGREGATORS = (
+    "navily", "marinareservation", "noonsite", "superyacht", "tripadvisor",
+    "wikipedia", "facebook", "yachtinsidersguide", "azmartinique",
+    "marineconnect", "boatsetter",
+)
+_NAME_STOP = ("port", "marina", "harbour", "plaisance", "office", "capitainerie")
+_WS = re.compile(r"\s+")
+
+
+def host(url: str) -> str:
+    if not isinstance(url, str):
+        return ""
+    h = (url or "").split("//", 1)[-1].split("/", 1)[0].lower()
+    return h[4:] if h.startswith("www.") else h
+
+
+def is_official(url: str, name: str = "") -> bool:
+    """Official = government domain, or the facility's own domain.
+
+    Own domain: the host shares a >=4-character token with the name.
+    Aggregators are never official.
+    """
+    h = host(url)
+    if any(a in h for a in AGGREGATORS):
+        return False
+    blob = (url or "").lower()
+    if any(g in h or g in blob for g in GOV_HINTS):
+        return True
+    toks = [
+        t for t in re.findall(r"[a-z]{4,}", (name or "").lower())
+        if t not in _NAME_STOP
+    ]
+    return any(t in h for t in toks)
+
+
+def _evidence(entity: dict) -> list[dict]:
+    return [e for e in (entity.get("evidence") or []) if isinstance(e, dict)]
+
+
+def _evidence_official(evidence: dict, name: str) -> bool:
+    if evidence.get("official") is True:
+        return True
+    return is_official(evidence.get("url") or "", name)
+
+
+def level(entity: dict) -> str:
+    """C0–C4 ladder. Does not look at quote text — see `confidence_level`."""
+    ev = _evidence(entity)
+    if not ev:
+        return "C0"
+    raw_name = entity.get("name")
+    name = raw_name if isinstance(raw_name, str) else ""
+    lvl = "C0"
+    if any(e.get("extracted") and _evidence_official(e, name) for e in ev):
+        lvl = "C1"
+    if lvl == "C1" and any(e.get("judge") == "supported" for e in ev):
+        lvl = "C2"
+    g = entity.get("geo") if isinstance(entity.get("geo"), dict) else {}
+    if lvl == "C2" and g.get("agree") and _enough_sources(g):
+        lvl = "C3"
+    if lvl == "C3" and entity.get("human") == "confirmed":
+        lvl = "C4"
+    return lvl
+
+
+def _enough_sources(geo: dict) -> bool:
+    raw = geo.get("independent_sources", 0)
+    if isinstance(raw, bool) or raw is None:
+        return False
+    try:
+        return float(raw) >= 2
+    except (TypeError, ValueError):
+        return False
+
+
+def normalize_quote(text: str) -> str:
+    """Collapse whitespace and case-fold. Punctuation stays literal."""
+    if not isinstance(text, str):
+        return ""
+    return _WS.sub(" ", text).strip().casefold()
+
+
+def verified_quote(quote: str, page_text: str) -> bool:
+    """True when the whole quote appears in the page after normalization.
+
+    An empty quote is not verified. A matching prefix is not enough: the
+    full quote has to be in the page.
+    """
+    needle = normalize_quote(quote)
+    if not needle:
+        return False
+    return needle in normalize_quote(page_text)
+
+
+def _page_for(evidence: dict, entity: dict, pages: Mapping[str, str] | None) -> str:
+    url = evidence.get("url") if isinstance(evidence.get("url"), str) else ""
+    if pages is not None and url in pages:
+        value = pages[url]
+        return value if isinstance(value, str) else ""
+    for source in (evidence, entity):
+        page = source.get("page_text")
+        if isinstance(page, str) and page:
+            return page
+    return ""
+
+
+def _with_verified_quotes(entity: dict, pages: Mapping[str, str] | None = None) -> dict:
+    """Copy whose unverified quotes are not extracted and cannot stay judged.
+
+    A quote that is present and verified does not raise `extracted` when
+    the caller already set it to false — verification only downgrades.
+    """
+    out = dict(entity)
+    ev_out = []
+    for raw in _evidence(entity):
+        e = dict(raw)
+        quote = e.get("quote")
+        if isinstance(quote, str) and quote.strip():
+            ok = verified_quote(quote, _page_for(e, entity, pages))
+            e["quote_verified"] = ok
+            if not ok:
+                e["extracted"] = False
+                if e.get("judge") == "supported":
+                    e.pop("judge", None)
+        ev_out.append(e)
+    out["evidence"] = ev_out
+    return out
+
+
+def _pack(before: str, after: str, checked: dict) -> dict:
+    out = {"confidence_level": after}
+    if _RANK[after] < _RANK[before]:
+        out["downgraded_from"] = before
+    flags = [
+        e.get("quote_verified")
+        for e in _evidence(checked)
+        if isinstance(e.get("quote"), str) and e.get("quote").strip()
+    ]
+    if flags:
+        out["quote_verified"] = all(flags)
+    return out
+
+
+def assess_level(entity: dict, pages: Mapping[str, str] | None = None) -> dict:
+    """Ladder before and after the quote check.
+
+    Returns confidence_level, and downgraded_from / quote_verified when
+    a quote was checked.
+    """
+    before = level(entity)
+    checked = _with_verified_quotes(entity, pages)
+    after = level(checked)
+    return _pack(before, after, checked)
+
+
+def confidence_level(entity: dict, pages: Mapping[str, str] | None = None) -> str:
+    """C0–C4 after dropping evidence whose quote is not in the fetched page."""
+    return assess_level(entity, pages)["confidence_level"]
+
+
+def _reasons(port: dict) -> list[str]:
+    raw = port.get("confidence_reasons") or []
+    if isinstance(raw, str):
+        return [raw]
+    if isinstance(raw, (list, tuple)):
+        return [r for r in raw if isinstance(r, str)]
+    return []
+
+
+def _urls(port: dict) -> list[str]:
+    out: list[str] = []
+    for url in port.get("source_urls") or []:
+        if isinstance(url, str) and url.strip() and url not in out:
+            out.append(url)
+    return out
+
+
+def _non_llm_corroboration(port: dict) -> bool:
+    """Catalogue or LLM∩NER. Two LLM readers do not count."""
+    engine = (port.get("extraction_engine") or "").lower()
+    reasons = set(_reasons(port))
+    if engine == "catalog":
+        return True
+    if "catalogue officiel" in reasons or "catalogue + LLM + NER" in reasons:
+        return True
+    if port.get("extraction_agreement") is True:
+        return True
+    if "LLM et NER d'accord" in reasons or "LLM ∩ NER ∩ Claude" in reasons:
+        return True
+    return False
+
+
+def _judge_excerpt(port: dict) -> str:
+    judge = port.get("judge")
+    if isinstance(judge, dict):
+        return str(judge.get("quoted_excerpt") or judge.get("quote") or "").strip()
+    return ""
+
+
+def _judge_claimed(port: dict) -> bool:
+    judge = port.get("judge")
+    if judge == "supported":
+        return True
+    if isinstance(judge, dict):
+        verdict = judge.get("verdict") or judge.get("judge")
+        return verdict == "supported"
+    return False
+
+
+def _judge_pages(port: dict, pages: Mapping[str, str] | None) -> list[str]:
+    texts: list[str] = []
+    if isinstance(port.get("page_text"), str):
+        texts.append(port["page_text"])
+    if pages:
+        texts.extend(text or "" for text in pages.values())
+    registry = port.get("registry") if isinstance(port.get("registry"), dict) else {}
+    for item in registry.get("official_evidence") or []:
+        if isinstance(item, dict):
+            snippet = item.get("snippet") or item.get("text") or ""
+            if snippet:
+                texts.append(snippet)
+    return texts
+
+
+def _explicit_judge_supported(port: dict, *, honor_quotes: bool,
+                              pages: Mapping[str, str] | None) -> bool:
+    """Prototype judge gate. An advisory verdict other than "supported" does not lift.
+
+    When the judge attached a quote, the quote has to be in a fetched page.
+    `excerpt_verified` on the judge dict is not trusted by itself.
+    """
+    if not _judge_claimed(port):
+        return False
+    excerpt = _judge_excerpt(port)
+    if not honor_quotes or not excerpt:
+        return True
+    return any(verified_quote(excerpt, text) for text in _judge_pages(port, pages))
+
+
+def _lifts_above_c1(port: dict, *, honor_quotes: bool,
+                    pages: Mapping[str, str] | None) -> bool:
+    if _non_llm_corroboration(port):
+        return True
+    return _explicit_judge_supported(port, honor_quotes=honor_quotes, pages=pages)
+
+
+def _url_is_official(url: str, port: dict, official_source: bool | None) -> bool:
+    if official_source is True or "source d'État" in _reasons(port):
+        return True
+    name = port.get("name") if isinstance(port.get("name"), str) else ""
+    return is_official(url, name)
+
+
+def _geo_from_v2(port: dict) -> dict:
+    geo = port.get("geo")
+    if isinstance(geo, dict) and ("agree" in geo or "independent_sources" in geo):
+        return {
+            "agree": geo.get("agree"),
+            "independent_sources": geo.get("independent_sources", 0),
+        }
+    alts = port.get("geocode_alternates") or {}
+    n = 0
+    if isinstance(alts, dict):
+        n = sum(1 for key in ("nominatim", "geonames") if alts.get(key))
+    if port.get("geocode_corroboration") and port.get("lat") is not None:
+        n = max(n, 2)
+    agree = port.get("geocode_agree")
+    if agree is True:
+        n = max(n, 2)
+    return {"agree": bool(agree), "independent_sources": n}
+
+
+def _from_v2(port: dict, official_source: bool | None, *, honor_quotes: bool,
+             pages: Mapping[str, str] | None) -> dict:
+    """Shape a scored V2 port as a certify entity. Does not mutate `port`."""
+    reasons = _reasons(port)
+    urls = _urls(port)
+    synthesis = bool(port.get("from_synthesis")) or "synthèse web sans page" in reasons
+    extracted = bool(urls) and not synthesis
+    lift = _lifts_above_c1(port, honor_quotes=honor_quotes, pages=pages)
+    quote = port.get("quote") if isinstance(port.get("quote"), str) else ""
+    page = port.get("page_text") if isinstance(port.get("page_text"), str) else ""
+    evidence = []
+    for url in urls:
+        item = {"url": url, "extracted": extracted}
+        if _url_is_official(url, port, official_source):
+            item["official"] = True
+        if lift:
+            item["judge"] = "supported"
+        if quote.strip():
+            item["quote"] = quote
+            if page:
+                item["page_text"] = page
+        evidence.append(item)
+    name = port.get("name") if isinstance(port.get("name"), str) else ""
+    return {
+        "name": name,
+        "evidence": evidence,
+        "geo": _geo_from_v2(port),
+        "human": port.get("human"),
+        "page_text": page,
+    }
+
+
+def assess_port(port: dict, *, official_source: bool | None = None,
+                pages: Mapping[str, str] | None = None) -> dict:
+    """Map a prototype entity or a V2 scored port, then apply the quote check."""
+    if not isinstance(port, dict):
+        return {"confidence_level": "C0"}
+    if isinstance(port.get("evidence"), list):
+        entity = dict(port)
+        entity["evidence"] = [dict(e) for e in _evidence(port)]
+        if official_source is True:
+            entity["evidence"] = [{**e, "official": True} for e in entity["evidence"]]
+        return assess_level(entity, pages)
+    before = level(_from_v2(port, official_source, honor_quotes=False, pages=pages))
+    checked = _with_verified_quotes(
+        _from_v2(port, official_source, honor_quotes=True, pages=pages), pages)
+    return _pack(before, level(checked), checked)
+
+
+def level_from_v2(port: dict, *, official_source: bool | None = None,
+                  pages: Mapping[str, str] | None = None) -> str:
+    """C0–C4 for a V2 port (`poe_confidence` fields) or a prototype entity.
+
+    Official source required for C1+. An LLM-only reading (single extractor,
+    or two LLM readers) never goes above C1. Catalogue, LLM∩NER, or a judge
+    verdict of "supported" can. A judge quote that is not in the fetched page
+    does not count. `human == "confirmed"` lifts only C3 to C4.
+    """
+    return assess_port(port, official_source=official_source, pages=pages)["confidence_level"]
+
+
+def attach_confidence_level(port: dict, *, official_source: bool | None = None,
+                            pages: Mapping[str, str] | None = None) -> dict:
+    """Set `confidence_level` on a port. Does not change the numeric score."""
+    try:
+        assessed = assess_port(port, official_source=official_source, pages=pages)
+    except Exception:
+        port["confidence_level"] = "C0"
+        return port
+    port["confidence_level"] = assessed["confidence_level"]
+    if assessed.get("downgraded_from"):
+        port["confidence_downgraded_from"] = assessed["downgraded_from"]
+    else:
+        port.pop("confidence_downgraded_from", None)
+    if "quote_verified" in assessed:
+        port["quote_verified"] = assessed["quote_verified"]
+    else:
+        port.pop("quote_verified", None)
+    return port

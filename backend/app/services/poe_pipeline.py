@@ -2444,11 +2444,12 @@ async def _extract_and_geocode(zone: dict, context: str, used_sources: list[dict
         elif lat is not None:
             kind_note = f" ⚠ {spatial_kind} ({dist_km} km)"
         log(f"  ⚓ {p['name']} → {'%.3f, %.3f' % (lat, lon) if lat is not None else 'non géocodé'}"
-            f"{kind_note}  confiance {doc.get('confidence')}"
+            f"{kind_note}  confiance {doc.get('confidence')} ({doc.get('confidence_level')})"
             + agree_note)
         await emit(rec, "port", name=p["name"], city=p.get("city"), lat=lat, lon=lon,
                    validated=validated, distance_km=dist_km,
                    spatial_kind=spatial_kind, confidence=doc.get("confidence"),
+                   confidence_level=doc.get("confidence_level"),
                    extraction_agreement=p.get("extraction_agreement"),
                    geocode_agree=geo.get("agree"))
 
@@ -2531,6 +2532,7 @@ async def _persist_zone(db, zone: dict, docs: list[dict], status: str,
                     updates["confidence"] = d.get("confidence")
                     updates["confidence_parts"] = d.get("confidence_parts")
                     updates["confidence_reasons"] = d.get("confidence_reasons")
+                    updates["confidence_level"] = d.get("confidence_level")
                 await db.poe_ports.update_one({"_id": match["_id"]}, {"$set": updates})
                 merged += 1
             else:
@@ -2813,11 +2815,18 @@ def zone_to_item(doc: dict) -> dict:
 
 def ports_to_geojson(docs: list[dict]) -> dict:
     from app.agents.evaluator import _reasons_en
+    from app.services.v3_certify import LEVELS, level_from_v2
 
     feats = []
     for d in docs:
         if d.get("lat") is None or d.get("lon") is None:
             continue
+        c_level = d.get("confidence_level")
+        if c_level not in LEVELS:
+            try:
+                c_level = level_from_v2(d)
+            except Exception:
+                c_level = "C0"
         feats.append({
             "type": "Feature",
             "geometry": {"type": "Point", "coordinates": [d["lon"], d["lat"]]},
@@ -2834,6 +2843,7 @@ def ports_to_geojson(docs: list[dict]) -> dict:
                 "osm_tags": d.get("osm_tags"),
                 "spatial_anomaly": d.get("spatial_anomaly"),
                 "confidence": d.get("confidence"),
+                "confidence_level": c_level,
                 "confidence_reasons": d.get("confidence_reasons"),
                 "confidence_parts": d.get("confidence_parts"),
                 "reasons_en": (
