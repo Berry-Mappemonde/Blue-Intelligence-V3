@@ -63,6 +63,8 @@ async def execute_run(db, state, run_id: str, label: str = "",
     variant: v1 | v2 | tinyfish — never writes poe_ports.
     """
     await ensure_run_indexes(db)
+    from app.core.tokenfactory import bind_run
+    bind_run(run_id)
     variant = normalize_variant(variant)
     recorder = RunRecorder(run_id, db=db)
     run_ctx = RunContext(run_id=run_id, recorder=recorder, variant=variant)
@@ -200,6 +202,8 @@ async def execute_run(db, state, run_id: str, label: str = "",
         "catalog_skipped_zones": catalog_skipped,
         "git_sha": (params.get("code") or {}).get("git_sha"),
     }
+    from app.core.tokenfactory import attach
+    attach(summary, run_id)
     await db.poe_runs.update_one({"_id": run_id}, {"$set": {
         "state": "cancelled" if cancelled else "done",
         "finished_at": poe.now_iso(),

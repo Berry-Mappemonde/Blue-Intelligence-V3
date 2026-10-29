@@ -685,7 +685,9 @@ async def poe_run_status(run_id: str):
     doc = await _db.poe_runs.find_one({"_id": run_id})
     if not doc:
         raise HTTPException(404, f"Run {run_id} unknown")
-    out = {"run": doc}
+    from app.core.tokenfactory import public_cost
+    persisted = (doc.get("summary") or {}).get("tokenfactory") if isinstance(doc.get("summary"), dict) else None
+    out = {"run": doc, "tokenfactory": public_cost(run_id, persisted)}
     st = RUN_STATES.get(run_id)
     if st is not None and st.running:
         out["live"] = st.status()
