@@ -26,6 +26,8 @@ _REASONS_EN = {
     "synthèse web sans page": "web synthesis without a source page",
     "source nationale non whitelistée": "national source not on the allowlist",
     "source indéterminée": "unknown source",
+    "Noonsite : signal, jamais une source Gold":
+        "Noonsite: signal only, never a Gold source",
     "Claude et OpenRouter d'accord": "Claude and OpenRouter agree",
     "catalogue + LLM + NER": "catalogue + LLM + NER",
     "catalogue officiel": "official catalogue",

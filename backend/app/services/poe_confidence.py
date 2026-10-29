@@ -37,8 +37,16 @@ def score_port(port: dict, *,
                official_source: bool = False,
                listing_ports: list[dict] | None = None,
                multi_run: bool = False) -> dict:
-    """Retourne {confidence, parts, reasons, listing_role}."""
+    """Retourne {confidence, parts, reasons, listing_role, publishable, gold, data_gap}.
+
+    Publication and Gold follow ``poe_rules`` (State source, both arms,
+    Noonsite never Gold, UK app regime). The numeric score is unchanged
+    when ``source_urls`` are not Noonsite-only.
+    """
     from app.core.run_rules import get_rule
+    from app.services.poe_rules import (
+        both_arms_are_gold, counts_as_data_gap, is_noonsite_url, publish_decision,
+    )
     reasons: list[str] = []
     parts = {"source": 0, "reading": 0, "map": 0, "external": 0}
     src_max = int(get_rule("formalities.confidence_source_max", 30))
@@ -50,6 +58,12 @@ def score_port(port: dict, *,
     engine = (port.get("extraction_engine") or "").lower()
     note = port.get("note") or ""
     urls = port.get("source_urls") or []
+    str_urls = [u.strip() for u in urls if isinstance(u, str) and u.strip()]
+    noonsite_only = bool(str_urls) and all(is_noonsite_url(u) for u in str_urls)
+    real_urls = [u for u in str_urls if not is_noonsite_url(u)]
+    # A Noonsite URL is not a State source, even if the caller said so.
+    if noonsite_only:
+        official_source = False
     synthesis_only = bool(port.get("from_synthesis")) or (
         not urls and "synthèse" in note.lower()
     )
@@ -60,12 +74,14 @@ def score_port(port: dict, *,
     elif synthesis_only:
         parts["source"] = 8
         reasons.append("synthèse web sans page")
-    elif urls:
+    elif urls and not noonsite_only:
         parts["source"] = 14
         reasons.append("source nationale non whitelistée")
     else:
         parts["source"] = 4
         reasons.append("source indéterminée")
+    if noonsite_only:
+        reasons.append("Noonsite : signal, jamais une source Gold")
 
     catalog = engine == "catalog" or "catalogue officiel" in note
     llm_ner = port.get("extraction_agreement") is True
@@ -169,11 +185,19 @@ def score_port(port: dict, *,
     parts["external"] = min(ext_max, ext)
 
     total = min(100, sum(parts.values()))
+    decision = publish_decision(port, official_source=official_source)
     return {
         "confidence": total,
         "parts": parts,
         "reasons": reasons,
         "listing_role": role,
+        "publishable": decision["publish"],
+        "publish_basis": decision["basis"],
+        "gold": both_arms_are_gold(port),
+        "data_gap": counts_as_data_gap(
+            port,
+            missing_designated_list=not official_source and not real_urls,
+        ),
     }
 
 
@@ -183,6 +207,14 @@ def apply_score(port: dict, scored: dict) -> dict:
     port["confidence_reasons"] = scored["reasons"]
     if scored.get("listing_role"):
         port["listing_role"] = scored["listing_role"]
+    if "publishable" in scored:
+        port["publishable"] = scored["publishable"]
+    if "publish_basis" in scored:
+        port["publish_basis"] = scored["publish_basis"]
+    if "gold" in scored:
+        port["gold"] = scored["gold"]
+    if "data_gap" in scored:
+        port["data_gap"] = scored["data_gap"]
     return port
 
 
@@ -206,6 +238,8 @@ REASONS_EN: dict[str, str] = {
     "synthèse web sans page": "web synthesis without a source page",
     "source nationale non whitelistée": "national source not on the allowlist",
     "source indéterminée": "unknown source",
+    "Noonsite : signal, jamais une source Gold":
+        "Noonsite: signal only, never a Gold source",
     "Claude et OpenRouter d'accord": "Claude and OpenRouter agree",
     "catalogue + LLM + NER": "catalogue + LLM + NER",
     "catalogue officiel": "official catalogue",
