@@ -183,7 +183,9 @@ def apply_score(port: dict, scored: dict) -> dict:
     port["confidence_reasons"] = scored["reasons"]
     if scored.get("listing_role"):
         port["listing_role"] = scored["listing_role"]
-    return port
+    # C0–C4 beside the 0–100 score. Absent env vars do not change this.
+    from app.services.v3_certify import attach_confidence_level
+    return attach_confidence_level(port)
 
 
 def zone_confidence_avg(ports: list[dict]) -> int | None:
