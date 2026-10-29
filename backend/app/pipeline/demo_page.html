@@ -1,0 +1,1009 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PoE Reconciler</title>
+<link rel="icon" href="data:,">
+<style>
+  :root {
+    --bg: #09131f;
+    --panel: #0e1c2d;
+    --panel-2: #13253b;
+    --panel-3: #1a3050;
+    --line: #213650;
+    --line-soft: #182a40;
+    --text: #e9eff6;
+    --text-2: #b0bfd2;
+    --text-3: #8396ae;
+    --accent: #5fc8d9;
+    --accent-ink: #04222a;
+    --accent-soft: rgba(95, 200, 217, .14);
+    --brass: #c9a96b;
+    --pass: #4fc48c;
+    --pass-soft: rgba(79, 196, 140, .15);
+    --flag: #f2b54d;
+    --flag-soft: rgba(242, 181, 77, .15);
+    --retry: #f2815f;
+    --retry-soft: rgba(242, 129, 95, .15);
+    --error: #f47272;
+    --error-soft: rgba(244, 114, 114, .12);
+    --nvidia: #76b900;
+    --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --r-sm: 6px;
+    --r-md: 10px;
+    --r-lg: 14px;
+  }
+  * { box-sizing: border-box; }
+  html { color-scheme: dark; scrollbar-color: #2a4262 transparent; }
+  html, body { margin: 0; }
+  .log-scroll { scrollbar-width: thin; scrollbar-color: #2a4262 transparent; }
+  body {
+    min-height: 100vh;
+    background:
+      radial-gradient(1200px 500px at 15% -10%, rgba(95, 200, 217, .07), transparent 60%),
+      radial-gradient(900px 500px at 100% 0%, rgba(201, 169, 107, .05), transparent 55%),
+      var(--bg);
+    color: var(--text);
+    font: 15px/1.5 var(--sans);
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--accent); text-underline-offset: 2px; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  [hidden] { display: none !important; }
+
+  /* Top bar */
+  .bar { position: sticky; top: 0; z-index: 1000; background: rgba(9, 19, 31, .92); backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); }
+  .bar-inner { max-width: 1520px; margin: 0 auto; padding: 10px 28px; display: flex; align-items: center; gap: 18px; }
+  .brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
+  .brand svg { width: 34px; height: 34px; flex: none; }
+  .brand-name { font-size: 18px; font-weight: 650; letter-spacing: .1px; }
+  .brand-sub { font-size: 12px; color: var(--text-3); letter-spacing: 1.4px; text-transform: uppercase; }
+  .bar .grow { flex: 1; }
+  .status { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+  .chip { display: inline-flex; align-items: center; gap: 8px; height: 30px; padding: 0 12px; border: 1px solid var(--line); border-radius: 999px; background: var(--panel); font-size: 13px; white-space: nowrap; color: var(--text); }
+  .chip .k { color: var(--text-3); font-size: 11px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; }
+  .chip .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-3); }
+  .chip.on .dot { background: var(--pass); box-shadow: 0 0 0 3px rgba(79, 196, 140, .18); }
+  .chip.sample .dot { background: var(--brass); }
+  .chip.warn .dot { background: var(--retry); }
+  .chip .v { max-width: 300px; overflow: hidden; text-overflow: ellipsis; }
+  .chip.nemotron { background: var(--nvidia); border-color: #8fd11a; color: #0b1a00; font-weight: 700; height: 32px; padding: 0 14px; }
+  .chip.nemotron svg { width: 15px; height: 15px; }
+
+  main { max-width: 1520px; margin: 0 auto; padding: 22px 28px 28px; }
+
+  /* Hero */
+  .hero { display: grid; grid-template-columns: minmax(360px, 460px) minmax(0, 1fr); gap: 18px; align-items: stretch; }
+  .launch, .counts { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-lg); }
+  .launch { padding: 16px 18px; display: flex; flex-direction: column; gap: 10px; }
+  .eyebrow { font-size: 11px; font-weight: 700; letter-spacing: 1.6px; text-transform: uppercase; color: var(--text-3); }
+  .launch-row { display: flex; gap: 10px; }
+  select {
+    flex: 1; min-width: 0; height: 44px; padding: 0 38px 0 14px; border-radius: var(--r-md); border: 1px solid var(--line);
+    background: var(--panel-2) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='%23b0bfd2' stroke-width='1.6'/%3E%3C/svg%3E") no-repeat right 14px center;
+    color: var(--text); font: 600 16px var(--sans); appearance: none; cursor: pointer;
+  }
+  select:disabled { opacity: .6; cursor: default; }
+  .run { display: inline-flex; align-items: center; gap: 10px; height: 44px; padding: 0 20px; border: 0; border-radius: var(--r-md); background: var(--accent); color: var(--accent-ink); font: 700 15px var(--sans); cursor: pointer; white-space: nowrap; }
+  .run:hover { background: #7ad5e3; }
+  .run:disabled { background: #335463; color: #a9c6cf; cursor: progress; }
+  .run svg { width: 16px; height: 16px; }
+  .spinner { display: none; width: 15px; height: 15px; border-radius: 50%; border: 2px solid rgba(169, 198, 207, .35); border-top-color: #e9f7fa; animation: spin .8s linear infinite; }
+  .run.busy .spinner { display: block; }
+  .run.busy svg { display: none; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .launch-meta { display: flex; flex-direction: column; gap: 2px; font-size: 12.5px; color: var(--text-3); min-width: 0; }
+  .launch-meta > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .launch-meta b { color: var(--text-2); font-weight: 500; }
+
+  .counts { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); margin: 0; }
+  .count { padding: 16px 20px; border-left: 1px solid var(--line-soft); display: flex; flex-direction: column; justify-content: center; gap: 4px; min-width: 0; }
+  .count:first-child { border-left: 0; }
+  .count dt { font-size: 11px; font-weight: 700; letter-spacing: 1.4px; text-transform: uppercase; color: var(--text-3); }
+  .count dd { margin: 0; font: 650 36px/1.1 var(--sans); font-variant-numeric: tabular-nums; letter-spacing: -.5px; }
+  .count dd small { font-size: 15px; font-weight: 500; color: var(--text-3); margin-left: 3px; letter-spacing: 0; }
+  .count.pass dd { color: var(--pass); }
+  .count.flag dd { color: var(--flag); }
+  .count dd.zero { color: var(--text-3); }
+  .count dd.idle { color: #3e5574; }
+  .counts.loading dd { color: transparent; background: linear-gradient(90deg, var(--panel-2), var(--panel-3), var(--panel-2)); background-size: 200% 100%; border-radius: 6px; animation: shimmer 1.2s linear infinite; width: 64px; }
+  @keyframes shimmer { to { background-position: -200% 0; } }
+
+  /* Alerts */
+  .alert { margin-top: 14px; display: flex; align-items: flex-start; gap: 12px; padding: 12px 16px; border-radius: var(--r-md); border: 1px solid; }
+  .alert svg { width: 18px; height: 18px; flex: none; margin-top: 2px; }
+  .alert .grow { flex: 1; }
+  .alert b { display: block; }
+  .alert.error { background: var(--error-soft); border-color: rgba(244, 114, 114, .45); color: #ffc7c7; }
+  .alert.warn { background: var(--flag-soft); border-color: rgba(242, 181, 77, .45); color: #ffe2ad; }
+  .ghost-btn { height: 32px; padding: 0 12px; border-radius: var(--r-sm); border: 1px solid currentColor; background: transparent; color: inherit; font: 600 13px var(--sans); cursor: pointer; }
+
+  /* Deck */
+  .deck { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr); gap: 18px; margin-top: 18px; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-lg); display: flex; flex-direction: column; min-width: 0; overflow: hidden; }
+  .panel-head { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--line-soft); min-height: 50px; }
+  .panel-head h2 { margin: 0; font-size: 13px; font-weight: 700; letter-spacing: 1.6px; text-transform: uppercase; color: var(--text-2); }
+  .panel-head .grow { flex: 1; }
+  .tag { font-size: 11.5px; padding: 3px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--text-3); white-space: nowrap; }
+  .readout { font-size: 12.5px; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  .chart { height: 520px; }
+  .map-wrap { position: relative; flex: 1; min-height: 0; background: #0b1828; }
+  #map, #plot { position: absolute; inset: 0; }
+  #plot svg { width: 100%; height: 100%; display: block; }
+  .overlay { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; text-align: center; color: var(--text-2); pointer-events: none; z-index: 500; }
+  .overlay strong { font-size: 18px; color: var(--text); font-weight: 600; }
+  .overlay span { font-size: 14px; color: var(--text-3); max-width: 340px; }
+  .overlay.busy::before { content: ""; width: 26px; height: 26px; border-radius: 50%; border: 2px solid var(--line); border-top-color: var(--accent); animation: spin .9s linear infinite; }
+
+  .leaflet-container { background: #0b1828 !important; font-family: var(--sans) !important; }
+  .leaflet-tile-pane { filter: invert(1) hue-rotate(195deg) brightness(.82) contrast(.92) saturate(.55); }
+  .leaflet-control-attribution { background: rgba(9, 19, 31, .78) !important; color: var(--text-3) !important; font-size: 11px !important; }
+  .leaflet-control-attribution a { color: var(--text-2) !important; }
+  .leaflet-bar a { background: var(--panel-2) !important; color: var(--text) !important; border-color: var(--line) !important; }
+  .leaflet-tooltip.pin-label { background: rgba(9, 19, 31, .9); color: var(--text); border: 1px solid var(--line); border-radius: 6px; font-size: 13px; font-weight: 600; box-shadow: none; padding: 3px 8px; }
+  .leaflet-tooltip.pin-label::before { display: none; }
+
+  /* Agent log */
+  .log { height: 520px; }
+  .live { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--text-3); }
+  .live i { width: 8px; height: 8px; border-radius: 50%; background: #3e5574; }
+  .live.on i { background: var(--accent); animation: pulse 1.2s ease-in-out infinite; }
+  .live.done i { background: var(--pass); }
+  .live.fail i { background: var(--error); }
+  @keyframes pulse { 50% { box-shadow: 0 0 0 5px rgba(95, 200, 217, .18); } }
+  .log-scroll { flex: 1; overflow-y: auto; padding: 6px 16px 14px; scroll-behavior: smooth; }
+  ol.track { list-style: none; margin: 0; padding: 0; position: relative; }
+  ol.track::before { content: ""; position: absolute; left: 83px; top: 14px; bottom: 14px; width: 1px; background: var(--line); }
+  .step { position: relative; display: grid; grid-template-columns: 70px 28px minmax(0, 1fr) 56px; align-items: start; padding: 9px 0; }
+  .step.enter { animation: enter .28s ease-out both; }
+  @keyframes enter { from { opacity: 0; transform: translateY(6px); } }
+  .t { font-size: 12px; color: var(--text-3); padding-top: 3px; }
+  .node { justify-self: center; margin-top: 6px; width: 11px; height: 11px; border-radius: 50%; background: var(--panel); border: 2px solid var(--c, var(--text-3)); position: relative; z-index: 1; }
+  .step.current .node { background: var(--c, var(--accent)); box-shadow: 0 0 0 4px rgba(95, 200, 217, .16); }
+  .who { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+  .agent { font-weight: 650; font-size: 14px; color: var(--c, var(--text)); }
+  .act { font-size: 14px; color: var(--text); }
+  .detail { font-size: 12.5px; color: var(--text-2); margin-top: 2px; overflow-wrap: anywhere; }
+  .detail .ok { color: var(--pass); }
+  .detail .flagged { color: var(--flag); }
+  .detail .retry { color: var(--retry); }
+  .handoff { display: inline-flex; align-items: center; gap: 6px; margin-top: 5px; font-size: 12px; color: var(--text-3); border: 1px dashed var(--line); border-radius: 999px; padding: 1px 9px; }
+  .handoff b { color: var(--text-2); font-weight: 600; }
+  .handoff svg { width: 14px; height: 10px; }
+  .dur { justify-self: end; font-size: 12px; color: var(--text-3); padding-top: 3px; }
+  .round { position: relative; margin: 6px 0 2px 70px; padding: 4px 0 4px 26px; font-size: 11px; font-weight: 700; letter-spacing: 1.6px; text-transform: uppercase; color: var(--retry); }
+  .round::before { content: ""; position: absolute; left: 9px; top: 50%; width: 10px; height: 10px; transform: translateY(-50%) rotate(45deg); background: var(--retry-soft); border: 1px solid var(--retry); }
+  .station { opacity: .55; }
+  .station .agent { color: var(--text-2); }
+  .ag-RunPipeline { --c: #8a9db6; }
+  .ag-ZetarisAdapter { --c: #6fa8ff; }
+  .ag-HMemAgent { --c: #b7a0ff; }
+  .ag-EvaluatorAgent { --c: #5fc8d9; }
+  .ag-ResearchAgent { --c: #f2815f; }
+  .ag-BriefingAgent { --c: #d8b877; }
+  .ag-MeterlessGenerator { --c: #8fd11a; }
+
+  /* Lower deck */
+  .lower { grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr); align-items: start; }
+  .ports-list { padding: 12px; display: grid; gap: 10px; }
+  .port { border: 1px solid var(--line-soft); background: var(--panel-2); border-radius: var(--r-md); padding: 14px 16px; transition: border-color .2s, box-shadow .2s; }
+  .port.selected { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  .port-head { display: flex; align-items: center; gap: 10px; }
+  .port-head h3 { margin: 0; font-size: 17px; font-weight: 650; flex: 1; min-width: 0; }
+  .pill { font-size: 11.5px; font-weight: 800; letter-spacing: 1.2px; text-transform: uppercase; padding: 3px 10px; border-radius: 999px; }
+  .pill.pass { background: var(--pass-soft); color: var(--pass); }
+  .pill.flag { background: var(--flag-soft); color: var(--flag); }
+  .pill.retry, .pill.unevaluated { background: var(--retry-soft); color: var(--retry); }
+  .locate { height: 28px; padding: 0 10px; border-radius: var(--r-sm); border: 1px solid var(--line); background: transparent; color: var(--text-2); font: 600 12px var(--sans); cursor: pointer; }
+  .locate:hover { border-color: var(--accent); color: var(--text); }
+  .conf { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: center; margin-top: 10px; }
+  .bar-track { height: 7px; border-radius: 99px; background: #0b1828; overflow: hidden; }
+  .bar-fill { height: 100%; border-radius: 99px; background: var(--pc, var(--text-3)); }
+  .conf .mono { font-size: 13px; color: var(--text-2); }
+  .coords { margin-top: 6px; font-size: 12.5px; color: var(--text-3); }
+  .reasons { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 12px; }
+  .reasons h4, .src h4 { margin: 0 0 4px; font-size: 11px; font-weight: 700; letter-spacing: 1.3px; text-transform: uppercase; }
+  .reasons .sup h4 { color: var(--pass); }
+  .reasons .con h4 { color: var(--flag); }
+  .reasons ul, .src ul { margin: 0; padding: 0; list-style: none; font-size: 13.5px; color: var(--text-2); }
+  .reasons li { position: relative; padding-left: 14px; margin: 2px 0; }
+  .reasons li::before { content: ""; position: absolute; left: 2px; top: .62em; width: 5px; height: 5px; border-radius: 50%; background: currentColor; opacity: .55; }
+  .reasons .none { color: var(--text-3); font-style: italic; }
+  .src { margin-top: 12px; }
+  .src h4 { color: var(--text-3); }
+  .src li { margin: 2px 0; overflow-wrap: anywhere; }
+  .mem-tag { margin-left: 6px; font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 999px; background: rgba(183, 160, 255, .16); color: #cbbcff; }
+  .port-foot { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--line); font-size: 12.5px; color: var(--text-3); }
+  .port-foot b { color: var(--text-2); font-weight: 600; }
+
+  .brief-card { margin: 14px; border: 1px solid #3a4d68; border-radius: var(--r-md); background: linear-gradient(180deg, #13253b, #102034); }
+  .brief-top { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 14px 18px 12px; border-bottom: 1px solid var(--line); }
+  .brief-top h3 { margin: 0; font-size: 18px; }
+  .brief-top .mono { font-size: 12px; color: var(--text-3); }
+  .brief-body { padding: 6px 18px 4px; }
+  .brief-body section { padding: 10px 0; border-bottom: 1px solid var(--line-soft); }
+  .brief-body section:last-child { border-bottom: 0; }
+  .brief-body h4 { margin: 0 0 6px; font-size: 11px; font-weight: 700; letter-spacing: 1.4px; text-transform: uppercase; color: var(--brass); }
+  .brief-body p { margin: 4px 0; font-size: 15px; line-height: 1.55; }
+  .brief-body ol, .brief-body ul { margin: 4px 0; padding-left: 20px; font-size: 15px; line-height: 1.55; }
+  .brief-body li { margin: 3px 0; }
+  .brief-body strong { color: #fff; }
+  .brief-sources li { font-size: 13.5px; overflow-wrap: anywhere; }
+  .disclaimer { display: flex; gap: 10px; margin: 0; padding: 12px 18px; border-top: 1px solid var(--line); font-size: 13px; color: #ffe2ad; background: rgba(242, 181, 77, .07); border-radius: 0 0 var(--r-md) var(--r-md); }
+  .disclaimer svg { width: 16px; height: 16px; flex: none; margin-top: 2px; }
+  .caption { margin: 0 14px 14px; font-size: 12.5px; color: var(--text-3); }
+  .caption b { color: var(--text-2); font-weight: 600; }
+
+  footer { max-width: 1520px; margin: 0 auto; padding: 0 28px 26px; font-size: 12.5px; color: var(--text-3); }
+
+  @media (max-width: 1180px) {
+    .hero, .deck, .lower { grid-template-columns: 1fr; }
+    .counts { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .count:nth-child(4) { border-left: 0; }
+    .count { border-top: 1px solid var(--line-soft); }
+    .chart, .log { height: 440px; }
+  }
+  @media (max-width: 720px) {
+    .bar-inner { flex-wrap: wrap; padding: 10px 16px; }
+    main { padding: 16px; }
+    .status { justify-content: flex-start; }
+    .counts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .reasons { grid-template-columns: 1fr; }
+    .step { grid-template-columns: 56px 24px minmax(0, 1fr); }
+    .dur { grid-column: 3; justify-self: start; }
+    ol.track::before { left: 67px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+  }
+</style>
+</head>
+<body>
+<header class="bar">
+  <div class="bar-inner">
+    <div class="brand">
+      <svg viewBox="0 0 40 40" aria-hidden="true">
+        <circle cx="20" cy="20" r="18" fill="none" stroke="#c9a96b" stroke-width="1.5"/>
+        <circle cx="20" cy="20" r="13" fill="none" stroke="#213650" stroke-width="1"/>
+        <path d="M20 4 L23.5 20 L20 36 L16.5 20 Z" fill="#e9eff6"/>
+        <path d="M20 4 L23.5 20 L16.5 20 Z" fill="#5fc8d9"/>
+        <path d="M4 20 L20 17.5 L36 20 L20 22.5 Z" fill="#8396ae" opacity=".55"/>
+        <circle cx="20" cy="20" r="2" fill="#09131f"/>
+      </svg>
+      <div>
+        <div class="brand-name">PoE Reconciler</div>
+        <div class="brand-sub">Ports of Entry · verification console</div>
+      </div>
+    </div>
+    <div class="grow"></div>
+    <div class="status" aria-label="System status">
+      <span class="chip" id="chip-mode"><span class="dot"></span><span class="k">Mode</span><span class="v">connecting…</span></span>
+      <span class="chip" id="chip-zetaris"><span class="dot"></span><span class="k">Zetaris</span><span class="v">—</span></span>
+      <span class="chip" id="chip-hmem"><span class="dot"></span><span class="k">H-MEM</span><span class="v">—</span></span>
+      <span class="chip" id="chip-llm"><span class="dot"></span><span class="k">LLM</span><span class="v">—</span></span>
+      <span class="chip nemotron" id="chip-nemotron" hidden>
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1l2 4.5 5 .6-3.7 3.3 1 4.9L8 11.8 3.7 14.3l1-4.9L1 6.1l5-.6z" fill="currentColor"/></svg>
+        <span id="nemotron-text">Nemotron via Nightshift</span>
+      </span>
+    </div>
+  </div>
+</header>
+
+<main>
+  <section class="hero">
+    <div class="launch">
+      <label class="eyebrow" for="zone">Maritime zone</label>
+      <div class="launch-row">
+        <select id="zone" disabled><option>Loading zones…</option></select>
+        <button id="run" class="run" type="button" disabled>
+          <span class="spinner" aria-hidden="true"></span>
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5v11l9-5.5z" fill="currentColor"/></svg>
+          <span class="label">Run verification</span>
+        </button>
+      </div>
+      <div class="launch-meta" id="launch-meta"><span id="zones-src">Loading zones…</span></div>
+    </div>
+    <dl class="counts" id="counts">
+      <div class="count pass"><dt>Confirmed</dt><dd id="c-pass" class="idle">—</dd></div>
+      <div class="count flag"><dt>Flagged</dt><dd id="c-flag" class="idle">—</dd></div>
+      <div class="count"><dt>Retry rounds</dt><dd id="c-retries" class="idle">—</dd></div>
+      <div class="count"><dt>Memories recalled</dt><dd id="c-memory" class="idle">—</dd></div>
+      <div class="count"><dt>Duration</dt><dd id="c-duration" class="idle">—</dd></div>
+    </dl>
+  </section>
+
+  <div id="alert" class="alert error" role="alert" hidden>
+    <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5l7 12.5H1z" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 6v4M8 11.6v.4" stroke="currentColor" stroke-width="1.5"/></svg>
+    <div class="grow"><b id="alert-title">Run failed</b><span id="alert-msg"></span></div>
+    <button class="ghost-btn" id="alert-retry" type="button">Try again</button>
+  </div>
+
+  <section class="deck">
+    <section class="panel chart" aria-labelledby="chart-h">
+      <div class="panel-head">
+        <h2 id="chart-h">Chart</h2>
+        <span class="readout mono" id="chart-readout">No zone plotted</span>
+        <span class="grow"></span>
+        <span class="tag" id="chart-source" hidden></span>
+      </div>
+      <div class="map-wrap">
+        <div id="map" hidden></div>
+        <div id="plot"></div>
+        <div class="overlay" id="chart-overlay"><strong>No zone plotted yet</strong><span>Pick a zone and run the agents. Verified ports are pinned here, coloured by verdict.</span></div>
+      </div>
+    </section>
+
+    <section class="panel log" aria-labelledby="log-h">
+      <div class="panel-head">
+        <h2 id="log-h">Agent log</h2>
+        <span class="grow"></span>
+        <span class="live" id="live"><i></i><span id="live-text">Idle</span></span>
+      </div>
+      <div class="log-scroll" id="log-scroll">
+        <ol class="track" id="track"></ol>
+      </div>
+    </section>
+  </section>
+
+  <section class="deck lower" id="lower" hidden>
+    <section class="panel" aria-labelledby="ports-h">
+      <div class="panel-head"><h2 id="ports-h">Ports of Entry</h2><span class="grow"></span><span class="tag" id="ports-count"></span></div>
+      <div class="ports-list" id="ports"></div>
+    </section>
+    <section class="panel" aria-labelledby="brief-h">
+      <div class="panel-head"><h2 id="brief-h">Clearance card</h2></div>
+      <article class="brief-card">
+        <div class="brief-top"><h3 id="brief-title"></h3><span class="mono" id="brief-run"></span></div>
+        <div class="brief-body" id="brief-body"></div>
+        <p class="disclaimer"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M8 4.5v4.5M8 10.8v.5" stroke="currentColor" stroke-width="1.5"/></svg><span>Indicative only, not for navigation. Confirm entry formalities with the official authorities before departure.</span></p>
+      </article>
+      <p class="caption" id="brief-caption"></p>
+    </section>
+  </section>
+</main>
+
+<footer>Blue Intelligence · PoE Reconciler. Data from public government sources via Zetaris; verdicts are evidence for sailors, not clearance.</footer>
+
+<script>
+(function () {
+  'use strict';
+  const $ = (id) => document.getElementById(id);
+  const REDUCED = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const STAGGER_MS = REDUCED ? 0 : 110;
+  const LEAFLET = {
+    css: 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css',
+    cssSri: 'sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=',
+    js: 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js',
+    jsSri: 'sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo='
+  };
+  const ACTIONS = {
+    run_start: 'Run started', run_end: 'Run finished', zetaris_query: 'Read ports',
+    zetaris_fallback: 'Fell back to sample data', recall: 'Recalled memory', evaluate_port: 'Evaluated',
+    research_port: 'Researched', prepare_retry: 'Prepared retry', finalise_port: 'Finalised',
+    generate: 'Generated text', brief: 'Wrote brief', remember: 'Remembered'
+  };
+  const STATIONS = [
+    ['ZetarisAdapter', 'Reads the zone’s ports through Zetaris SQL'],
+    ['HMemAgent', 'Recalls earlier verdicts from Meterless H-MEM'],
+    ['EvaluatorAgent', 'Scores source, reading and position'],
+    ['ResearchAgent', 'Retries weak ports with remembered official sources'],
+    ['BriefingAgent', 'Writes the clearance brief through Meterless Nightshift'],
+    ['HMemAgent', 'Remembers or reinforces each verdict']
+  ];
+  const SUPPORTING = /government source|official catalogue|\bagree\b|catalogue \+|inside the EEZ|land boundary|community listing \(PoE\)|port infrastructure|multiple runs|accepted within/i;
+  const VERDICT_COLOR = { pass: '#4fc48c', flag: '#f2b54d', retry: '#f2815f', unevaluated: '#f2815f' };
+
+  const state = { running: false, source: null, queue: [], timer: null, rows: [], round: 0, start: null,
+                  lastTs: null, recalled: 0, gotResult: false, pendingResult: null, result: null,
+                  selected: null, leaflet: null, tilesFailed: false };
+
+  /* ---------- helpers ---------- */
+  function el(tag, props, children) {
+    const node = document.createElement(tag);
+    for (const [key, value] of Object.entries(props || {})) {
+      if (value === undefined || value === null || value === false) continue;
+      if (key === 'text') node.textContent = value;
+      else if (key === 'class') node.className = value;
+      else if (key.startsWith('on')) node.addEventListener(key.slice(2), value);
+      else node.setAttribute(key, value);
+    }
+    for (const child of [].concat(children ?? [])) {
+      if (child === null || child === undefined || child === false) continue;
+      node.append(child instanceof Node ? child : document.createTextNode(String(child)));
+    }
+    return node;
+  }
+  const svgEl = (tag, attrs) => {
+    const node = document.createElementNS('http://www.w3.org/2000/svg', tag);
+    for (const [k, v] of Object.entries(attrs || {})) node.setAttribute(k, v);
+    return node;
+  };
+  function link(url) {
+    let ok = false;
+    try { ok = ['http:', 'https:'].includes(new URL(url).protocol); } catch (e) { ok = false; }
+    return ok ? el('a', { href: url, target: '_blank', rel: 'noopener noreferrer', text: url }) : el('span', { text: url });
+  }
+  function ms(v) {
+    if (v === null || v === undefined || isNaN(v)) return '';
+    if (v >= 10000) return (v / 1000).toFixed(0) + ' s';
+    if (v >= 1000) return (v / 1000).toFixed(1) + ' s';
+    return Math.max(0, Math.round(v)) + ' ms';
+  }
+  function dm(value, pos, neg) {
+    if (value === null || value === undefined || isNaN(value)) return '—';
+    const a = Math.abs(value), d = Math.floor(a), m = (a - d) * 60;
+    return `${d}°${m.toFixed(1).padStart(4, '0')}′ ${value >= 0 ? pos : neg}`;
+  }
+  const coords = (p) => (p.lat === null || p.lat === undefined) ? 'No position on record' : `${dm(p.lat, 'N', 'S')}  ${dm(p.lon, 'E', 'W')}`;
+  function setChip(id, value, cls) {
+    const chip = $(id);
+    chip.querySelector('.v').textContent = value;
+    chip.classList.remove('on', 'sample', 'warn');
+    if (cls) chip.classList.add(cls);
+  }
+  async function api(path) {
+    let response;
+    try { response = await fetch(path); } catch (e) { throw new Error('The server did not answer. Is run.py --serve still running?'); }
+    const body = await response.json().catch(() => null);
+    if (!response.ok) throw new Error(`${response.status}: ${(body && body.detail) || response.statusText}`);
+    return body;
+  }
+  function alertBox(kind, title, message, retry) {
+    const box = $('alert');
+    box.className = 'alert ' + kind;
+    $('alert-title').textContent = title;
+    $('alert-msg').textContent = ' ' + message;
+    $('alert-retry').hidden = !retry;
+    box.hidden = false;
+  }
+
+  /* ---------- startup ---------- */
+  async function init() {
+    renderStations();
+    plotEmpty();
+    try {
+      const health = await api('/healthz');
+      setChip('chip-mode', health.sample_mode ? 'Sample' : 'Live', health.sample_mode ? 'sample' : 'on');
+    } catch (e) {
+      setChip('chip-mode', 'Offline', 'warn');
+    }
+    try {
+      const data = await api('/zones');
+      $('zone').replaceChildren(...data.zones.map((z) => el('option', { value: z, text: z })));
+      if (data.zones.includes('Bermuda')) $('zone').value = 'Bermuda';
+      const source = { live: 'live Zetaris', sample: 'sample data', fallback: 'sample data (Zetaris unavailable)' }[data.mode] || data.mode;
+      $('zones-src').replaceChildren(el('span', {}, [el('b', { text: String(data.zones.length) }), ` zones from ${source}`]));
+      setChip('chip-zetaris', data.mode, data.mode === 'live' ? 'on' : data.mode === 'fallback' ? 'warn' : 'sample');
+      $('zone').disabled = !data.zones.length;
+      $('run').disabled = !data.zones.length;
+    } catch (e) {
+      $('zone').replaceChildren(el('option', { text: 'No zones available' }));
+      $('zones-src').textContent = 'Zones could not be loaded';
+      alertBox('error', 'Zones unavailable', e.message, false);
+    }
+    loadLeaflet();
+  }
+
+  /* ---------- run + stream ---------- */
+  function resetForRun(zone) {
+    $('alert').hidden = true;
+    state.queue = []; state.rows = []; state.round = 0; state.start = null; state.lastTs = null; state.recalled = 0;
+    state.gotResult = false; state.pendingResult = null; state.selected = null;
+    $('track').replaceChildren();
+    $('counts').classList.add('loading');
+    for (const id of ['c-pass', 'c-flag', 'c-retries', 'c-memory', 'c-duration']) { $(id).textContent = '—'; $(id).classList.remove('idle', 'zero'); }
+    setLive('on', 'Streaming');
+    setChip('chip-hmem', 'recalling…', null);
+    setChip('chip-llm', 'waiting…', null);
+    $('chip-nemotron').hidden = true;
+    $('lower').hidden = true;
+    $('chart-source').hidden = true;
+    $('chart-readout').textContent = zone;
+    plotEmpty();
+    $('chart-overlay').className = 'overlay busy';
+    $('chart-overlay').replaceChildren(el('strong', { text: `Reading ${zone}` }), el('span', { text: 'Ports are pinned when the run completes.' }));
+    $('chart-overlay').hidden = false;
+    $('launch-meta').replaceChildren(el('span', { text: `Running ${zone}…` }));
+    const button = $('run');
+    button.disabled = true; button.classList.add('busy');
+    button.querySelector('.label').textContent = 'Running…';
+    $('zone').disabled = true;
+  }
+
+  function startRun() {
+    if (state.running) return;
+    const zone = $('zone').value;
+    if (!zone) return;
+    state.running = true;
+    resetForRun(zone);
+    const source = new EventSource('/run/stream?zone=' + encodeURIComponent(zone));
+    state.source = source;
+    source.addEventListener('trace', (e) => enqueue(JSON.parse(e.data)));
+    source.addEventListener('result', (e) => {
+      source.close();  // otherwise EventSource reconnects and starts a second run
+      state.gotResult = true;
+      state.pendingResult = JSON.parse(e.data);
+      drain();
+    });
+    source.onerror = () => {
+      if (state.gotResult) return;
+      source.close();
+      failRun('The connection to the run stream was lost. Check that run.py --serve is still running, then try again.');
+    };
+  }
+
+  function failRun(message) {
+    clearTimeout(state.timer); state.timer = null; state.queue = [];
+    finishRun();
+    setLive('fail', 'Stream lost');
+    $('counts').classList.remove('loading');
+    for (const id of ['c-pass', 'c-flag', 'c-retries', 'c-memory', 'c-duration']) { $(id).textContent = '—'; $(id).className = 'idle'; }
+    setChip('chip-hmem', '—', null);
+    setChip('chip-llm', '—', null);
+    $('chip-nemotron').hidden = true;
+    $('launch-meta').replaceChildren(el('span', { text: 'No run completed' }));
+    if (!state.rows.length) $('track').replaceChildren(el('li', { class: 'step station' }, [
+      el('span'), el('span', { class: 'node' }),
+      el('div', {}, [el('div', { class: 'act', text: 'No events received' }), el('div', { class: 'detail', text: 'The stream closed before the first agent step.' })]),
+      el('span')]));
+    $('chart-overlay').className = 'overlay';
+    $('chart-overlay').replaceChildren(el('strong', { text: 'No result' }), el('span', { text: 'The run did not complete, so nothing was plotted.' }));
+    $('chart-overlay').hidden = false;
+    alertBox('error', 'Run failed', message, true);
+  }
+
+  function finishRun() {
+    state.running = false;
+    const button = $('run');
+    button.disabled = false; button.classList.remove('busy');
+    button.querySelector('.label').textContent = 'Run verification';
+    $('zone').disabled = false;
+  }
+
+  function enqueue(event) {
+    state.queue.push(event);
+    if (!state.timer) drain();
+  }
+
+  function drain() {
+    if (state.timer) return;
+    const step = () => {
+      const event = state.queue.shift();
+      if (event) appendEvent(event);
+      if (state.queue.length) { state.timer = setTimeout(step, STAGGER_MS); return; }
+      state.timer = null;
+      if (state.pendingResult) {  // all trace events shown: now render the result once
+        const result = state.pendingResult;
+        state.pendingResult = null;
+        state.result = result;
+        renderResult(result);
+        finishRun();
+      }
+    };
+    state.timer = setTimeout(step, 0);
+  }
+
+  function setLive(cls, text) {
+    $('live').className = 'live ' + (cls || '');
+    $('live-text').textContent = text;
+  }
+
+  /* ---------- agent log ---------- */
+  function renderStations() {
+    $('track').replaceChildren(...STATIONS.map(([agent, what], i) => el('li', { class: `step station ag-${agent}` }, [
+      el('span', { class: 't mono', text: String(i + 1).padStart(2, '0') }),
+      el('span', { class: 'node' }),
+      el('div', {}, [el('div', { class: 'who' }, el('span', { class: 'agent', text: agent })), el('div', { class: 'detail', text: what })]),
+      el('span')
+    ])));
+  }
+
+  function verdictSpan(v) {
+    const cls = v === 'pass' ? 'ok' : v === 'flag' ? 'flagged' : 'retry';
+    return el('span', { class: cls, text: v });
+  }
+
+  function detailNodes(e) {
+    const parts = [];
+    const port = e.input_summary && e.input_summary.port_name;
+    switch (e.action) {
+      case 'run_start': parts.push(`zone ${e.input_summary.zone_name}`); break;
+      case 'zetaris_query': parts.push(`${e.mode} · ${e.row_count} row${e.row_count === 1 ? '' : 's'} · ${e.status} · ${ms(e.duration_ms)}`); break;
+      case 'zetaris_fallback': parts.push(e.reason || 'live query failed'); break;
+      case 'recall': parts.push(`${port} · ${(e.memories || []).length} memor${(e.memories || []).length === 1 ? 'y' : 'ies'}`); break;
+      case 'evaluate_port': case 'prepare_retry': case 'finalise_port': return [port, ' · ', verdictSpan(e.verdict)];
+      case 'research_port': parts.push(`${port} · ${e.outcome === 'hmem_official_source' ? 'used remembered official source' : e.outcome}`); break;
+      case 'generate': parts.push(`${e.provider} · ${e.served_model}${e.fallback_reason ? ' · ' + e.fallback_reason : ''}`); break;
+      case 'brief': parts.push(`${e.provider} · ${e.served_model}`); break;
+      case 'remember': parts.push(`${port} · ${e.outcome} · ${e.memory_id}`); break;
+      case 'run_end': parts.push(e.status + (e.error ? ` · ${e.error}` : '')); break;
+      default: if (port) parts.push(port);
+    }
+    return parts;
+  }
+
+  function liveChips(e) {
+    if (e.agent_name === 'ZetarisAdapter') {
+      const mode = e.action === 'zetaris_fallback' ? 'fallback' : e.mode;
+      setChip('chip-zetaris', mode, mode === 'live' ? 'on' : mode === 'fallback' ? 'warn' : 'sample');
+    }
+    if (e.action === 'generate') {
+      setChip('chip-llm', `${e.provider} · ${e.served_model}`, e.provider === 'sample' ? 'sample' : 'on');
+      nemotron(e.provider, e.served_model);
+    }
+    if (e.action === 'recall') {
+      state.recalled += (e.memories || []).length;
+      setChip('chip-hmem', `${state.recalled} recalled`, 'on');
+    }
+    if (e.action === 'remember') setChip('chip-hmem', `${state.recalled} recalled · ${e.outcome}`, 'on');
+  }
+
+  function nemotron(provider, model) {
+    const show = /nemotron/i.test(model || '');
+    $('chip-nemotron').hidden = !show;
+    if (show) $('nemotron-text').textContent = `Nemotron via ${provider === 'nightshift' ? 'Nightshift' : provider === 'nvidia' ? 'NVIDIA' : provider}`;
+  }
+
+  function appendEvent(e) {
+    const t = Date.parse(e.timestamp);
+    if (state.start === null) state.start = t;
+    state.lastTs = e.timestamp;
+    liveChips(e);
+    const last = state.rows[state.rows.length - 1];
+    if (last && last.agent === e.agent_name && last.action === e.action) {
+      last.events.push(e);
+      last.details.append(el('div', { class: 'detail' }, detailNodes(e)));
+      addHandoff(last, e);
+      last.own += Number(e.duration_ms) || 0;
+      setDuration(last, last.own || null);
+      return;
+    }
+    if (last) {
+      last.li.classList.remove('current');
+      if (!last.own) setDuration(last, t - last.t);
+    }
+    if (e.agent_name === 'ResearchAgent') {
+      state.round += 1;
+      $('track').append(el('li', { class: 'round' + (REDUCED ? '' : ' enter'), text: `Retry round ${state.round}` }));
+    }
+    const details = el('div', {}, el('div', { class: 'detail' }, detailNodes(e)));
+    const dur = el('span', { class: 'dur mono' });
+    const li = el('li', { class: `step current ag-${e.agent_name}` + (REDUCED ? '' : ' enter') }, [
+      el('span', { class: 't mono', text: 'T+' + ms(t - state.start) }),
+      el('span', { class: 'node' }),
+      el('div', {}, [el('div', { class: 'who' }, [el('span', { class: 'agent', text: e.agent_name }), el('span', { class: 'act', text: ACTIONS[e.action] || e.action })]), details]),
+      dur
+    ]);
+    const row = { agent: e.agent_name, action: e.action, events: [e], li, details, dur, t, own: Number(e.duration_ms) || 0, handoffs: new Set() };
+    addHandoff(row, e);
+    if (row.own) setDuration(row, row.own);
+    state.rows.push(row);
+    $('track').append(li);
+    const scroller = $('log-scroll');
+    scroller.scrollTop = scroller.scrollHeight;
+    if (e.action === 'run_end') {
+      li.classList.remove('current');
+      setLive(e.status === 'ok' ? 'done' : 'fail', e.status === 'ok' ? `Done · ${ms(e.timings_ms && e.timings_ms.total)}` : 'Finished with an error');
+    }
+  }
+
+  function setDuration(row, value) { row.dur.textContent = value === null ? '' : ms(value); }
+
+  function addHandoff(row, e) {
+    if (!e.handoff) return;
+    const key = `${e.handoff.from}>${e.handoff.to}`;
+    if (row.handoffs.has(key)) return;
+    row.handoffs.add(key);
+    const arrow = svgEl('svg', { viewBox: '0 0 14 10', 'aria-hidden': 'true' });
+    arrow.append(svgEl('path', { d: 'M1 5h10M8 1.5L11.5 5 8 8.5', fill: 'none', stroke: 'currentColor', 'stroke-width': '1.4' }));
+    row.details.append(el('div', {}, el('span', { class: 'handoff' }, ['handoff ', el('b', { text: e.handoff.from }), arrow, el('b', { text: e.handoff.to })])));
+  }
+
+  /* ---------- result ---------- */
+  function renderResult(r) {
+    $('counts').classList.remove('loading');
+    const summary = r.summary || {};
+    const counts = { 'c-pass': summary.pass || 0,
+                     'c-flag': (summary.flag || 0) + (summary.retry || 0) + (summary.unevaluated || 0),
+                     'c-retries': r.retries, 'c-memory': r.memory ? r.memory.recalled : 0 };
+    for (const [id, value] of Object.entries(counts)) {
+      $(id).textContent = value;
+      $(id).classList.toggle('zero', !value);
+    }
+    const total = r.timings_ms && r.timings_ms.total;
+    $('c-duration').replaceChildren(total >= 1000 ? (total / 1000).toFixed(1) : String(Math.round(total || 0)), el('small', { text: total >= 1000 ? 's' : 'ms' }));
+    setChip('chip-zetaris', r.components.zetaris || '—', r.components.zetaris === 'live' ? 'on' : r.components.zetaris === 'fallback' ? 'warn' : 'sample');
+    setChip('chip-hmem', `${r.memory.recalled} recalled · ${r.memory.remembered ? 'stored' : 'not stored'}`, r.memory.remembered ? 'on' : 'warn');
+    const llm = r.llm || {};
+    setChip('chip-llm', `${llm.provider || 'none'} · ${llm.model || 'none'}`, llm.provider && llm.provider !== 'sample' ? 'on' : 'sample');
+    nemotron(llm.provider, llm.model);
+    $('launch-meta').replaceChildren(
+      el('span', { title: r.run_id }, ['Run ', el('b', { class: 'mono', text: r.run_id })]),
+      el('span', { title: r.trace_file }, ['Trace ', el('b', { class: 'mono', text: r.trace_file })])
+    );
+    if (r.error) alertBox('warn', 'Partial result', r.error, true);
+    renderPorts(r.ports || []);
+    renderBrief(r);
+    plotPorts(r.ports || [], r.zone);
+    $('lower').hidden = false;
+  }
+
+  function splitReasons(reasons) {
+    const sup = [], con = [];
+    for (const reason of reasons || []) (SUPPORTING.test(reason) ? sup : con).push(reason);
+    return { sup, con };
+  }
+
+  function researchText(research) {
+    if (!research) return 'not needed';
+    return research.outcome === 'hmem_official_source' ? 'used a remembered official source' : research.outcome;
+  }
+
+  function renderPorts(ports) {
+    $('ports-count').textContent = `${ports.length} port${ports.length === 1 ? '' : 's'}`;
+    if (!ports.length) {
+      $('ports').replaceChildren(el('p', { class: 'readout', text: 'No ports of entry were returned for this zone.' }));
+      return;
+    }
+    $('ports').replaceChildren(...ports.map((p, i) => {
+      const verdict = p.verdict || 'unevaluated';
+      const conf = Math.max(0, Math.min(100, Number(p.confidence) || 0));
+      const { sup, con } = splitReasons(p.reasons_en);
+      const list = (items) => items.length ? el('ul', {}, items.map((x) => el('li', { text: x }))) : el('ul', {}, el('li', { class: 'none', text: 'none' }));
+      const card = el('article', { class: 'port', id: `port-${i}`, style: `--pc:${VERDICT_COLOR[verdict]}` }, [
+        el('div', { class: 'port-head' }, [
+          el('h3', { text: p.name }),
+          el('span', { class: 'pill ' + verdict, text: verdict }),
+          p.lat !== null && p.lat !== undefined ? el('button', { class: 'locate', type: 'button', text: 'Locate', 'aria-label': `Locate ${p.name} on the chart`, onclick: () => select(i, true) }) : null
+        ]),
+        el('div', { class: 'conf' }, [
+          el('div', { class: 'bar-track', role: 'img', 'aria-label': `Confidence ${conf} out of 100` }, el('div', { class: 'bar-fill', style: `width:${conf}%` })),
+          el('span', { class: 'mono', text: `${p.confidence ?? '—'}/100` })
+        ]),
+        el('div', { class: 'coords mono', text: coords(p) }),
+        el('div', { class: 'reasons' }, [
+          el('div', { class: 'sup' }, [el('h4', { text: 'Supporting' }), list(sup)]),
+          el('div', { class: 'con' }, [el('h4', { text: 'Concerns' }), list(con)])
+        ]),
+        el('div', { class: 'src' }, [
+          el('h4', { text: 'Sources' }),
+          p.sources && p.sources.length
+            ? el('ul', {}, p.sources.map((s) => el('li', {}, [link(s.url), s.provenance === 'hmem' ? el('span', { class: 'mem-tag', text: 'from memory' }) : null])))
+            : el('ul', {}, el('li', { class: 'none', text: 'No source on record' }))
+        ]),
+        el('div', { class: 'port-foot' }, [
+          el('span', {}, ['Memories recalled ', el('b', { text: String(p.memories_recalled) })]),
+          el('span', {}, ['Research ', el('b', { text: researchText(p.research) })])
+        ])
+      ]);
+      return card;
+    }));
+  }
+
+  function formatBrief(text, ports) {
+    const names = ports.map((p) => p.name).filter(Boolean).sort((a, b) => b.length - a.length);
+    const body = $('brief-body');
+    body.replaceChildren();
+    let section = null, list = null;
+    const open = (title) => { section = el('section', {}, title ? el('h4', { text: title }) : null); body.append(section); list = null; };
+    const emphasise = (line) => {
+      const name = names.find((n) => line.includes(n));
+      if (!name) return [line];
+      const at = line.indexOf(name);
+      return [line.slice(0, at), el('strong', { text: name }), line.slice(at + name.length)];
+    };
+    for (const raw of String(text || '').split('\n')) {
+      const line = raw.trim();
+      if (!line || /^clearance brief\b/i.test(line) || /^indicative only/i.test(line)) continue;
+      const heading = line.match(/^([A-Za-z][A-Za-z ,()/-]{2,60}?):\s*(.*)$/);
+      const item = line.match(/^(?:[-•*]|\d+[.)])\s+(.*)$/);
+      if (item) {
+        if (!section) open(null);
+        if (!list) { list = el(/^\d/.test(line) ? 'ol' : 'ul'); section.append(list); }
+        list.append(el('li', {}, emphasise(item[1])));
+      } else if (heading && !/^https?$/i.test(heading[1])) {
+        open(heading[1]);
+        if (heading[2]) section.append(el('p', {}, emphasise(heading[2])));
+      } else {
+        if (!section) open(null);
+        section.append(el('p', {}, emphasise(line)));
+        list = null;
+      }
+    }
+    const urls = [];
+    for (const p of ports) for (const s of p.sources || []) if (!urls.some((u) => u.url === s.url)) urls.push(s);
+    open('Sources');
+    section.append(urls.length
+      ? el('ul', { class: 'brief-sources' }, urls.map((s) => el('li', {}, [link(s.url), s.provenance === 'hmem' ? el('span', { class: 'mem-tag', text: 'from memory' }) : null])))
+      : el('p', { text: 'No source on record for this zone.' }));
+  }
+
+  function renderBrief(r) {
+    $('brief-title').textContent = `${r.zone}`;
+    $('brief-run').textContent = state.lastTs ? state.lastTs.slice(0, 16).replace('T', ' ') + ' UTC' : r.run_id;
+    formatBrief(r.brief, r.ports || []);
+    const llm = r.llm || {};
+    $('brief-caption').replaceChildren(...(llm.provider === 'sample'
+      ? ['Built deterministically from the verified port data (', el('b', { text: 'sample mode' }), ', no model call).']
+      : ['Written by ', el('b', { class: 'mono', text: llm.model }), ' via ', el('b', { text: llm.provider === 'nightshift' ? 'Meterless Nightshift' : llm.provider }), ', from the verified port data.']));
+  }
+
+  /* ---------- chart: Leaflet with an offline SVG fallback ---------- */
+  function loadLeaflet() {
+    if (new URLSearchParams(location.search).get('chart') === 'plot') {  // force the offline plot
+      state.leafletReady = Promise.resolve(false);
+      return;
+    }
+    state.leafletReady = new Promise((resolve) => {
+      const done = (ok) => { clearTimeout(timer); resolve(ok && !!window.L); };
+      const timer = setTimeout(() => done(false), 4000);
+      const css = el('link', { rel: 'stylesheet', href: LEAFLET.css, integrity: LEAFLET.cssSri, crossorigin: '' });
+      const js = el('script', { src: LEAFLET.js, integrity: LEAFLET.jsSri, crossorigin: '' });
+      js.onload = () => done(true);
+      js.onerror = () => done(false);
+      document.head.append(css, js);
+    });
+  }
+
+  async function plotPorts(ports, zone) {
+    const located = ports.map((p, i) => ({ ...p, i })).filter((p) => typeof p.lat === 'number' && typeof p.lon === 'number');
+    $('chart-readout').textContent = located.length
+      ? `${zone} · ${located.length === 1 ? coords(located[0]) : located.length + ' positions'}`
+      : `${zone} · no positions on record`;
+    const overlay = $('chart-overlay');
+    if (!located.length) {
+      overlay.className = 'overlay'; overlay.hidden = false;
+      overlay.replaceChildren(el('strong', { text: 'No positions to plot' }), el('span', { text: 'The ports returned for this zone have no coordinates.' }));
+      plotEmpty();
+      return;
+    }
+    overlay.hidden = true;
+    const useLeaflet = !state.tilesFailed && await state.leafletReady;
+    if (useLeaflet) leafletPlot(located); else svgPlot(located);
+  }
+
+  function leafletPlot(ports) {
+    const L = window.L;
+    $('plot').hidden = true;
+    $('map').hidden = false;
+    $('chart-source').textContent = 'OpenStreetMap';
+    $('chart-source').hidden = false;
+    if (!state.leaflet) {
+      // Wheel zoom only after a click on the chart, so scrolling the page never zooms by accident.
+      const map = L.map('map', { zoomControl: true, attributionControl: true, worldCopyJump: true, scrollWheelZoom: false });
+      map.on('click', () => map.scrollWheelZoom.enable());
+      map.on('mouseout', () => map.scrollWheelZoom.disable());
+      const tiles = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 18, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+      }).addTo(map);
+      let loaded = 0, failed = 0;
+      tiles.on('tileload', () => { loaded += 1; });
+      tiles.on('tileerror', () => {
+        failed += 1;
+        if (!loaded && failed >= 4 && !state.tilesFailed) { state.tilesFailed = true; svgPlot(state.located || []); }
+      });
+      state.leaflet = { map, layer: L.layerGroup().addTo(map), markers: [] };
+    }
+    const { map, layer } = state.leaflet;
+    state.located = ports;
+    layer.clearLayers();
+    state.leaflet.markers = [];
+    const latlngs = [];
+    for (const p of ports) {
+      const marker = L.circleMarker([p.lat, p.lon], {
+        radius: 9, color: '#09131f', weight: 2, fillColor: VERDICT_COLOR[p.verdict || 'unevaluated'], fillOpacity: .95
+      }).addTo(layer);
+      marker.bindTooltip(p.name, { permanent: ports.length <= 8, direction: 'right', offset: [10, 0], className: 'pin-label' });
+      marker.on('click', () => select(p.i, false));
+      state.leaflet.markers[p.i] = marker;
+      latlngs.push([p.lat, p.lon]);
+    }
+    map.invalidateSize();
+    if (latlngs.length === 1) map.setView(latlngs[0], 10);
+    else map.fitBounds(L.latLngBounds(latlngs).pad(.35), { maxZoom: 10 });
+  }
+
+  function niceStep(span) {
+    for (const s of [0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10, 20]) if (span / s <= 6) return s;
+    return 30;
+  }
+
+  function plotFrame() {
+    const box = $('plot').getBoundingClientRect();
+    const svg = svgEl('svg', { viewBox: `0 0 ${Math.max(box.width, 300)} ${Math.max(box.height, 200)}`, role: 'img' });
+    const defs = svgEl('defs');
+    const grad = svgEl('radialGradient', { id: 'sea', cx: '50%', cy: '45%', r: '75%' });
+    grad.append(svgEl('stop', { offset: '0%', 'stop-color': '#11243a' }), svgEl('stop', { offset: '100%', 'stop-color': '#0a1626' }));
+    defs.append(grad);
+    svg.append(defs, svgEl('rect', { width: '100%', height: '100%', fill: 'url(#sea)' }));
+    return { svg, W: Math.max(box.width, 300), H: Math.max(box.height, 200) };
+  }
+
+  function plotEmpty() {
+    $('map').hidden = true; $('plot').hidden = false;
+    const { svg, W, H } = plotFrame();
+    for (let x = 0; x <= W; x += 64) svg.append(svgEl('line', { x1: x, y1: 0, x2: x, y2: H, stroke: '#16283f', 'stroke-width': 1 }));
+    for (let y = 0; y <= H; y += 64) svg.append(svgEl('line', { x1: 0, y1: y, x2: W, y2: y, stroke: '#16283f', 'stroke-width': 1 }));
+    for (const r of [60, 110, 160]) svg.append(svgEl('circle', { cx: W / 2, cy: H / 2, r, fill: 'none', stroke: '#1a2f4a', 'stroke-dasharray': '3 6' }));
+    $('plot').replaceChildren(svg);
+  }
+
+  function svgPlot(ports) {
+    $('map').hidden = true; $('plot').hidden = false;
+    $('chart-source').textContent = 'Offline plot';
+    $('chart-source').hidden = false;
+    state.located = ports;
+    const { svg, W, H } = plotFrame();
+    const mid = ports.reduce((s, p) => s + p.lat, 0) / ports.length;
+    const k = Math.cos(mid * Math.PI / 180) || 1;
+    let minLat = Math.min(...ports.map((p) => p.lat)), maxLat = Math.max(...ports.map((p) => p.lat));
+    let minLon = Math.min(...ports.map((p) => p.lon)), maxLon = Math.max(...ports.map((p) => p.lon));
+    const pad = Math.max(maxLat - minLat, (maxLon - minLon) * k, 0.4) * 0.45;
+    minLat -= pad; maxLat += pad; minLon -= pad / k; maxLon += pad / k;
+    const scale = Math.min((W - 80) / ((maxLon - minLon) * k), (H - 60) / (maxLat - minLat));
+    const cx = W / 2, cy = H / 2, mLon = (minLon + maxLon) / 2, mLat = (minLat + maxLat) / 2;
+    const X = (lon) => cx + (lon - mLon) * k * scale, Y = (lat) => cy - (lat - mLat) * scale;
+    const latSpan = (H / scale), lonSpan = (W / scale / k);
+    const step = niceStep(Math.max(latSpan, lonSpan));
+    for (let lat = Math.ceil((mLat - latSpan / 2) / step) * step; lat <= mLat + latSpan / 2; lat += step) {
+      svg.append(svgEl('line', { x1: 0, y1: Y(lat), x2: W, y2: Y(lat), stroke: '#1b3150', 'stroke-width': 1 }));
+      if (Y(lat) < 20) continue;  // no clipped label at the top edge
+      const label = svgEl('text', { x: 8, y: Y(lat) - 5, fill: '#5e7592', 'font-size': 11, 'font-family': 'ui-monospace, Menlo, monospace' });
+      label.textContent = dm(lat, 'N', 'S'); svg.append(label);
+    }
+    for (let lon = Math.ceil((mLon - lonSpan / 2) / step) * step; lon <= mLon + lonSpan / 2; lon += step) {
+      svg.append(svgEl('line', { x1: X(lon), y1: 0, x2: X(lon), y2: H, stroke: '#1b3150', 'stroke-width': 1 }));
+      if (X(lon) > W - 90) continue;  // no clipped label at the right edge
+      const label = svgEl('text', { x: X(lon) + 5, y: H - 8, fill: '#5e7592', 'font-size': 11, 'font-family': 'ui-monospace, Menlo, monospace' });
+      label.textContent = dm(lon, 'E', 'W'); svg.append(label);
+    }
+    state.svgPins = [];
+    for (const p of ports) {
+      const x = X(p.lon), y = Y(p.lat), color = VERDICT_COLOR[p.verdict || 'unevaluated'];
+      const g = svgEl('g', { tabindex: '0', role: 'button', 'aria-label': `${p.name}, ${p.verdict}`, style: 'cursor:pointer' });
+      for (const r of [28, 48]) g.append(svgEl('circle', { cx: x, cy: y, r, fill: 'none', stroke: color, 'stroke-opacity': .18, 'stroke-dasharray': '2 5' }));
+      const ring = svgEl('circle', { cx: x, cy: y, r: 15, fill: 'none', stroke: '#e9eff6', 'stroke-width': 2, opacity: 0 });
+      g.append(ring, svgEl('circle', { cx: x, cy: y, r: 9, fill: color, stroke: '#09131f', 'stroke-width': 2 }));
+      const label = svgEl('text', { x: x + 16, y: y + 5, fill: '#e9eff6', 'font-size': 14, 'font-weight': 600 });
+      label.textContent = p.name;
+      g.append(label);
+      g.addEventListener('click', () => select(p.i, false));
+      g.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); select(p.i, false); } });
+      svg.append(g);
+      state.svgPins[p.i] = ring;
+    }
+    $('plot').replaceChildren(svg);
+  }
+
+  function select(i, fromCard) {
+    state.selected = i;
+    document.querySelectorAll('.port').forEach((card, j) => card.classList.toggle('selected', j === i));
+    const card = $(`port-${i}`);
+    if (card && !fromCard) card.scrollIntoView({ behavior: REDUCED ? 'auto' : 'smooth', block: 'nearest' });
+    if (state.leaflet && !$('map').hidden) {
+      state.leaflet.markers.forEach((m, j) => m && m.setStyle({ radius: j === i ? 13 : 9, color: j === i ? '#e9eff6' : '#09131f' }));
+      const marker = state.leaflet.markers[i];
+      if (marker) { marker.openTooltip(); if (fromCard) state.leaflet.map.panTo(marker.getLatLng()); }
+    }
+    (state.svgPins || []).forEach((ring, j) => ring && ring.setAttribute('opacity', j === i ? 1 : 0));
+    if (fromCard) {  // bring the whole chart into view, below the sticky top bar
+      const top = $('chart-h').closest('.panel').getBoundingClientRect().top + window.scrollY - $('chart-h').closest('main').offsetTop;
+      window.scrollTo({ top: Math.max(0, top), behavior: REDUCED ? 'auto' : 'smooth' });
+    }
+  }
+
+  $('run').addEventListener('click', startRun);
+  $('alert-retry').addEventListener('click', startRun);
+  window.addEventListener('resize', () => {
+    if (!$('plot').hidden && state.located && state.located.length) svgPlot(state.located);
+    else if (!$('plot').hidden && !state.result) plotEmpty();
+  });
+  init();
+})();
+</script>
+</body>
+</html>
