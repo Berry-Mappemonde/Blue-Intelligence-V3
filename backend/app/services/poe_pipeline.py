@@ -396,6 +396,11 @@ def qualify_unclos(zone: dict) -> dict | None:
         return {"code": "overlapping_claim", "basis": "UNCLOS art. 74/83"}
     if "joint" in pol:
         return {"code": "joint_regime", "basis": "UNCLOS art. 74(3)/83(3)"}
+    # UK: every port is a PoE via the official app. No designated list, and
+    # that absence is not the sovereign_entry "no PoE" bucket.
+    from app.services.poe_rules import is_uk_app_entry, uk_app_entry_qualification
+    if is_uk_app_entry(zone):
+        return uk_app_entry_qualification()
     if UNINHABITED_RE.search(name):
         return {"code": "uninhabited", "basis": "UNCLOS art. 2 & 25"}
     return {"code": "sovereign_entry", "basis": "UNCLOS art. 17-19"}

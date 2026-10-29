@@ -332,7 +332,9 @@ def kept_official_urls(fiche: dict | None, choices: dict | None,
         if url not in seen:
             seen.add(url)
             out.append(url)
-    return out
+    from app.services.poe_rules import is_noonsite_url
+    # A noonsite.com URL never lights Gold, even if the reviewer ticked it.
+    return [u for u in out if not is_noonsite_url(u)]
 
 
 def dropped_official_urls(fiche: dict | None, choices: dict | None) -> list[str]:
