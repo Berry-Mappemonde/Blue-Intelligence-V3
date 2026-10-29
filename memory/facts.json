@@ -1,0 +1,847 @@
+{
+ "marina:La Rochelle:portdesminimes": {
+  "name": "Port des Minimes",
+  "runs": [
+   {
+    "run_id": "00000000T000000-v2-historical",
+    "level": "C0",
+    "lat": 46.14639,
+    "lon": -1.16278,
+    "sources": [
+     "https://www.portlarochelle.com"
+    ]
+   }
+  ],
+  "best": {
+   "from_run": "00000000T000000-v2-historical",
+   "level": "C0"
+  }
+ },
+ "marina:Ajaccio (Corse):portcharlesornano": {
+  "name": "Port Charles Ornano",
+  "runs": [
+   {
+    "run_id": "00000000T000000-v2-historical",
+    "level": "C0",
+    "lat": 41.92528,
+    "lon": 8.72611,
+    "sources": [
+     "https://www.ajaccio.fr"
+    ]
+   }
+  ],
+  "best": {
+   "from_run": "00000000T000000-v2-historical",
+   "level": "C0"
+  }
+ },
+ "marina:Iles Canari:marinarubicon": {
+  "name": "Marina Rubicon",
+  "runs": [
+   {
+    "run_id": "00000000T000000-v2-historical",
+    "level": "C0",
+    "lat": 28.85472,
+    "lon": -13.81361,
+    "sources": [
+     "https://www.marinarubicon.com"
+    ]
+   }
+  ],
+  "best": {
+   "from_run": "00000000T000000-v2-historical",
+   "level": "C0"
+  }
+ },
+ "marina:Point intermédiaire Cap Verde:mindelomarina": {
+  "name": "Mindelo Marina",
+  "runs": [
+   {
+    "run_id": "00000000T000000-v2-historical",
+    "level": "C0",
+    "lat": 16.88519,
+    "lon": -25.00378,
+    "sources": [
+     "https://mindelomarina.com"
+    ]
+   }
+  ],
+  "best": {
+   "from_run": "00000000T000000-v2-historical",
+   "level": "C0"
+  }
+ },
+ "marina:Sainte Lucie:rodneybaymarina": {
+  "name": "Rodney Bay Marina",
+  "runs": [
+   {
+    "run_id": "00000000T000000-v2-historical",
+    "level": "C0",
+    "lat": 14.075,
+    "lon": -60.94722,
+    "sources": [
+     "https://www.igymarinas.com/marinas/rodney-bay-marina"
+    ]
+   }
+  ],
+  "best": {
+   "from_run": "00000000T000000-v2-historical",
+   "level": "C0"
+  }
+ },
+ "marina:Fort-de-France (Martinique):marinaetangzabricots": {
+  "name": "Marina Etang Z'Abricots",
+  "runs": [
+   {
+    "run_id": "00000000T000000-v2-historical",
+    "level": "C0",
+    "lat": 14.60861,
+    "lon": -60.99361,
+    "sources": []
+   }
+  ],
+  "best": {
+   "from_run": "00000000T000000-v2-historical",
+   "level": "C0"
+  }
+ },
+ "marina:Pointe-à-Pitre (Guadeloupe):marinabasdufort": {
+  "name": "Marina Bas-du-Fort",
+  "runs": [
+   {
+    "run_id": "00000000T000000-v2-historical",
+    "level": "C0",
+    "lat": 16.22528,
+    "lon": -61.53806,
+    "sources": [
+     "https://marinaguadeloupe.com"
+    ]
+   }
+  ],
+  "best": {
+   "from_run": "00000000T000000-v2-historical",
+   "level": "C0"
+  }
+ },
+ "marina:Gustavia (Saint-Barthélemy):portdegustavia": {
+  "name": "Port de Gustavia",
+  "runs": [
+   {
+    "run_id": "00000000T000000-v2-historical",
+    "level": "C0",
+    "lat": 17.89694,
+    "lon": -62.85278,
+    "sources": []
+   }
+  ],
+  "best": {
+   "from_run": "00000000T000000-v2-historical",
+   "level": "C0"
+  }
+ },
+ "marina:Marigot (Saint-Martin):fortlouismarina": {
+  "name": "Fort Louis Marina",
+  "runs": [
+   {
+    "run_id": "00000000T000000-v2-historical",
+    "level": "C0",
+    "lat": 18.06806,
+    "lon": -63.09028,
+    "sources": []
+   }
+  ],
+  "best": {
+   "from_run": "00000000T000000-v2-historical",
+   "level": "C0"
+  }
+ },
+ "marina:Cayenne (Guyane):cayenneportdularivot": {
+  "name": "Cayenne — Port du Larivot",
+  "runs": [
+   {
+    "run_id": "00000000T000000-v2-historical",
+    "level": "C0",
+    "lat": 4.90111,
+    "lon": -52.36528,
+    "sources": []
+   }
+  ],
+  "best": {
+   "from_run": "00000000T000000-v2-historical",
+   "level": "C0"
+  }
+ },
+ "marina:Cayenne (Guyane):iletlameremouillage": {
+  "name": "Ilet la Mère (mouillage)",
+  "runs": [
+   {
+    "run_id": "00000000T000000-v2-historical",
+    "level": "C0",
+    "lat": 4.86556,
+    "lon": -52.19056,
+    "sources": []
+   }
+  ],
+  "best": {
+   "from_run": "00000000T000000-v2-historical",
+   "level": "C0"
+  }
+ },
+ "marina:Nouméa (Nouvelle-Calédonie):portmoselle": {
+  "name": "Port Moselle",
+  "runs": [
+   {
+    "run_id": "00000000T000000-v2-historical",
+    "level": "C0",
+    "lat": -22.28028,
+    "lon": 166.44083,
+    "sources": [
+     "https://sodemo.nc"
+    ]
+   }
+  ],
+  "best": {
+   "from_run": "00000000T000000-v2-historical",
+   "level": "C0"
+  }
+ },
+ "marina:Papeete (Polynésie française):portdepapeete": {
+  "name": "Port de Papeete",
+  "runs": [
+   {
+    "run_id": "00000000T000000-v2-historical",
+    "level": "C0",
+    "lat": -17.535,
+    "lon": -149.56917,
+    "sources": []
+   }
+  ],
+  "best": {
+   "from_run": "00000000T000000-v2-historical",
+   "level": "C0"
+  }
+ },
+ "marina:Papeete (Polynésie française):marinataina": {
+  "name": "Marina Taina",
+  "runs": [
+   {
+    "run_id": "00000000T000000-v2-historical",
+    "level": "C0",
+    "lat": -17.58583,
+    "lon": -149.60833,
+    "sources": [
+     "https://www.marina-taina.com"
+    ]
+   }
+  ],
+  "best": {
+   "from_run": "00000000T000000-v2-historical",
+   "level": "C0"
+  }
+ },
+ "marina:Saint-Pierre (Saint-Pierre-et-Miquelon):saintpierrebarachois": {
+  "name": "Saint-Pierre — Barachois",
+  "runs": [
+   {
+    "run_id": "00000000T000000-v2-historical",
+    "level": "C0",
+    "lat": 46.77972,
+    "lon": -56.17222,
+    "sources": []
+   }
+  ],
+  "best": {
+   "from_run": "00000000T000000-v2-historical",
+   "level": "C0"
+  }
+ },
+ "marina:Saint-Gilles (La Réunion):portdesaintgilleslesbains": {
+  "name": "Port de Saint-Gilles-les-Bains",
+  "runs": [
+   {
+    "run_id": "00000000T000000-v2-historical",
+    "level": "C0",
+    "lat": -21.0375,
+    "lon": 55.22056,
+    "sources": []
+   }
+  ],
+  "best": {
+   "from_run": "00000000T000000-v2-historical",
+   "level": "C0"
+  }
+ },
+ "marina:Dzaoudzi (Mayotte):portdedzaoudzimayotte": {
+  "name": "Port de Dzaoudzi (Mayotte)",
+  "runs": [
+   {
+    "run_id": "00000000T000000-v2-historical",
+    "level": "C0",
+    "lat": -12.78389,
+    "lon": 45.25972,
+    "sources": []
+   }
+  ],
+  "best": {
+   "from_run": "00000000T000000-v2-historical",
+   "level": "C0"
+  }
+ },
+ "marina:Europa (TAAF):europaislandlagoon": {
+  "name": "Europa Island lagoon",
+  "runs": [
+   {
+    "run_id": "00000000T000000-v2-historical",
+    "level": "C0",
+    "lat": -22.36194,
+    "lon": 40.36889,
+    "sources": []
+   }
+  ],
+  "best": {
+   "from_run": "00000000T000000-v2-historical",
+   "level": "C0"
+  }
+ },
+ "marina:Tromelin (TAAF):tromelinmouillage": {
+  "name": "Tromelin — mouillage",
+  "runs": [
+   {
+    "run_id": "00000000T000000-v2-historical",
+    "level": "C0",
+    "lat": -15.89056,
+    "lon": 54.52528,
+    "sources": []
+   }
+  ],
+  "best": {
+   "from_run": "00000000T000000-v2-historical",
+   "level": "C0"
+  }
+ },
+ "marina:Martinique:marinadumarin": {
+  "name": "Marina du Marin",
+  "runs": [
+   {
+    "run_id": "20261029T090953-c6be349361827-rafb7f947",
+    "level": "C2",
+    "lat": 14.4676941,
+    "lon": -60.8662335,
+    "sources": [
+     "https://www.marinareservation.com/marina-marina-du-marin-2-2917"
+    ]
+   }
+  ],
+  "best": {
+   "from_run": "20261029T090953-c6be349361827-rafb7f947",
+   "level": "C2"
+  }
+ },
+ "marina:Martinique:etangzabricotmarina": {
+  "name": "Étang Z'Abricot marina",
+  "runs": [
+   {
+    "run_id": "20261029T090953-c6be349361827-rafb7f947",
+    "level": "C1",
+    "lat": null,
+    "lon": null,
+    "sources": [
+     "https://superyachtguide.com/news/martinique-etang-zabricot-marina-77m-expansion-studies-grant-2026"
+    ]
+   }
+  ],
+  "best": {
+   "from_run": "20261029T090953-c6be349361827-rafb7f947",
+   "level": "C1"
+  }
+ },
+ "marina:Martinique:lemarinmarina": {
+  "name": "Le Marin Marina",
+  "runs": [
+   {
+    "run_id": "20261029T090953-c6be349361827-rafb7f947",
+    "level": "C1",
+    "lat": null,
+    "lon": null,
+    "sources": [
+     "https://www.azmartinique.com/en/where-to-go/historic-sites/marin-marina"
+    ]
+   }
+  ],
+  "best": {
+   "from_run": "20261029T090953-c6be349361827-rafb7f947",
+   "level": "C1"
+  }
+ },
+ "marina:Martinique:portdeplaisancedumarin": {
+  "name": "Port de Plaisance du Marin",
+  "runs": [
+   {
+    "run_id": "20261029T090953-c6be349361827-rafb7f947",
+    "level": "C1",
+    "lat": 14.4676941,
+    "lon": -60.8662335,
+    "sources": [
+     "https://www.superyachtservicesguide.com/20/17825/port-de-plaisance-du-marin"
+    ]
+   },
+   {
+    "run_id": "20261029T091148-c97ee61089f78-rafb7f947",
+    "level": "C0",
+    "lat": 14.4676941,
+    "lon": -60.8662335,
+    "sources": [
+     "https://www.mintedyachts.com/locations/martinique",
+     "https://www.sudnautique.fr",
+     "https://www.yachting-pages.com/listing/ports-and-marinas/martinique",
+     "https://www.superyachtservicesguide.com/20/17825/port-de-plaisance-du-marin",
+     "https://www.marineconnectgroup.com/our-marinas-and-mooring-areas",
+     "https://en.martinique-tour.com/offres/law-le-marin-marina-le-marin-1512819",
+     "https://azmartinique.com/en/where-to-go/historic-sites/le-marin-marina"
+    ]
+   }
+  ],
+  "best": {
+   "from_run": "20261029T090953-c6be349361827-rafb7f947",
+   "level": "C1"
+  }
+ },
+ "marina:Martinique:marinyachtharbour": {
+  "name": "Marin Yacht Harbour",
+  "runs": [
+   {
+    "run_id": "20261029T090953-c6be349361827-rafb7f947",
+    "level": "C2",
+    "lat": null,
+    "lon": null,
+    "sources": [
+     "https://www.yachtinsidersguide.com/listing/marin-yacht-harbour"
+    ]
+   }
+  ],
+  "best": {
+   "from_run": "20261029T090953-c6be349361827-rafb7f947",
+   "level": "C2"
+  }
+ },
+ "harbour_office:Martinique:harbourmastersofficeatlamarinadumarin": {
+  "name": "Harbour Master's Office at La Marina du Marin",
+  "runs": [
+   {
+    "run_id": "20261029T090953-c6be349361827-rafb7f947",
+    "level": "C1",
+    "lat": null,
+    "lon": null,
+    "sources": [
+     "https://www.marineconnectgroup.com/our-marinas-and-mooring-areas"
+    ]
+   }
+  ],
+  "best": {
+   "from_run": "20261029T090953-c6be349361827-rafb7f947",
+   "level": "C1"
+  }
+ },
+ "harbour_office:Martinique:marinapointedubout": {
+  "name": "Marina Pointe du Bout",
+  "runs": [
+   {
+    "run_id": "20261029T090953-c6be349361827-rafb7f947",
+    "level": "C2",
+    "lat": 14.5570151,
+    "lon": -61.0517326,
+    "sources": [
+     "https://www.navily.com/port/marina-pointe-du-bout/1725"
+    ]
+   },
+   {
+    "run_id": "20261029T091148-c97ee61089f78-rafb7f947",
+    "level": "C0",
+    "lat": 14.5570151,
+    "lon": -61.0517326,
+    "sources": [
+     "https://www.tiponton.com/index.php?id_rubrique=1&id_article=6"
+    ]
+   }
+  ],
+  "best": {
+   "from_run": "20261029T090953-c6be349361827-rafb7f947",
+   "level": "C2"
+  }
+ },
+ "harbour_office:Martinique:capitaineriedelaradedesaintpierre": {
+  "name": "Capitainerie de la Rade de Saint-Pierre",
+  "runs": [
+   {
+    "run_id": "20261029T090953-c6be349361827-rafb7f947",
+    "level": "C2",
+    "lat": null,
+    "lon": null,
+    "sources": [
+     "https://www.saint-pierre.marina-martinique.fr/en/contact-and-opening-hours"
+    ]
+   },
+   {
+    "run_id": "20261029T091148-c97ee61089f78-rafb7f947",
+    "level": "C2",
+    "lat": 14.7716731,
+    "lon": -61.177433,
+    "sources": [
+     "https://www.saint-pierre.marina-martinique.fr/en/contact-and-opening-hours"
+    ]
+   }
+  ],
+  "best": {
+   "from_run": "20261029T090953-c6be349361827-rafb7f947",
+   "level": "C2"
+  }
+ },
+ "port_of_entry:Martinique:lemarinportdeplaisancecapitainerieduport": {
+  "name": "Le Marin Port de plaisance Capitainerie du port (nouvelle extension)",
+  "runs": [
+   {
+    "run_id": "20261029T091148-c97ee61089f78-rafb7f947",
+    "level": "C1",
+    "lat": 14.5251841,
+    "lon": -60.9624151,
+    "sources": [
+     "https://www.douane.gouv.fr/sites/default/files/2026-01/30/liste-points-clearance-agrees-mise-a-jour.pdf"
+    ]
+   }
+  ],
+  "best": {
+   "from_run": "20261029T091148-c97ee61089f78-rafb7f947",
+   "level": "C1"
+  }
+ },
+ "marina:Martinique:portdeplaisancecommunautairedeletangzabr": {
+  "name": "Port de plaisance communautaire de l'Étang Z'Abricots",
+  "runs": [
+   {
+    "run_id": "20261029T091148-c97ee61089f78-rafb7f947",
+    "level": "C0",
+    "lat": 14.6027962,
+    "lon": -61.0676724,
+    "sources": [
+     "https://www.mintedyachts.com/locations/martinique"
+    ]
+   }
+  ],
+  "best": {
+   "from_run": "20261029T091148-c97ee61089f78-rafb7f947",
+   "level": "C0"
+  }
+ },
+ "marina:Martinique:marinadelapointedubout": {
+  "name": "Marina de la Pointe du Bout",
+  "runs": [
+   {
+    "run_id": "20261029T091148-c97ee61089f78-rafb7f947",
+    "level": "C0",
+    "lat": 14.5570151,
+    "lon": -61.0517326,
+    "sources": [
+     "https://www.mintedyachts.com/locations/martinique"
+    ]
+   }
+  ],
+  "best": {
+   "from_run": "20261029T091148-c97ee61089f78-rafb7f947",
+   "level": "C0"
+  }
+ },
+ "marina:Martinique:grandportmaritimedelamartinique": {
+  "name": "Grand Port Maritime de la Martinique",
+  "runs": [
+   {
+    "run_id": "20261029T091148-c97ee61089f78-rafb7f947",
+    "level": "C0",
+    "lat": 14.6113732,
+    "lon": -60.9620777,
+    "sources": [
+     "https://www.yachting-pages.com/listing/ports-and-marinas/martinique"
+    ]
+   }
+  ],
+  "best": {
+   "from_run": "20261029T091148-c97ee61089f78-rafb7f947",
+   "level": "C0"
+  }
+ },
+ "marina:Martinique:marinsyachtharbourmarina": {
+  "name": "Marin's Yacht Harbour Marina",
+  "runs": [
+   {
+    "run_id": "20261029T091148-c97ee61089f78-rafb7f947",
+    "level": "C2",
+    "lat": 14.6113732,
+    "lon": -60.9620777,
+    "sources": [
+     "https://www.yachting-pages.com/listing/ports-and-marinas/martinique"
+    ]
+   }
+  ],
+  "best": {
+   "from_run": "20261029T091148-c97ee61089f78-rafb7f947",
+   "level": "C2"
+  }
+ },
+ "harbour_office:Martinique:capitainerieduportdeplaisancedumarin": {
+  "name": "Capitainerie du Port de plaisance du Marin",
+  "runs": [
+   {
+    "run_id": "20261029T091148-c97ee61089f78-rafb7f947",
+    "level": "C0",
+    "lat": 14.471625,
+    "lon": -60.86709,
+    "sources": [
+     "https://www.sudnautique.fr",
+     "https://figaronautisme.meteoconsult.fr/bloc-marine/info-port/2267-informations-port-le-marin",
+     "https://www.seanaut.fr/ports/dom-tom/port-marin",
+     "https://www.tiponton.com/index.php?id_rubrique=1&id_article=6"
+    ]
+   }
+  ],
+  "best": {
+   "from_run": "20261029T091148-c97ee61089f78-rafb7f947",
+   "level": "C0"
+  }
+ },
+ "harbour_office:Martinique:portdeplaisancecommunautairedeletangzabr": {
+  "name": "Port de Plaisance Communautaire de l'Etang Z'Abricots",
+  "runs": [
+   {
+    "run_id": "20261029T091148-c97ee61089f78-rafb7f947",
+    "level": "C0",
+    "lat": 14.5941667,
+    "lon": -61.0411667,
+    "sources": [
+     "https://www.tiponton.com/index.php?id_rubrique=1&id_article=6"
+    ]
+   }
+  ],
+  "best": {
+   "from_run": "20261029T091148-c97ee61089f78-rafb7f947",
+   "level": "C0"
+  }
+ },
+ "harbour_office:Martinique:marinadurobert": {
+  "name": "Marina du Robert",
+  "runs": [
+   {
+    "run_id": "20261029T091148-c97ee61089f78-rafb7f947",
+    "level": "C0",
+    "lat": 14.6529425,
+    "lon": -60.92865,
+    "sources": [
+     "https://www.tiponton.com/index.php?id_rubrique=1&id_article=6"
+    ]
+   }
+  ],
+  "best": {
+   "from_run": "20261029T091148-c97ee61089f78-rafb7f947",
+   "level": "C0"
+  }
+ },
+ "harbour_office:Martinique:marinadufrancois": {
+  "name": "Marina du François",
+  "runs": [
+   {
+    "run_id": "20261029T091148-c97ee61089f78-rafb7f947",
+    "level": "C0",
+    "lat": 14.6194972,
+    "lon": -60.8902288,
+    "sources": [
+     "https://www.tiponton.com/index.php?id_rubrique=1&id_article=6"
+    ]
+   }
+  ],
+  "best": {
+   "from_run": "20261029T091148-c97ee61089f78-rafb7f947",
+   "level": "C0"
+  }
+ },
+ "harbour_office:Martinique:capitaineriedelazonedemouillageorganisee": {
+  "name": "Capitainerie de la Zone de Mouillage Organisée des Anses d'Arlet",
+  "runs": [
+   {
+    "run_id": "20261029T091148-c97ee61089f78-rafb7f947",
+    "level": "C0",
+    "lat": 14.4913595,
+    "lon": -61.0787615,
+    "sources": [
+     "https://www.tiponton.com/index.php?id_rubrique=1&id_article=6"
+    ]
+   }
+  ],
+  "best": {
+   "from_run": "20261029T091148-c97ee61089f78-rafb7f947",
+   "level": "C0"
+  }
+ },
+ "marina:Guadeloupe:marinabasdufort": {
+  "name": "Marina Bas-du-Fort",
+  "runs": [
+   {
+    "run_id": "20261029T091148-c97ee61089f78-rafb7f947",
+    "level": "C0",
+    "lat": 16.219803,
+    "lon": -61.5242666,
+    "sources": [
+     "https://anchorages.co/location/guadeloupe",
+     "http://portfocus.com/guadeloupe/index.html",
+     "https://marinas.com/browse/marina/GP",
+     "https://www.marinaguadeloupe.com/en/pr%C3%A9sentation"
+    ]
+   }
+  ],
+  "best": {
+   "from_run": "20261029T091148-c97ee61089f78-rafb7f947",
+   "level": "C0"
+  }
+ },
+ "marina:Guadeloupe:gustaviaportmarina": {
+  "name": "Gustavia Port Marina",
+  "runs": [
+   {
+    "run_id": "20261029T091148-c97ee61089f78-rafb7f947",
+    "level": "C0",
+    "lat": 17.9,
+    "lon": -62.85,
+    "sources": [
+     "https://marinas.com/browse/marina/GP"
+    ]
+   }
+  ],
+  "best": {
+   "from_run": "20261029T091148-c97ee61089f78-rafb7f947",
+   "level": "C0"
+  }
+ },
+ "marina:Guadeloupe:stbarthmarine": {
+  "name": "St Barth Marine",
+  "runs": [
+   {
+    "run_id": "20261029T091148-c97ee61089f78-rafb7f947",
+    "level": "C0",
+    "lat": 17.8967638,
+    "lon": -62.848625,
+    "sources": [
+     "https://marinas.com/browse/marina/GP"
+    ]
+   }
+  ],
+  "best": {
+   "from_run": "20261029T091148-c97ee61089f78-rafb7f947",
+   "level": "C0"
+  }
+ },
+ "marina:Guadeloupe:polypatcaraibesboatyard": {
+  "name": "Polypat Caraïbes Boat Yard",
+  "runs": [
+   {
+    "run_id": "20261029T091148-c97ee61089f78-rafb7f947",
+    "level": "C0",
+    "lat": 18.0962819,
+    "lon": -63.0245957,
+    "sources": [
+     "https://marinas.com/browse/marina/GP"
+    ]
+   }
+  ],
+  "best": {
+   "from_run": "20261029T091148-c97ee61089f78-rafb7f947",
+   "level": "C0"
+  }
+ },
+ "marina:Guadeloupe:grandbourgportmarina": {
+  "name": "Grand Bourg Port Marina",
+  "runs": [
+   {
+    "run_id": "20261029T091148-c97ee61089f78-rafb7f947",
+    "level": "C0",
+    "lat": 15.8836417,
+    "lon": -61.3146797,
+    "sources": [
+     "https://marinas.com/browse/marina/GP"
+    ]
+   }
+  ],
+  "best": {
+   "from_run": "20261029T091148-c97ee61089f78-rafb7f947",
+   "level": "C0"
+  }
+ },
+ "marina:Guadeloupe:portdesaintfrancoisguadeloupe": {
+  "name": "Port de Saint-François Guadeloupe",
+  "runs": [
+   {
+    "run_id": "20261029T091148-c97ee61089f78-rafb7f947",
+    "level": "C0",
+    "lat": 15.9966629,
+    "lon": -61.733324,
+    "sources": [
+     "https://superyachtguide.com/marinas/port-de-saint-francois-guadeloupe"
+    ]
+   }
+  ],
+  "best": {
+   "from_run": "20261029T091148-c97ee61089f78-rafb7f947",
+   "level": "C0"
+  }
+ },
+ "harbour_office:Guadeloupe:harbormastersoffice": {
+  "name": "Harbor Master's Office",
+  "runs": [
+   {
+    "run_id": "20261029T091148-c97ee61089f78-rafb7f947",
+    "level": "C0",
+    "lat": 16.2164602,
+    "lon": -61.5195428,
+    "sources": [
+     "https://www.marinaguadeloupe.com/en"
+    ]
+   }
+  ],
+  "best": {
+   "from_run": "20261029T091148-c97ee61089f78-rafb7f947",
+   "level": "C0"
+  }
+ },
+ "harbour_office:Guadeloupe:guadeloupeyachtconciergeharbouroffice": {
+  "name": "Guadeloupe Yacht Concierge Harbour Office",
+  "runs": [
+   {
+    "run_id": "20261029T091148-c97ee61089f78-rafb7f947",
+    "level": "C2",
+    "lat": 16.2408636,
+    "lon": -61.5334077,
+    "sources": [
+     "https://www.guadeloupeyachtconcierge.com/contact-intro-guide"
+    ]
+   }
+  ],
+  "best": {
+   "from_run": "20261029T091148-c97ee61089f78-rafb7f947",
+   "level": "C2"
+  }
+ },
+ "harbour_office:Guadeloupe:harbourmastersofficeofthemarinaderiviere": {
+  "name": "Harbour Master’s Office of the Marina de Rivière-Sens",
+  "runs": [
+   {
+    "run_id": "20261029T091148-c97ee61089f78-rafb7f947",
+    "level": "C2",
+    "lat": 15.9824436,
+    "lon": -61.7118263,
+    "sources": [
+     "https://marina-rivieresens.com/en/regulations"
+    ]
+   }
+  ],
+  "best": {
+   "from_run": "20261029T091148-c97ee61089f78-rafb7f947",
+   "level": "C2"
+  }
+ }
+}

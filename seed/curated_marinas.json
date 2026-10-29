@@ -1,0 +1,25 @@
+{
+  "_source": "Curated marinas seed. Known, verifiable marinas near each escale of the Berry-Mappemonde official route. Used as a fallback when OSM/Overpass is unreachable at build time. When OSM does succeed on a subsequent build, richer OSM-sourced entries with the same dedup_key will replace these.",
+  "_generated_at": "2026-08-24",
+  "marinas": [
+    {"name": "Port des Minimes",           "lat": 46.14639,  "lon": -1.16278,  "escale": "La Rochelle",                      "tags": {"leisure": "marina", "vhf_channel": "9", "capacity": "3500", "website": "https://www.portlarochelle.com"}},
+    {"name": "Port Charles Ornano",        "lat": 41.92528,  "lon":  8.72611,  "escale": "Ajaccio (Corse)",                  "tags": {"leisure": "marina", "vhf_channel": "9", "capacity": "830", "website": "https://www.ajaccio.fr"}},
+    {"name": "Marina Rubicon",             "lat": 28.85472,  "lon": -13.81361, "escale": "Iles Canari",                      "tags": {"leisure": "marina", "vhf_channel": "9", "capacity": "500", "website": "https://www.marinarubicon.com"}},
+    {"name": "Mindelo Marina",             "lat": 16.88519,  "lon": -25.00378, "escale": "Point intermédiaire Cap Verde",    "tags": {"leisure": "marina", "vhf_channel": "72", "capacity": "230", "website": "https://mindelomarina.com"}},
+    {"name": "Rodney Bay Marina",          "lat": 14.07500,  "lon": -60.94722, "escale": "Sainte Lucie",                     "tags": {"leisure": "marina", "vhf_channel": "16/74", "capacity": "253", "website": "https://www.igymarinas.com/marinas/rodney-bay-marina"}},
+    {"name": "Marina Etang Z'Abricots",    "lat": 14.60861,  "lon": -60.99361, "escale": "Fort-de-France (Martinique)",      "tags": {"leisure": "marina", "vhf_channel": "9", "capacity": "300"}},
+    {"name": "Marina Bas-du-Fort",         "lat": 16.22528,  "lon": -61.53806, "escale": "Pointe-à-Pitre (Guadeloupe)",      "tags": {"leisure": "marina", "vhf_channel": "9", "capacity": "1100", "website": "https://marinaguadeloupe.com"}},
+    {"name": "Port de Gustavia",           "lat": 17.89694,  "lon": -62.85278, "escale": "Gustavia (Saint-Barthélemy)",      "tags": {"harbour": "yes", "vhf_channel": "16/12", "seamark:harbour:category": "marina"}},
+    {"name": "Fort Louis Marina",          "lat": 18.06806,  "lon": -63.09028, "escale": "Marigot (Saint-Martin)",           "tags": {"leisure": "marina", "vhf_channel": "16/79", "capacity": "150"}},
+    {"name": "Cayenne — Port du Larivot",  "lat":  4.90111,  "lon": -52.36528, "escale": "Cayenne (Guyane)",                 "tags": {"harbour": "yes", "harbour:type": "port"}},
+    {"name": "Ilet la Mère (mouillage)",   "lat":  4.86556,  "lon": -52.19056, "escale": "Cayenne (Guyane)",                 "tags": {"seamark:type": "anchorage"}},
+    {"name": "Port Moselle",               "lat": -22.28028, "lon": 166.44083, "escale": "Nouméa (Nouvelle-Calédonie)",      "tags": {"leisure": "marina", "vhf_channel": "9", "capacity": "550", "website": "https://sodemo.nc"}},
+    {"name": "Port de Papeete",            "lat": -17.53500, "lon": -149.56917,"escale": "Papeete (Polynésie française)",    "tags": {"harbour": "yes", "vhf_channel": "12/16", "harbour:type": "port"}},
+    {"name": "Marina Taina",               "lat": -17.58583, "lon": -149.60833,"escale": "Papeete (Polynésie française)",    "tags": {"leisure": "marina", "vhf_channel": "9", "capacity": "540", "website": "https://www.marina-taina.com"}},
+    {"name": "Saint-Pierre — Barachois",   "lat": 46.77972,  "lon": -56.17222, "escale": "Saint-Pierre (Saint-Pierre-et-Miquelon)", "tags": {"harbour": "yes", "harbour:type": "port"}},
+    {"name": "Port de Saint-Gilles-les-Bains","lat": -21.03750,"lon": 55.22056,"escale": "Saint-Gilles (La Réunion)",        "tags": {"leisure": "marina", "vhf_channel": "9", "capacity": "150"}},
+    {"name": "Port de Dzaoudzi (Mayotte)", "lat": -12.78389, "lon":  45.25972, "escale": "Dzaoudzi (Mayotte)",               "tags": {"harbour": "yes", "harbour:type": "port"}},
+    {"name": "Europa Island lagoon",       "lat": -22.36194, "lon":  40.36889, "escale": "Europa (TAAF)",                    "tags": {"seamark:type": "anchorage"}},
+    {"name": "Tromelin — mouillage",       "lat": -15.89056, "lon":  54.52528, "escale": "Tromelin (TAAF)",                  "tags": {"seamark:type": "anchorage"}}
+  ]
+}

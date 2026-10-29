@@ -1,0 +1,279 @@
+{
+ "type": "FeatureCollection",
+ "features": [
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -60.8662335,
+     14.4676941
+    ]
+   },
+   "properties": {
+    "layer": "marina",
+    "territory": "Martinique",
+    "name": "Marina du Marin",
+    "town": "Le Marin",
+    "key": "marinadumarin",
+    "evidence": [
+     {
+      "url": "https://www.marinareservation.com/marina-marina-du-marin-2-2917",
+      "quote": "Marina du Marin is located in the south of Martinique and is the biggest marina in Martinique",
+      "extracted": true,
+      "tool": "tavily.extract",
+      "judge": "supported",
+      "why": "quote names Marina du Marin in Martinique"
+     }
+    ],
+    "geo": {
+     "primary": "nominatim",
+     "secondary": null,
+     "agree": false,
+     "km": null,
+     "independent_sources": 1
+    },
+    "source_urls": [
+     "https://www.marinareservation.com/marina-marina-du-marin-2-2917"
+    ],
+    "level": "C2"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": null,
+   "properties": {
+    "layer": "marina",
+    "territory": "Martinique",
+    "name": "Étang Z'Abricot marina",
+    "town": "Fort-de-France",
+    "key": "etangzabricotmarina",
+    "evidence": [
+     {
+      "url": "https://superyachtguide.com/news/martinique-etang-zabricot-marina-77m-expansion-studies-grant-2026",
+      "quote": "proposed €77.5m expansion of Fort-de-France's Étang Z'Abricot marina",
+      "extracted": true,
+      "tool": "tavily.extract",
+      "judge": "unsupported",
+      "why": "quote lacks explicit Martinique reference"
+     }
+    ],
+    "geo": {
+     "primary": null,
+     "secondary": null,
+     "agree": false,
+     "km": null,
+     "independent_sources": 0
+    },
+    "source_urls": [
+     "https://superyachtguide.com/news/martinique-etang-zabricot-marina-77m-expansion-studies-grant-2026"
+    ],
+    "level": "C1"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": null,
+   "properties": {
+    "layer": "marina",
+    "territory": "Martinique",
+    "name": "Le Marin Marina",
+    "town": "Le Marin",
+    "key": "lemarinmarina",
+    "evidence": [
+     {
+      "url": "https://www.azmartinique.com/en/where-to-go/historic-sites/marin-marina",
+      "quote": "Located in the south of Martinique, the Marina du Marin is the largest marina in the Caribbean.",
+      "extracted": true,
+      "tool": "tavily.extract",
+      "judge": "unsupported",
+      "why": "quote refers to Marina du Marin not Le Marin Marina"
+     }
+    ],
+    "geo": {
+     "primary": null,
+     "secondary": null,
+     "agree": false,
+     "km": null,
+     "independent_sources": 0
+    },
+    "source_urls": [
+     "https://www.azmartinique.com/en/where-to-go/historic-sites/marin-marina"
+    ],
+    "level": "C1"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -60.8662335,
+     14.4676941
+    ]
+   },
+   "properties": {
+    "layer": "marina",
+    "territory": "Martinique",
+    "name": "Port de Plaisance du Marin",
+    "town": "Le Marin",
+    "key": "portdeplaisancedumarin",
+    "evidence": [
+     {
+      "url": "https://www.superyachtservicesguide.com/20/17825/port-de-plaisance-du-marin",
+      "quote": "The Marin Yacht Harbor is a Harbor of superlatives. In constant growth since its creation in the early 1990s, it has now become one of the largest Harbors of the lesser Antilles, with a welcoming capacity of 830 berths and 300 mooring-buoys",
+      "extracted": true,
+      "tool": "tavily.extract",
+      "judge": "unsupported",
+      "why": "quote refers to Marin Yacht Harbor not Port de Plaisance du Marin"
+     }
+    ],
+    "geo": {
+     "primary": "nominatim",
+     "secondary": null,
+     "agree": false,
+     "km": null,
+     "independent_sources": 1
+    },
+    "source_urls": [
+     "https://www.superyachtservicesguide.com/20/17825/port-de-plaisance-du-marin"
+    ],
+    "level": "C1"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": null,
+   "properties": {
+    "layer": "marina",
+    "territory": "Martinique",
+    "name": "Marin Yacht Harbour",
+    "town": "Le Marin",
+    "key": "marinyachtharbour",
+    "evidence": [
+     {
+      "url": "https://www.yachtinsidersguide.com/listing/marin-yacht-harbour",
+      "quote": "Marin Yacht Harbour is Martinique's largest marina complex with a total of 830 berths and 100 moorings.",
+      "extracted": true,
+      "tool": "tavily.extract",
+      "judge": "supported",
+      "why": "quote names Marin Yacht Harbour in Martinique"
+     }
+    ],
+    "geo": {
+     "primary": null,
+     "secondary": null,
+     "agree": false,
+     "km": null,
+     "independent_sources": 0
+    },
+    "source_urls": [
+     "https://www.yachtinsidersguide.com/listing/marin-yacht-harbour"
+    ],
+    "level": "C2"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": null,
+   "properties": {
+    "layer": "harbour_office",
+    "territory": "Martinique",
+    "name": "Harbour Master's Office at La Marina du Marin",
+    "town": "Le Marin",
+    "key": "harbourmastersofficeatlamarinadumarin",
+    "evidence": [
+     {
+      "url": "https://www.marineconnectgroup.com/our-marinas-and-mooring-areas",
+      "quote": "as well as modern facilities such as a high-speed service station and a harbor master’s office open 7 days a week.",
+      "extracted": true,
+      "tool": "tavily.extract",
+      "judge": "unsupported",
+      "why": "Quote mentions generic harbor master's office, not specific name."
+     }
+    ],
+    "geo": {
+     "primary": null,
+     "secondary": null,
+     "agree": false,
+     "km": null,
+     "independent_sources": 0
+    },
+    "source_urls": [
+     "https://www.marineconnectgroup.com/our-marinas-and-mooring-areas"
+    ],
+    "level": "C1"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -61.0517326,
+     14.5570151
+    ]
+   },
+   "properties": {
+    "layer": "harbour_office",
+    "territory": "Martinique",
+    "name": "Marina Pointe du Bout",
+    "town": "Le Marin",
+    "key": "marinapointedubout",
+    "evidence": [
+     {
+      "url": "https://www.navily.com/port/marina-pointe-du-bout/1725",
+      "quote": "## Harbor master's office hours",
+      "extracted": true,
+      "tool": "tavily.extract",
+      "judge": "supported",
+      "why": "Heading shows harbor master's office hours for that marina."
+     }
+    ],
+    "geo": {
+     "primary": "nominatim",
+     "secondary": null,
+     "agree": false,
+     "km": null,
+     "independent_sources": 1
+    },
+    "source_urls": [
+     "https://www.navily.com/port/marina-pointe-du-bout/1725"
+    ],
+    "level": "C2"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": null,
+   "properties": {
+    "layer": "harbour_office",
+    "territory": "Martinique",
+    "name": "Capitainerie de la Rade de Saint-Pierre",
+    "town": "Saint-Pierre",
+    "key": "capitaineriedelaradedesaintpierre",
+    "evidence": [
+     {
+      "url": "https://www.saint-pierre.marina-martinique.fr/en/contact-and-opening-hours",
+      "quote": "Avant d’entrer dans la rade, contactez la Capitainerie. Un agent vous indique votre poste et vous assiste à la prise de bouée.",
+      "extracted": true,
+      "tool": "tavily.extract",
+      "judge": "supported",
+      "why": "Text references Capitainerie, confirming office exists."
+     }
+    ],
+    "geo": {
+     "primary": null,
+     "secondary": null,
+     "agree": false,
+     "km": null,
+     "independent_sources": 0
+    },
+    "source_urls": [
+     "https://www.saint-pierre.marina-martinique.fr/en/contact-and-opening-hours"
+    ],
+    "level": "C2"
+   }
+  }
+ ]
+}

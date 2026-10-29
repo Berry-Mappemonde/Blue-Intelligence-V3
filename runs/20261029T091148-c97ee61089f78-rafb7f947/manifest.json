@@ -1,0 +1,58 @@
+{
+ "run_id": "20261029T091148-c97ee61089f78-rafb7f947",
+ "rules": {
+  "dedup_km": 0.5,
+  "geo_agree_km": 0.5,
+  "moved_km": 2.0,
+  "levels": "C0-C4 v1"
+ },
+ "python": "3.13.5",
+ "entities": 22,
+ "counts": {
+  "port_of_entry": {
+   "C1": 1
+  },
+  "marina": {
+   "C0": 10,
+   "C2": 1
+  },
+  "harbour_office": {
+   "C0": 7,
+   "C2": 3
+  }
+ },
+ "sha256": {
+  "entities.geojson": "9c991db87cb4920ff734635fd8ab785e354ba6c5c95d7ab8eb3a6add2300919d"
+ },
+ "kind": "v3-full",
+ "territories": [
+  "Martinique",
+  "Guadeloupe"
+ ],
+ "duration_s": 287,
+ "nemotron": {
+  "calls": 54,
+  "tokens_in": 108032,
+  "tokens_out": 27473,
+  "usd_estimated": 0.06629,
+  "by_model": {
+   "nvidia/nemotron-3-super-120b-a12b": {
+    "calls": 49,
+    "usd": 0.0532
+   },
+   "nvidia/Nemotron-3-Ultra-550b-a55b": {
+    "calls": 5,
+    "usd": 0.01308
+   }
+  }
+ },
+ "tavily_credits_estimated": {
+  "search": 14,
+  "extract": 12
+ },
+ "models": {
+  "triage": "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B",
+  "extract": "nvidia/nemotron-3-super-120b-a12b",
+  "judge": "nvidia/Nemotron-3-Ultra-550b-a55b"
+ }
+}

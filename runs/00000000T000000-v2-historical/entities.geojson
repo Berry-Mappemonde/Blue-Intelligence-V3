@@ -1,0 +1,401 @@
+{
+ "type": "FeatureCollection",
+ "features": [
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -1.16278,
+     46.14639
+    ]
+   },
+   "properties": {
+    "layer": "marina",
+    "territory": "La Rochelle",
+    "name": "Port des Minimes",
+    "key": "portdesminimes",
+    "source_urls": [
+     "https://www.portlarochelle.com"
+    ],
+    "evidence": [],
+    "level": "C0",
+    "origin": "BI V2 curated_marinas.json (historical, read-only)"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     8.72611,
+     41.92528
+    ]
+   },
+   "properties": {
+    "layer": "marina",
+    "territory": "Ajaccio (Corse)",
+    "name": "Port Charles Ornano",
+    "key": "portcharlesornano",
+    "source_urls": [
+     "https://www.ajaccio.fr"
+    ],
+    "evidence": [],
+    "level": "C0",
+    "origin": "BI V2 curated_marinas.json (historical, read-only)"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -13.81361,
+     28.85472
+    ]
+   },
+   "properties": {
+    "layer": "marina",
+    "territory": "Iles Canari",
+    "name": "Marina Rubicon",
+    "key": "marinarubicon",
+    "source_urls": [
+     "https://www.marinarubicon.com"
+    ],
+    "evidence": [],
+    "level": "C0",
+    "origin": "BI V2 curated_marinas.json (historical, read-only)"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -25.00378,
+     16.88519
+    ]
+   },
+   "properties": {
+    "layer": "marina",
+    "territory": "Point intermédiaire Cap Verde",
+    "name": "Mindelo Marina",
+    "key": "mindelomarina",
+    "source_urls": [
+     "https://mindelomarina.com"
+    ],
+    "evidence": [],
+    "level": "C0",
+    "origin": "BI V2 curated_marinas.json (historical, read-only)"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -60.94722,
+     14.075
+    ]
+   },
+   "properties": {
+    "layer": "marina",
+    "territory": "Sainte Lucie",
+    "name": "Rodney Bay Marina",
+    "key": "rodneybaymarina",
+    "source_urls": [
+     "https://www.igymarinas.com/marinas/rodney-bay-marina"
+    ],
+    "evidence": [],
+    "level": "C0",
+    "origin": "BI V2 curated_marinas.json (historical, read-only)"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -60.99361,
+     14.60861
+    ]
+   },
+   "properties": {
+    "layer": "marina",
+    "territory": "Fort-de-France (Martinique)",
+    "name": "Marina Etang Z'Abricots",
+    "key": "marinaetangzabricots",
+    "source_urls": [],
+    "evidence": [],
+    "level": "C0",
+    "origin": "BI V2 curated_marinas.json (historical, read-only)"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -61.53806,
+     16.22528
+    ]
+   },
+   "properties": {
+    "layer": "marina",
+    "territory": "Pointe-à-Pitre (Guadeloupe)",
+    "name": "Marina Bas-du-Fort",
+    "key": "marinabasdufort",
+    "source_urls": [
+     "https://marinaguadeloupe.com"
+    ],
+    "evidence": [],
+    "level": "C0",
+    "origin": "BI V2 curated_marinas.json (historical, read-only)"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -62.85278,
+     17.89694
+    ]
+   },
+   "properties": {
+    "layer": "marina",
+    "territory": "Gustavia (Saint-Barthélemy)",
+    "name": "Port de Gustavia",
+    "key": "portdegustavia",
+    "source_urls": [],
+    "evidence": [],
+    "level": "C0",
+    "origin": "BI V2 curated_marinas.json (historical, read-only)"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -63.09028,
+     18.06806
+    ]
+   },
+   "properties": {
+    "layer": "marina",
+    "territory": "Marigot (Saint-Martin)",
+    "name": "Fort Louis Marina",
+    "key": "fortlouismarina",
+    "source_urls": [],
+    "evidence": [],
+    "level": "C0",
+    "origin": "BI V2 curated_marinas.json (historical, read-only)"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -52.36528,
+     4.90111
+    ]
+   },
+   "properties": {
+    "layer": "marina",
+    "territory": "Cayenne (Guyane)",
+    "name": "Cayenne — Port du Larivot",
+    "key": "cayenneportdularivot",
+    "source_urls": [],
+    "evidence": [],
+    "level": "C0",
+    "origin": "BI V2 curated_marinas.json (historical, read-only)"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -52.19056,
+     4.86556
+    ]
+   },
+   "properties": {
+    "layer": "marina",
+    "territory": "Cayenne (Guyane)",
+    "name": "Ilet la Mère (mouillage)",
+    "key": "iletlameremouillage",
+    "source_urls": [],
+    "evidence": [],
+    "level": "C0",
+    "origin": "BI V2 curated_marinas.json (historical, read-only)"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     166.44083,
+     -22.28028
+    ]
+   },
+   "properties": {
+    "layer": "marina",
+    "territory": "Nouméa (Nouvelle-Calédonie)",
+    "name": "Port Moselle",
+    "key": "portmoselle",
+    "source_urls": [
+     "https://sodemo.nc"
+    ],
+    "evidence": [],
+    "level": "C0",
+    "origin": "BI V2 curated_marinas.json (historical, read-only)"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -149.56917,
+     -17.535
+    ]
+   },
+   "properties": {
+    "layer": "marina",
+    "territory": "Papeete (Polynésie française)",
+    "name": "Port de Papeete",
+    "key": "portdepapeete",
+    "source_urls": [],
+    "evidence": [],
+    "level": "C0",
+    "origin": "BI V2 curated_marinas.json (historical, read-only)"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -149.60833,
+     -17.58583
+    ]
+   },
+   "properties": {
+    "layer": "marina",
+    "territory": "Papeete (Polynésie française)",
+    "name": "Marina Taina",
+    "key": "marinataina",
+    "source_urls": [
+     "https://www.marina-taina.com"
+    ],
+    "evidence": [],
+    "level": "C0",
+    "origin": "BI V2 curated_marinas.json (historical, read-only)"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -56.17222,
+     46.77972
+    ]
+   },
+   "properties": {
+    "layer": "marina",
+    "territory": "Saint-Pierre (Saint-Pierre-et-Miquelon)",
+    "name": "Saint-Pierre — Barachois",
+    "key": "saintpierrebarachois",
+    "source_urls": [],
+    "evidence": [],
+    "level": "C0",
+    "origin": "BI V2 curated_marinas.json (historical, read-only)"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     55.22056,
+     -21.0375
+    ]
+   },
+   "properties": {
+    "layer": "marina",
+    "territory": "Saint-Gilles (La Réunion)",
+    "name": "Port de Saint-Gilles-les-Bains",
+    "key": "portdesaintgilleslesbains",
+    "source_urls": [],
+    "evidence": [],
+    "level": "C0",
+    "origin": "BI V2 curated_marinas.json (historical, read-only)"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     45.25972,
+     -12.78389
+    ]
+   },
+   "properties": {
+    "layer": "marina",
+    "territory": "Dzaoudzi (Mayotte)",
+    "name": "Port de Dzaoudzi (Mayotte)",
+    "key": "portdedzaoudzimayotte",
+    "source_urls": [],
+    "evidence": [],
+    "level": "C0",
+    "origin": "BI V2 curated_marinas.json (historical, read-only)"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     40.36889,
+     -22.36194
+    ]
+   },
+   "properties": {
+    "layer": "marina",
+    "territory": "Europa (TAAF)",
+    "name": "Europa Island lagoon",
+    "key": "europaislandlagoon",
+    "source_urls": [],
+    "evidence": [],
+    "level": "C0",
+    "origin": "BI V2 curated_marinas.json (historical, read-only)"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     54.52528,
+     -15.89056
+    ]
+   },
+   "properties": {
+    "layer": "marina",
+    "territory": "Tromelin (TAAF)",
+    "name": "Tromelin — mouillage",
+    "key": "tromelinmouillage",
+    "source_urls": [],
+    "evidence": [],
+    "level": "C0",
+    "origin": "BI V2 curated_marinas.json (historical, read-only)"
+   }
+  }
+ ]
+}

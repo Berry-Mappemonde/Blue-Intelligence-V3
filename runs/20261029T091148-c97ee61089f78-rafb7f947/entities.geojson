@@ -1,0 +1,1062 @@
+{
+ "type": "FeatureCollection",
+ "features": [
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -60.9624151,
+     14.5251841
+    ]
+   },
+   "properties": {
+    "layer": "port_of_entry",
+    "territory": "Martinique",
+    "name": "Le Marin Port de plaisance Capitainerie du port (nouvelle extension)",
+    "town": "Le Marin",
+    "key": "lemarinportdeplaisancecapitainerieduport",
+    "evidence": [
+     {
+      "url": "https://www.douane.gouv.fr/sites/default/files/2026-01/30/liste-points-clearance-agrees-mise-a-jour.pdf",
+      "quote": "Station-service CAP Ponton N°3 + 596 596 765 161 lun-dim et jours fériés 7h30-13h/14h-17h Point de clearance ouvert tous les jours jusqu’à 16h30",
+      "extracted": true,
+      "tool": "tavily.extract",
+      "page_coords": null,
+      "judge": "unsupported",
+      "why": "quote does not mention facility name"
+     }
+    ],
+    "geo_precision": "town",
+    "geo": {
+     "primary": null,
+     "secondary": null,
+     "agree": false,
+     "km": null,
+     "independent_sources": 0
+    },
+    "source_urls": [
+     "https://www.douane.gouv.fr/sites/default/files/2026-01/30/liste-points-clearance-agrees-mise-a-jour.pdf"
+    ],
+    "level": "C1"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -60.8662335,
+     14.4676941
+    ]
+   },
+   "properties": {
+    "layer": "marina",
+    "territory": "Martinique",
+    "name": "Port de Plaisance du Marin",
+    "town": "Le Marin",
+    "key": "portdeplaisancedumarin",
+    "evidence": [
+     {
+      "url": "https://www.mintedyachts.com/locations/martinique",
+      "quote": "830 postes d'amarrage, 100 bouées de mouillage",
+      "extracted": true,
+      "tool": "tavily.extract",
+      "page_coords": null,
+      "judge": "unsupported",
+      "why": "Quote lacks facility name"
+     },
+     {
+      "url": "https://www.sudnautique.fr",
+      "quote": "Port de Plaisance, Bassin tortue, 97290 Le Marin, Martinique",
+      "extracted": true,
+      "tool": "tavily.extract",
+      "page_coords": {
+       "lat": 14.471625,
+       "lon": -60.86709,
+       "src": "page"
+      },
+      "judge": "supported",
+      "why": "Quote includes name and location"
+     },
+     {
+      "url": "https://www.yachting-pages.com/listing/ports-and-marinas/martinique",
+      "quote": "### [Port de Plaisance du Marin](/listing/port-de-plaisance-du-marin)",
+      "extracted": true,
+      "tool": "tavily.extract",
+      "page_coords": null,
+      "judge": "supported",
+      "why": "Link text shows exact name"
+     },
+     {
+      "url": "https://www.superyachtservicesguide.com/20/17825/port-de-plaisance-du-marin",
+      "quote": "Port de Plaisance du Marin",
+      "extracted": true,
+      "tool": "tavily.extract",
+      "page_coords": null,
+      "judge": "supported",
+      "why": "Quote states exact name"
+     },
+     {
+      "url": "https://www.marineconnectgroup.com/our-marinas-and-mooring-areas",
+      "quote": "The real jewel of the Caribbean, **La Marina du Marin** is one of the largest marinas in the region, with **830 berths** and capacity for large yachts up to 60 meters.",
+      "extracted": true,
+      "tool": "tavily.extract",
+      "page_coords": null,
+      "judge": "unsupported",
+      "why": "Quote uses different name (La Marina du Marin)"
+     },
+     {
+      "url": "https://en.martinique-tour.com/offres/law-le-marin-marina-le-marin-1512819",
+      "quote": "Le Marin Marina stands out for the on-site services it offers.",
+      "extracted": true,
+      "tool": "tavily.extract",
+      "page_coords": null,
+      "judge": "unsupported",
+      "why": "Quote refers to Le Marin Marina, not claimed name"
+     },
+     {
+      "url": "https://azmartinique.com/en/where-to-go/historic-sites/le-marin-marina",
+      "quote": "Located in the south of Martinique, the Marina du Marin is the largest marina in the Caribbean.",
+      "extracted": true,
+      "tool": "tavily.extract",
+      "page_coords": {
+       "lat": 14.4704002961,
+       "lon": -60.8666809632,
+       "src": "page"
+      },
+      "judge": "unsupported",
+      "why": "Quote refers to Marina du Marin, not claimed name"
+     }
+    ],
+    "aliases": [
+     "La Marina du Marin",
+     "Le Marin Marina"
+    ],
+    "geo": {
+     "primary": "nominatim",
+     "secondary": "page",
+     "agree": true,
+     "km": 0.447,
+     "independent_sources": 2
+    },
+    "source_urls": [
+     "https://www.mintedyachts.com/locations/martinique",
+     "https://www.sudnautique.fr",
+     "https://www.yachting-pages.com/listing/ports-and-marinas/martinique",
+     "https://www.superyachtservicesguide.com/20/17825/port-de-plaisance-du-marin",
+     "https://www.marineconnectgroup.com/our-marinas-and-mooring-areas",
+     "https://en.martinique-tour.com/offres/law-le-marin-marina-le-marin-1512819",
+     "https://azmartinique.com/en/where-to-go/historic-sites/le-marin-marina"
+    ],
+    "level": "C0"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -61.0676724,
+     14.6027962
+    ]
+   },
+   "properties": {
+    "layer": "marina",
+    "territory": "Martinique",
+    "name": "Port de plaisance communautaire de l'Étang Z'Abricots",
+    "town": "Fort-de-France",
+    "key": "portdeplaisancecommunautairedeletangzabr",
+    "evidence": [
+     {
+      "url": "https://www.mintedyachts.com/locations/martinique",
+      "quote": "340 anneaux à flot",
+      "extracted": true,
+      "tool": "tavily.extract",
+      "page_coords": null,
+      "judge": "unsupported",
+      "why": "Quote lacks facility name"
+     }
+    ],
+    "aliases": [],
+    "geo_precision": "town",
+    "geo": {
+     "primary": null,
+     "secondary": null,
+     "agree": false,
+     "km": null,
+     "independent_sources": 0
+    },
+    "source_urls": [
+     "https://www.mintedyachts.com/locations/martinique"
+    ],
+    "level": "C0"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -61.0517326,
+     14.5570151
+    ]
+   },
+   "properties": {
+    "layer": "marina",
+    "territory": "Martinique",
+    "name": "Marina de la Pointe du Bout",
+    "town": "Trois-Îlets",
+    "key": "marinadelapointedubout",
+    "evidence": [
+     {
+      "url": "https://www.mintedyachts.com/locations/martinique",
+      "quote": "Marina de la Pointe du Bout at Trois-Îlets works the same way.",
+      "extracted": true,
+      "tool": "tavily.extract",
+      "page_coords": null,
+      "judge": "supported",
+      "why": "Quote includes exact name"
+     }
+    ],
+    "aliases": [],
+    "geo": {
+     "primary": "nominatim",
+     "secondary": null,
+     "agree": false,
+     "km": null,
+     "independent_sources": 1
+    },
+    "source_urls": [
+     "https://www.mintedyachts.com/locations/martinique"
+    ],
+    "level": "C0"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -60.9620777,
+     14.6113732
+    ]
+   },
+   "properties": {
+    "layer": "marina",
+    "territory": "Martinique",
+    "name": "Grand Port Maritime de la Martinique",
+    "town": "Martinique",
+    "key": "grandportmaritimedelamartinique",
+    "evidence": [
+     {
+      "url": "https://www.yachting-pages.com/listing/ports-and-marinas/martinique",
+      "quote": "### [Grand Port Maritime de la Martinique](/listing/grand-port-maritime-de-la-martinique)",
+      "extracted": true,
+      "tool": "tavily.extract",
+      "page_coords": null,
+      "judge": "supported",
+      "why": "Link text shows exact name"
+     }
+    ],
+    "aliases": [],
+    "geo_precision": "town",
+    "geo": {
+     "primary": null,
+     "secondary": null,
+     "agree": false,
+     "km": null,
+     "independent_sources": 0
+    },
+    "source_urls": [
+     "https://www.yachting-pages.com/listing/ports-and-marinas/martinique"
+    ],
+    "level": "C0"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -60.9620777,
+     14.6113732
+    ]
+   },
+   "properties": {
+    "layer": "marina",
+    "territory": "Martinique",
+    "name": "Marin's Yacht Harbour Marina",
+    "town": "Martinique",
+    "key": "marinsyachtharbourmarina",
+    "evidence": [
+     {
+      "url": "https://www.yachting-pages.com/listing/ports-and-marinas/martinique",
+      "quote": "### [Marin's Yacht Harbour Marina](/listing/marin-yacht-harbour-marina)",
+      "extracted": true,
+      "tool": "tavily.extract",
+      "page_coords": null,
+      "judge": "supported",
+      "why": "Link text shows exact name"
+     }
+    ],
+    "aliases": [],
+    "geo_precision": "town",
+    "geo": {
+     "primary": null,
+     "secondary": null,
+     "agree": false,
+     "km": null,
+     "independent_sources": 0
+    },
+    "source_urls": [
+     "https://www.yachting-pages.com/listing/ports-and-marinas/martinique"
+    ],
+    "level": "C2"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -60.86709,
+     14.471625
+    ]
+   },
+   "properties": {
+    "layer": "harbour_office",
+    "territory": "Martinique",
+    "name": "Capitainerie du Port de plaisance du Marin",
+    "town": "Le Marin",
+    "key": "capitainerieduportdeplaisancedumarin",
+    "evidence": [
+     {
+      "url": "https://www.sudnautique.fr",
+      "quote": "Capitainerie",
+      "extracted": true,
+      "tool": "tavily.extract",
+      "page_coords": {
+       "lat": 14.471625,
+       "lon": -60.86709,
+       "src": "page"
+      },
+      "judge": "unsupported",
+      "why": "Quote lacks location or name specifics."
+     },
+     {
+      "url": "https://figaronautisme.meteoconsult.fr/bloc-marine/info-port/2267-informations-port-le-marin",
+      "quote": "**Bureau du port :**  Bd Allègre, 97290  Le Marin",
+      "extracted": true,
+      "tool": "tavily.extract",
+      "page_coords": null,
+      "judge": "supported",
+      "why": "Quote shows port office address in Le Marin, Martinique."
+     },
+     {
+      "url": "https://www.seanaut.fr/ports/dom-tom/port-marin",
+      "quote": "La capitainerie veille le canal VHF 9 et répond au 0596748383.",
+      "extracted": true,
+      "tool": "tavily.extract",
+      "page_coords": {
+       "lat": 14.4647,
+       "lon": -60.8706,
+       "src": "page"
+      },
+      "judge": "unsupported",
+      "why": "Quote mentions capitainerie but no location."
+     },
+     {
+      "url": "https://www.tiponton.com/index.php?id_rubrique=1&id_article=6",
+      "quote": "Capitainerie - 1er étage de la nouvelle extension, en face des pontons",
+      "extracted": true,
+      "tool": "tavily.extract",
+      "page_coords": {
+       "lat": 14.4676667,
+       "lon": -60.8655,
+       "src": "page"
+      },
+      "judge": "unsupported",
+      "why": "Quote mentions capitainerie without location."
+     }
+    ],
+    "aliases": [
+     "Bureau du port",
+     "Capitainerie de la marina du Marin",
+     "Marina du Marin"
+    ],
+    "geo_precision": "page",
+    "geo": {
+     "primary": null,
+     "secondary": "page",
+     "agree": false,
+     "km": null,
+     "independent_sources": 1
+    },
+    "source_urls": [
+     "https://www.sudnautique.fr",
+     "https://figaronautisme.meteoconsult.fr/bloc-marine/info-port/2267-informations-port-le-marin",
+     "https://www.seanaut.fr/ports/dom-tom/port-marin",
+     "https://www.tiponton.com/index.php?id_rubrique=1&id_article=6"
+    ],
+    "level": "C0"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -61.177433,
+     14.7716731
+    ]
+   },
+   "properties": {
+    "layer": "harbour_office",
+    "territory": "Martinique",
+    "name": "Capitainerie de la Rade de Saint-Pierre",
+    "town": "Saint-Pierre",
+    "key": "capitaineriedelaradedesaintpierre",
+    "evidence": [
+     {
+      "url": "https://www.saint-pierre.marina-martinique.fr/en/contact-and-opening-hours",
+      "quote": "Avant d’entrer dans la rade, contactez la Capitainerie. Un agent vous indique votre poste et vous assiste à la prise de bouée.",
+      "extracted": true,
+      "tool": "tavily.extract",
+      "page_coords": null,
+      "judge": "supported",
+      "why": "Quote from Saint-Pierre marina site references Capitainerie."
+     }
+    ],
+    "aliases": [],
+    "geo_precision": "town",
+    "geo": {
+     "primary": null,
+     "secondary": null,
+     "agree": false,
+     "km": null,
+     "independent_sources": 0
+    },
+    "source_urls": [
+     "https://www.saint-pierre.marina-martinique.fr/en/contact-and-opening-hours"
+    ],
+    "level": "C2"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -61.0517326,
+     14.5570151
+    ]
+   },
+   "properties": {
+    "layer": "harbour_office",
+    "territory": "Martinique",
+    "name": "Marina Pointe du Bout",
+    "town": "Trois Ilets",
+    "key": "marinapointedubout",
+    "evidence": [
+     {
+      "url": "https://www.tiponton.com/index.php?id_rubrique=1&id_article=6",
+      "quote": "Horaires capitainerie : Haute saison (15 nov-15 mai) : lun-ven 9h-17h, sam 9h-14h, dim et jours fériés 9h-11h.",
+      "extracted": false,
+      "tool": "tavily.extract",
+      "page_coords": {
+       "lat": 14.5581667,
+       "lon": -61.0508333,
+       "src": "page"
+      }
+     }
+    ],
+    "aliases": [],
+    "geo": {
+     "primary": "nominatim",
+     "secondary": "page",
+     "agree": true,
+     "km": 0.161,
+     "independent_sources": 2
+    },
+    "source_urls": [
+     "https://www.tiponton.com/index.php?id_rubrique=1&id_article=6"
+    ],
+    "level": "C0"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -61.0411667,
+     14.5941667
+    ]
+   },
+   "properties": {
+    "layer": "harbour_office",
+    "territory": "Martinique",
+    "name": "Port de Plaisance Communautaire de l'Etang Z'Abricots",
+    "town": "Fort de France",
+    "key": "portdeplaisancecommunautairedeletangzabr",
+    "evidence": [
+     {
+      "url": "https://www.tiponton.com/index.php?id_rubrique=1&id_article=6",
+      "quote": "Horaires capitainerie : lun-ven 8h-17h sam, dim 9h-17h",
+      "extracted": true,
+      "tool": "tavily.extract",
+      "page_coords": {
+       "lat": 14.5941667,
+       "lon": -61.0411667,
+       "src": "page"
+      },
+      "judge": "supported",
+      "why": "Quote lists capitainerie hours for Etang Z'Abricots."
+     }
+    ],
+    "aliases": [],
+    "geo_precision": "page",
+    "geo": {
+     "primary": null,
+     "secondary": "page",
+     "agree": false,
+     "km": null,
+     "independent_sources": 1
+    },
+    "source_urls": [
+     "https://www.tiponton.com/index.php?id_rubrique=1&id_article=6"
+    ],
+    "level": "C0"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -60.92865,
+     14.6529425
+    ]
+   },
+   "properties": {
+    "layer": "harbour_office",
+    "territory": "Martinique",
+    "name": "Marina du Robert",
+    "town": "Le Robert",
+    "key": "marinadurobert",
+    "evidence": [
+     {
+      "url": "https://www.tiponton.com/index.php?id_rubrique=1&id_article=6",
+      "quote": "Horaires capitainerie : lun-ven 8h-12h/14h-17h, sam, dim, jours fériés 9h-13h.",
+      "extracted": true,
+      "tool": "tavily.extract",
+      "page_coords": {
+       "lat": 14.6525,
+       "lon": -60.923,
+       "src": "page"
+      },
+      "judge": "supported",
+      "why": "Quote lists capitainerie hours for Marina du Robert."
+     }
+    ],
+    "aliases": [],
+    "geo": {
+     "primary": "nominatim",
+     "secondary": "page",
+     "agree": false,
+     "km": 0.61,
+     "independent_sources": 2
+    },
+    "source_urls": [
+     "https://www.tiponton.com/index.php?id_rubrique=1&id_article=6"
+    ],
+    "level": "C0"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -60.8902288,
+     14.6194972
+    ]
+   },
+   "properties": {
+    "layer": "harbour_office",
+    "territory": "Martinique",
+    "name": "Marina du François",
+    "town": "Le François",
+    "key": "marinadufrancois",
+    "evidence": [
+     {
+      "url": "https://www.tiponton.com/index.php?id_rubrique=1&id_article=6",
+      "quote": "Horaires capitainerie : lun-ven 7h30-12h et 13h-17h sam, dim 7h-12h.",
+      "extracted": true,
+      "tool": "tavily.extract",
+      "page_coords": {
+       "lat": 14.6203333,
+       "lon": -60.8896667,
+       "src": "page"
+      },
+      "judge": "supported",
+      "why": "Quote lists capitainerie hours for Marina du François."
+     }
+    ],
+    "aliases": [],
+    "geo": {
+     "primary": "nominatim",
+     "secondary": "page",
+     "agree": true,
+     "km": 0.111,
+     "independent_sources": 2
+    },
+    "source_urls": [
+     "https://www.tiponton.com/index.php?id_rubrique=1&id_article=6"
+    ],
+    "level": "C0"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -61.0787615,
+     14.4913595
+    ]
+   },
+   "properties": {
+    "layer": "harbour_office",
+    "territory": "Martinique",
+    "name": "Capitainerie de la Zone de Mouillage Organisée des Anses d'Arlet",
+    "town": "Les Anses d'Arlet",
+    "key": "capitaineriedelazonedemouillageorganisee",
+    "evidence": [
+     {
+      "url": "https://www.tiponton.com/index.php?id_rubrique=1&id_article=6",
+      "quote": "Capitainerie de la Zone de Mouillage Organisée des Anses d'Arlet",
+      "extracted": true,
+      "tool": "tavily.extract",
+      "page_coords": null,
+      "judge": "supported",
+      "why": "Quote directly names the capitainerie."
+     }
+    ],
+    "aliases": [],
+    "geo_precision": "town",
+    "geo": {
+     "primary": null,
+     "secondary": null,
+     "agree": false,
+     "km": null,
+     "independent_sources": 0
+    },
+    "source_urls": [
+     "https://www.tiponton.com/index.php?id_rubrique=1&id_article=6"
+    ],
+    "level": "C0"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -61.5242666,
+     16.219803
+    ]
+   },
+   "properties": {
+    "layer": "marina",
+    "territory": "Guadeloupe",
+    "name": "Marina Bas-du-Fort",
+    "town": "Pointe-à-Pitre",
+    "key": "marinabasdufort",
+    "evidence": [
+     {
+      "url": "https://anchorages.co/location/guadeloupe",
+      "quote": "Marina Bas-du-Fort sits by the peninsula between the city and Le Gosier, handy for beaches and a…",
+      "extracted": true,
+      "tool": "tavily.extract",
+      "page_coords": null,
+      "judge": "supported",
+      "why": "Quote names Marina Bas-du-Fort in Guadeloupe."
+     },
+     {
+      "url": "http://portfocus.com/guadeloupe/index.html",
+      "quote": "Marina with 1000 slips with draught up to 4m50 (14.80 ft) and lengths up to 60 m (190ft). Pointe-à-Pitre, Guadeloupe 16° 13' N / 61° 31' W",
+      "extracted": true,
+      "tool": "tavily.extract",
+      "page_coords": {
+       "lat": 16.21666666666667,
+       "lon": -61.51666666666667,
+       "src": "page"
+      },
+      "judge": "unsupported",
+      "why": "Quote does not mention Marina Bas-du-Fort."
+     },
+     {
+      "url": "https://marinas.com/browse/marina/GP",
+      "quote": "[Marina Bas-du-Fort\nPointe a Pitre]",
+      "extracted": false,
+      "tool": "tavily.extract",
+      "page_coords": null
+     },
+     {
+      "url": "https://www.marinaguadeloupe.com/en/pr%C3%A9sentation",
+      "quote": "The Bas-du-Fort Marina is a key player in the economic and social life of Guadeloupe.",
+      "extracted": true,
+      "tool": "tavily.extract",
+      "page_coords": null,
+      "judge": "supported",
+      "why": "Quote names Bas-du-Fort Marina in Guadeloupe."
+     }
+    ],
+    "aliases": [],
+    "geo": {
+     "primary": "nominatim",
+     "secondary": "page",
+     "agree": false,
+     "km": 0.883,
+     "independent_sources": 2
+    },
+    "source_urls": [
+     "https://anchorages.co/location/guadeloupe",
+     "http://portfocus.com/guadeloupe/index.html",
+     "https://marinas.com/browse/marina/GP",
+     "https://www.marinaguadeloupe.com/en/pr%C3%A9sentation"
+    ],
+    "level": "C0"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -62.85,
+     17.9
+    ]
+   },
+   "properties": {
+    "layer": "marina",
+    "territory": "Guadeloupe",
+    "name": "Gustavia Port Marina",
+    "town": "St Barts",
+    "key": "gustaviaportmarina",
+    "evidence": [
+     {
+      "url": "https://marinas.com/browse/marina/GP",
+      "quote": "[Gustavia Port Marina\nSt Barts\n*1 Review*]",
+      "extracted": false,
+      "tool": "tavily.extract",
+      "page_coords": null
+     }
+    ],
+    "aliases": [],
+    "geo_precision": "wpi",
+    "geo": {
+     "primary": null,
+     "secondary": "wpi",
+     "agree": false,
+     "km": null,
+     "independent_sources": 1
+    },
+    "source_urls": [
+     "https://marinas.com/browse/marina/GP"
+    ],
+    "level": "C0"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -62.848625,
+     17.8967638
+    ]
+   },
+   "properties": {
+    "layer": "marina",
+    "territory": "Guadeloupe",
+    "name": "St Barth Marine",
+    "town": "St Barts",
+    "key": "stbarthmarine",
+    "evidence": [
+     {
+      "url": "https://marinas.com/browse/marina/GP",
+      "quote": "[St Barth Marine\nSt Barts]",
+      "extracted": false,
+      "tool": "tavily.extract",
+      "page_coords": null
+     }
+    ],
+    "aliases": [],
+    "geo_precision": "town",
+    "geo": {
+     "primary": null,
+     "secondary": null,
+     "agree": false,
+     "km": null,
+     "independent_sources": 0
+    },
+    "source_urls": [
+     "https://marinas.com/browse/marina/GP"
+    ],
+    "level": "C0"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -63.0245957,
+     18.0962819
+    ]
+   },
+   "properties": {
+    "layer": "marina",
+    "territory": "Guadeloupe",
+    "name": "Polypat Caraïbes Boat Yard",
+    "town": "St. Martin",
+    "key": "polypatcaraibesboatyard",
+    "evidence": [
+     {
+      "url": "https://marinas.com/browse/marina/GP",
+      "quote": "[Polypat Caraïbes Boat Yard\nSt. Martin]",
+      "extracted": false,
+      "tool": "tavily.extract",
+      "page_coords": null
+     }
+    ],
+    "aliases": [],
+    "geo_precision": "town",
+    "geo": {
+     "primary": null,
+     "secondary": null,
+     "agree": false,
+     "km": null,
+     "independent_sources": 0
+    },
+    "source_urls": [
+     "https://marinas.com/browse/marina/GP"
+    ],
+    "level": "C0"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -61.3146797,
+     15.8836417
+    ]
+   },
+   "properties": {
+    "layer": "marina",
+    "territory": "Guadeloupe",
+    "name": "Grand Bourg Port Marina",
+    "town": "Grand Bourg",
+    "key": "grandbourgportmarina",
+    "evidence": [
+     {
+      "url": "https://marinas.com/browse/marina/GP",
+      "quote": "[Grand Bourg Port Marina\nGrand Bourg]",
+      "extracted": false,
+      "tool": "tavily.extract",
+      "page_coords": null
+     }
+    ],
+    "aliases": [],
+    "geo_precision": "town",
+    "geo": {
+     "primary": null,
+     "secondary": null,
+     "agree": false,
+     "km": null,
+     "independent_sources": 0
+    },
+    "source_urls": [
+     "https://marinas.com/browse/marina/GP"
+    ],
+    "level": "C0"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -61.733324,
+     15.9966629
+    ]
+   },
+   "properties": {
+    "layer": "marina",
+    "territory": "Guadeloupe",
+    "name": "Port de Saint-François Guadeloupe",
+    "town": "Saint-François",
+    "key": "portdesaintfrancoisguadeloupe",
+    "evidence": [
+     {
+      "url": "https://superyachtguide.com/marinas/port-de-saint-francois-guadeloupe",
+      "quote": "Port de Saint-François Guadeloupe is a Guadeloupe cruising marina in Saint-François, Guadeloupe.",
+      "extracted": true,
+      "tool": "tavily.extract",
+      "page_coords": {
+       "lat": 16.252,
+       "lon": -61.273,
+       "src": "page"
+      },
+      "judge": "supported",
+      "why": "Quote confirms Port de Saint-François marina in Guadeloupe."
+     }
+    ],
+    "aliases": [],
+    "geo": {
+     "primary": "nominatim",
+     "secondary": "page",
+     "agree": false,
+     "km": 56.78,
+     "independent_sources": 2
+    },
+    "source_urls": [
+     "https://superyachtguide.com/marinas/port-de-saint-francois-guadeloupe"
+    ],
+    "level": "C0"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -61.5195428,
+     16.2164602
+    ]
+   },
+   "properties": {
+    "layer": "harbour_office",
+    "territory": "Guadeloupe",
+    "name": "Harbor Master's Office",
+    "town": "Bas-du-Fort",
+    "key": "harbormastersoffice",
+    "evidence": [
+     {
+      "url": "https://www.marinaguadeloupe.com/en",
+      "quote": "The Harbor Master's Office welcomes you 7 days a week, at the following times:",
+      "extracted": true,
+      "tool": "tavily.extract",
+      "page_coords": null,
+      "judge": "supported",
+      "why": "Quote explicitly mentions Harbor Master's Office operating hours."
+     }
+    ],
+    "aliases": [],
+    "geo_precision": "town",
+    "geo": {
+     "primary": null,
+     "secondary": null,
+     "agree": false,
+     "km": null,
+     "independent_sources": 0
+    },
+    "source_urls": [
+     "https://www.marinaguadeloupe.com/en"
+    ],
+    "level": "C0"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -61.5334077,
+     16.2408636
+    ]
+   },
+   "properties": {
+    "layer": "harbour_office",
+    "territory": "Guadeloupe",
+    "name": "Guadeloupe Yacht Concierge Harbour Office",
+    "town": "Pointe-à-Pitre",
+    "key": "guadeloupeyachtconciergeharbouroffice",
+    "evidence": [
+     {
+      "url": "https://www.guadeloupeyachtconcierge.com/contact-intro-guide",
+      "quote": "Our main office is at the entrance of famous restaurant LE QUAI OUEST, next to the capitainerie of MARINA BAS-DU-FORT in Pointe-à-Pitre.",
+      "extracted": true,
+      "tool": "tavily.extract",
+      "page_coords": null,
+      "judge": "supported",
+      "why": "Quote states main office location for Guadeloupe Yacht Concierge Harbour Office."
+     }
+    ],
+    "aliases": [],
+    "geo_precision": "town",
+    "geo": {
+     "primary": null,
+     "secondary": null,
+     "agree": false,
+     "km": null,
+     "independent_sources": 0
+    },
+    "source_urls": [
+     "https://www.guadeloupeyachtconcierge.com/contact-intro-guide"
+    ],
+    "level": "C2"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -61.7118263,
+     15.9824436
+    ]
+   },
+   "properties": {
+    "layer": "harbour_office",
+    "territory": "Guadeloupe",
+    "name": "Harbour Master’s Office of the Marina de Rivière-Sens",
+    "town": "Gourbeyre",
+    "key": "harbourmastersofficeofthemarinaderiviere",
+    "evidence": [
+     {
+      "url": "https://marina-rivieresens.com/en/regulations",
+      "quote": "At the Harbour Master’s Office of the Marina de Rivière-Sens, you have the possibility to carry out this procedure.",
+      "extracted": true,
+      "tool": "tavily.extract",
+      "page_coords": {
+       "lat": 15.9824436,
+       "lon": -61.7118263,
+       "src": "page"
+      },
+      "judge": "supported",
+      "why": "Quote directly references Harbour Master’s Office of Marina de Rivière‑Sens."
+     }
+    ],
+    "aliases": [],
+    "geo_precision": "page",
+    "geo": {
+     "primary": null,
+     "secondary": "page",
+     "agree": false,
+     "km": null,
+     "independent_sources": 1
+    },
+    "source_urls": [
+     "https://marina-rivieresens.com/en/regulations"
+    ],
+    "level": "C2"
+   }
+  }
+ ]
+}

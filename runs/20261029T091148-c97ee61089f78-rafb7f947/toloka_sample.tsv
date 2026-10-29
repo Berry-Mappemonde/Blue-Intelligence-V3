@@ -1,0 +1,5 @@
+INPUT:entity_id	INPUT:question	INPUT:url	INPUT:lat	INPUT:lon
+harbourmastersofficeofthemarinaderiviere	"Does this official page confirm that ""Harbour Master’s Office of the Marina de Rivière-Sens"" (harbour_office) exists at this place? Yes / No / Cannot tell"	https://marina-rivieresens.com/en/regulations	15.9824436	-61.7118263
+capitaineriedelaradedesaintpierre	"Does this official page confirm that ""Capitainerie de la Rade de Saint-Pierre"" (harbour_office) exists at this place? Yes / No / Cannot tell"	https://www.saint-pierre.marina-martinique.fr/en/contact-and-opening-hours	14.7716731	-61.177433
+guadeloupeyachtconciergeharbouroffice	"Does this official page confirm that ""Guadeloupe Yacht Concierge Harbour Office"" (harbour_office) exists at this place? Yes / No / Cannot tell"	https://www.guadeloupeyachtconcierge.com/contact-intro-guide	16.2408636	-61.5334077
+marinsyachtharbourmarina	"Does this official page confirm that ""Marin's Yacht Harbour Marina"" (marina) exists at this place? Yes / No / Cannot tell"	https://www.yachting-pages.com/listing/ports-and-marinas/martinique	14.6113732	-60.9620777

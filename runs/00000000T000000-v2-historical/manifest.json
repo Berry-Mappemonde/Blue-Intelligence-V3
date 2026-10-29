@@ -1,0 +1,21 @@
+{
+ "run_id": "00000000T000000-v2-historical",
+ "rules": {
+  "dedup_km": 0.5,
+  "geo_agree_km": 0.5,
+  "moved_km": 2.0,
+  "levels": "C0-C4 v1"
+ },
+ "python": "3.13.5",
+ "entities": 19,
+ "counts": {
+  "marina": {
+   "C0": 19
+  }
+ },
+ "sha256": {
+  "entities.geojson": "2965fe62876da604b370d67f4c1ab248da70e54873f4c9126449a540111bd9da"
+ },
+ "kind": "historical-import",
+ "source": "Blue-Intelligence 4ba9c5f backend/data/curated_marinas.json"
+}
