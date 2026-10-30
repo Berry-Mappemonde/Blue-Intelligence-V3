@@ -22,6 +22,8 @@ still works but is deprecated.
 """
 import asyncio
 import logging
+import os
+import socket
 import time
 import uuid
 
@@ -38,6 +40,54 @@ logger = logging.getLogger(__name__)
 
 ZONE_TIMEOUT_S = 900  # the v2 pipeline does more work (render, dual geocoding)
 LAYER = "poe"
+# Cross-process run lease (unified_runs.claim_run). While a run executes,
+# poe_runs.heartbeat_ts (epoch seconds) is refreshed every HEARTBEAT_S; a
+# "running" run whose heartbeat is older than STALE_AFTER_S is taken as dead.
+STALE_AFTER_S = 600
+HEARTBEAT_S = 30
+
+
+def _env_seconds(name: str, default: float) -> float:
+    try:
+        value = float(os.environ.get(name) or default)
+    except ValueError:
+        return float(default)
+    return value if value > 0 else float(default)
+
+
+def stale_after_s() -> float:
+    """BI_RUN_STALE_AFTER_S: heartbeat age after which a running run is free."""
+    return _env_seconds("BI_RUN_STALE_AFTER_S", STALE_AFTER_S)
+
+
+def heartbeat_s() -> float:
+    """BI_RUN_HEARTBEAT_S, kept at most a third of the staleness window."""
+    return min(_env_seconds("BI_RUN_HEARTBEAT_S", HEARTBEAT_S), stale_after_s() / 3)
+
+
+def new_lease_owner() -> str:
+    return f"{socket.gethostname()}:{os.getpid()}:{uuid.uuid4().hex[:8]}"
+
+
+async def _heartbeat(db, run_id: str, owner: str) -> None:
+    """Refresh heartbeat_ts while this process owns the run (never raises)."""
+    while True:
+        await asyncio.sleep(heartbeat_s())
+        try:
+            await db.poe_runs.update_one({"_id": run_id, "lease_owner": owner},
+                                         {"$set": {"heartbeat_ts": time.time()}})
+        except Exception as exc:
+            logger.warning("run %s heartbeat failed: %s", run_id, exc)
+
+
+async def _release(db, run_id: str, owner: str) -> None:
+    """Drop the lease (only if still ours): the run can be resumed at once.
+    A crashed process cannot do this; its run frees itself after stale_after_s()."""
+    try:
+        await db.poe_runs.update_one({"_id": run_id, "lease_owner": owner},
+                                     {"$set": {"heartbeat_ts": None, "lease_owner": None}})
+    except Exception as exc:
+        logger.warning("run %s lease release failed: %s", run_id, exc)
 
 
 async def _artifact(fn, *args, **kwargs):
@@ -160,198 +210,209 @@ async def execute_run(db, state, run_id: str, label: str = "",
                       variant: str = "tinyfish",
                       rules_overrides: dict | None = None,
                       profile: str | None = None,
-                      retry_errored: bool = False) -> dict:
+                      retry_errored: bool = False,
+                      lease_owner: str | None = None) -> dict:
     """Execute (or resume) a full run. `state` is a TaskState (live logs,
     progress, cancel); durable state lives in db.poe_runs.
     variant: v1 | v2 | tinyfish — never writes poe_ports.
     retry_errored: on resume, errored zones are redone once in total (see
     _retryable_zones); completed zones are never re-run.
+    lease_owner: token from unified_runs.claim_run (a new one otherwise).
+    The heartbeat runs for the whole call; the lease is released when it
+    returns or raises.
     """
-    await ensure_run_indexes(db)
-    from app.core.tokenfactory import bind_run
-    bind_run(run_id)
-    variant = normalize_variant(variant)
-    recorder = RunRecorder(run_id, db=db)
-    run_ctx = RunContext(run_id=run_id, recorder=recorder, variant=variant)
-    log = state.log
-
-    zones = await _select_zones(db, limit, only_zones)
-    if not zones:
-        raise ValueError("aucune ZEE candidate — construire le référentiel d'abord")
-
-    done_mrgids: set[int] = set()
-    retry_mrgids: set[int] = set()
-    if resume:
-        zone_status = {z["mrgid"]: z.get("status") async for z in db.poe_run_zones.find(
-            {"run_id": run_id}, {"mrgid": 1, "status": 1})}
-        done_mrgids = set(zone_status)
-        traced = await _artifact(artifacts.completed_units, run_id) or set()
-        selected = {z["mrgid"] for z in zones}
-        for mrgid in sorted(m for m in traced if isinstance(m, int)
-                            and m in selected and m not in done_mrgids):
-            log(f"zone {mrgid} terminée dans la trace mais absente de Mongo — relancée")
-            await _artifact(artifacts.append_trace, run_id, "unit_missing_in_mongo",
-                            unit=mrgid)
-        if retry_errored:
-            retry_mrgids = await _retryable_zones(db, run_id, selected, zone_status, log)
-            done_mrgids -= retry_mrgids
-        if done_mrgids:
-            log(f"reprise du run {run_id}: {len(done_mrgids)} zone(s) déjà générées, sautées")
-    todo = [z for z in zones if z["mrgid"] not in done_mrgids]
-
-    state.total = len(zones)
-    state.progress = len(done_mrgids)
-    settings = {}
+    owner = lease_owner or new_lease_owner()
+    beat = asyncio.create_task(_heartbeat(db, run_id, owner))
     try:
-        from app.db import get_settings
-        settings = await get_settings()
-    except Exception:
-        pass
-    timeout_s = int(get_rule("formalities.zone_timeout_s", ZONE_TIMEOUT_S))
-    if resume:
-        existing = await db.poe_runs.find_one({"_id": run_id}) or {}
-        existing_params = existing.get("params") or {}
-        rules = existing_params.get("rules") or snapshot_for_run(
-            mode="formalities", settings=settings,
-            overrides=rules_overrides, profile=profile)
-        timeout_s = int((rules.get("chosen") or {}).get(
-            "formalities.zone_timeout_s", {}).get("value") or timeout_s)
-        fingerprint = build_code_fingerprint(settings, zone_timeout_s=timeout_s)
-        base = {"label": label, "limit": limit, "concurrency": concurrency,
-                "only_zones": only_zones, "force": True, "variant": variant,
-                "profile": rules.get("profile")}
-        params = resume_params(existing_params or base, fingerprint)
-        params.update({"label": label, "limit": limit, "concurrency": concurrency,
-                       "only_zones": only_zones, "force": True, "variant": variant})
-        if not isinstance(params.get("rules"), dict):
-            params = attach_rules(params, rules)
-    else:
-        rules = snapshot_for_run(mode="formalities", settings=settings,
-                                 overrides=rules_overrides, profile=profile)
-        timeout_s = int((rules.get("chosen") or {}).get(
-            "formalities.zone_timeout_s", {}).get("value") or timeout_s)
-        fingerprint = build_code_fingerprint(settings, zone_timeout_s=timeout_s)
-        base = {"label": label, "limit": limit, "concurrency": concurrency,
-                "only_zones": only_zones, "force": True, "variant": variant,
-                "profile": rules["profile"]}
-        params = attach_rules(merge_run_params(base, fingerprint), rules)
-    bind_rules(rules)
-    await db.poe_runs.update_one({"_id": run_id}, {"$set": {
-        "label": label, "params": params, "state": "running",
-        "started_at": poe.now_iso() if not resume else None,
-        "resumed": resume, "zones_total": len(zones),
-        "zones_done": len(done_mrgids), "error": None,
-    }, "$setOnInsert": {"created_at": poe.now_iso()}}, upsert=True)
-    if not resume:
-        await recorder.event("run_start", params=params, zones_total=len(zones))
-    else:
-        await recorder.event("run_resume", params=params, zones_total=len(zones),
-                             already_done=len(done_mrgids))
-    await _artifact(artifacts.append_trace, run_id,
-                    "run_resume" if resume else "run_start", layer=LAYER,
-                    zones_total=len(zones), already_done=sorted(done_mrgids),
-                    retry=sorted(retry_mrgids), variant=variant)
-    await write_manifest(db, run_id, "running", params, {
-        "zones_total": len(zones), "zones_done": len(done_mrgids)})
-    log(f"run {run_id}: variant={variant} — {len(todo)} zone(s) à générer from scratch "
-        f"(concurrency={concurrency}, timeout {timeout_s}s/zone, "
-        f"rules={rules.get('hash')} profile={rules.get('profile')})")
+        await ensure_run_indexes(db)
+        from app.core.tokenfactory import bind_run
+        bind_run(run_id)
+        variant = normalize_variant(variant)
+        recorder = RunRecorder(run_id, db=db)
+        run_ctx = RunContext(run_id=run_id, recorder=recorder, variant=variant)
+        log = state.log
 
-    sem = asyncio.Semaphore(max(1, concurrency))
-    counter = {"done": len(done_mrgids), "errors": 0}
-    t0 = time.time()
+        zones = await _select_zones(db, limit, only_zones)
+        if not zones:
+            raise ValueError("aucune ZEE candidate — construire le référentiel d'abord")
 
-    async def _one(z):
-        mrgid = z["mrgid"]
-        name = z.get("name") or z.get("geoname")
-        async with sem:
-            if state.cancel:
-                return
-            await _artifact(artifacts.append_trace, run_id, "unit_start",
-                            unit=mrgid, zone=name, retry=mrgid in retry_mrgids)
-            try:
-                doc = await asyncio.wait_for(
-                    poe.generate_zone_poe(
-                        db, mrgid,
-                        logger=lambda m: log(f"[{name}] {m}"),
-                        force=True, run=run_ctx),
-                    timeout=timeout_s)
-                state.results.append({"mrgid": mrgid, "name": name,
-                                      "status": (doc or {}).get("status"),
-                                      "poe_count": (doc or {}).get("poe_count", 0)})
-                await _artifact(artifacts.append_trace, run_id, "unit_done",
-                                unit=mrgid, zone=name,
-                                status=(doc or {}).get("status"),
-                                poe_count=(doc or {}).get("poe_count", 0))
-            except Exception as e:
-                counter["errors"] += 1
-                log(f"[{name}] FAILED: {type(e).__name__}: {e}")
-                await _artifact(artifacts.append_trace, run_id, "unit_error",
-                                unit=mrgid, zone=name,
-                                error=f"{type(e).__name__}: {str(e)[:200]}")
-                await recorder.event("zone_error", mrgid=mrgid, zone=name,
-                                     error=f"{type(e).__name__}: {str(e)[:200]}")
-                await db.poe_run_zones.update_one(
-                    {"run_id": run_id, "mrgid": mrgid},
-                    {"$set": {"run_id": run_id, "mrgid": mrgid, "name": name,
-                              "status": "erreur", "poe_count": 0,
-                              "last_error": f"{type(e).__name__}: {str(e)[:200]}",
-                              "generated_at": poe.now_iso()}},
-                    upsert=True)
-                state.results.append({"mrgid": mrgid, "name": name, "error": str(e)[:120]})
-            finally:
-                counter["done"] += 1
-                state.progress = counter["done"]
-                await db.poe_runs.update_one({"_id": run_id}, {"$set": {
-                    "zones_done": counter["done"], "last_zone": name,
-                }})
+        done_mrgids: set[int] = set()
+        retry_mrgids: set[int] = set()
+        if resume:
+            zone_status = {z["mrgid"]: z.get("status") async for z in db.poe_run_zones.find(
+                {"run_id": run_id}, {"mrgid": 1, "status": 1})}
+            done_mrgids = set(zone_status)
+            traced = await _artifact(artifacts.completed_units, run_id) or set()
+            selected = {z["mrgid"] for z in zones}
+            for mrgid in sorted(m for m in traced if isinstance(m, int)
+                                and m in selected and m not in done_mrgids):
+                log(f"zone {mrgid} terminée dans la trace mais absente de Mongo — relancée")
+                await _artifact(artifacts.append_trace, run_id, "unit_missing_in_mongo",
+                                unit=mrgid)
+            if retry_errored:
+                retry_mrgids = await _retryable_zones(db, run_id, selected, zone_status, log)
+                done_mrgids -= retry_mrgids
+            if done_mrgids:
+                log(f"reprise du run {run_id}: {len(done_mrgids)} zone(s) déjà générées, sautées")
+        todo = [z for z in zones if z["mrgid"] not in done_mrgids]
 
-    await asyncio.gather(*(_one(z) for z in todo))
+        state.total = len(zones)
+        state.progress = len(done_mrgids)
+        settings = {}
+        try:
+            from app.db import get_settings
+            settings = await get_settings()
+        except Exception:
+            pass
+        timeout_s = int(get_rule("formalities.zone_timeout_s", ZONE_TIMEOUT_S))
+        if resume:
+            existing = await db.poe_runs.find_one({"_id": run_id}) or {}
+            existing_params = existing.get("params") or {}
+            rules = existing_params.get("rules") or snapshot_for_run(
+                mode="formalities", settings=settings,
+                overrides=rules_overrides, profile=profile)
+            timeout_s = int((rules.get("chosen") or {}).get(
+                "formalities.zone_timeout_s", {}).get("value") or timeout_s)
+            fingerprint = build_code_fingerprint(settings, zone_timeout_s=timeout_s)
+            base = {"label": label, "limit": limit, "concurrency": concurrency,
+                    "only_zones": only_zones, "force": True, "variant": variant,
+                    "profile": rules.get("profile")}
+            params = resume_params(existing_params or base, fingerprint)
+            params.update({"label": label, "limit": limit, "concurrency": concurrency,
+                           "only_zones": only_zones, "force": True, "variant": variant})
+            if not isinstance(params.get("rules"), dict):
+                params = attach_rules(params, rules)
+        else:
+            rules = snapshot_for_run(mode="formalities", settings=settings,
+                                     overrides=rules_overrides, profile=profile)
+            timeout_s = int((rules.get("chosen") or {}).get(
+                "formalities.zone_timeout_s", {}).get("value") or timeout_s)
+            fingerprint = build_code_fingerprint(settings, zone_timeout_s=timeout_s)
+            base = {"label": label, "limit": limit, "concurrency": concurrency,
+                    "only_zones": only_zones, "force": True, "variant": variant,
+                    "profile": rules["profile"]}
+            params = attach_rules(merge_run_params(base, fingerprint), rules)
+        bind_rules(rules)
+        await db.poe_runs.update_one({"_id": run_id}, {"$set": {
+            "label": label, "params": params, "state": "running",
+            "started_at": poe.now_iso() if not resume else None,
+            "resumed": resume, "zones_total": len(zones),
+            "zones_done": len(done_mrgids), "error": None,
+            "lease_owner": owner, "heartbeat_ts": time.time(),
+        }, "$setOnInsert": {"created_at": poe.now_iso()}}, upsert=True)
+        if not resume:
+            await recorder.event("run_start", params=params, zones_total=len(zones))
+        else:
+            await recorder.event("run_resume", params=params, zones_total=len(zones),
+                                 already_done=len(done_mrgids))
+        await _artifact(artifacts.append_trace, run_id,
+                        "run_resume" if resume else "run_start", layer=LAYER,
+                        zones_total=len(zones), already_done=sorted(done_mrgids),
+                        retry=sorted(retry_mrgids), variant=variant)
+        await write_manifest(db, run_id, "running", params, {
+            "zones_total": len(zones), "zones_done": len(done_mrgids)})
+        log(f"run {run_id}: variant={variant} — {len(todo)} zone(s) à générer from scratch "
+            f"(concurrency={concurrency}, timeout {timeout_s}s/zone, "
+            f"rules={rules.get('hash')} profile={rules.get('profile')})")
 
-    cancelled = state.cancel
-    by_status: dict[str, int] = {}
-    async for z in db.poe_run_zones.find({"run_id": run_id}, {"status": 1}):
-        s = z.get("status") or "erreur"
-        by_status[s] = by_status.get(s, 0) + 1
-    ports_total = await db.poe_run_ports.count_documents({"run_id": run_id})
-    catalog_skipped = 0
-    try:
-        catalog_skipped = await db.poe_run_events.count_documents({
-            "run_id": run_id, "step": "extraction_compare",
-            "payload.skipped_llm": True,
-        })
-    except Exception:
-        pass
-    summary = {
-        "run_id": run_id,
-        "zones_total": len(zones),
-        "zones_done": counter["done"],
-        "by_status": by_status,
-        "ports_total": ports_total,
-        "errors": counter["errors"],
-        "cancelled": cancelled,
-        "duration_s": round(time.time() - t0, 1),
-        "catalog_skipped_zones": catalog_skipped,
-        "git_sha": (params.get("code") or {}).get("git_sha"),
-    }
-    from app.core.tokenfactory import attach
-    attach(summary, run_id)
-    await db.poe_runs.update_one({"_id": run_id}, {"$set": {
-        "state": "cancelled" if cancelled else "done",
-        "finished_at": poe.now_iso(),
-        "summary": summary,
-        "by_status": by_status,
-        "ports_total": ports_total,
-    }})
-    await recorder.event("run_done", **summary)
-    final_state = "cancelled" if cancelled else "done"
-    await _artifact(artifacts.append_trace, run_id, "run_done", state=final_state,
-                    zones_done=counter["done"], ports_total=ports_total,
-                    errors=counter["errors"])
-    await write_manifest(db, run_id, final_state, params, {
-        "zones_total": len(zones), "zones_done": counter["done"],
-        "by_status": by_status, "ports_total": ports_total,
-        "errors": counter["errors"],
-    }, cost=summary.get("tokenfactory"))
-    log(f"run {run_id} terminé: {summary}")
-    return summary
+        sem = asyncio.Semaphore(max(1, concurrency))
+        counter = {"done": len(done_mrgids), "errors": 0}
+        t0 = time.time()
+
+        async def _one(z):
+            mrgid = z["mrgid"]
+            name = z.get("name") or z.get("geoname")
+            async with sem:
+                if state.cancel:
+                    return
+                await _artifact(artifacts.append_trace, run_id, "unit_start",
+                                unit=mrgid, zone=name, retry=mrgid in retry_mrgids)
+                try:
+                    doc = await asyncio.wait_for(
+                        poe.generate_zone_poe(
+                            db, mrgid,
+                            logger=lambda m: log(f"[{name}] {m}"),
+                            force=True, run=run_ctx),
+                        timeout=timeout_s)
+                    state.results.append({"mrgid": mrgid, "name": name,
+                                          "status": (doc or {}).get("status"),
+                                          "poe_count": (doc or {}).get("poe_count", 0)})
+                    await _artifact(artifacts.append_trace, run_id, "unit_done",
+                                    unit=mrgid, zone=name,
+                                    status=(doc or {}).get("status"),
+                                    poe_count=(doc or {}).get("poe_count", 0))
+                except Exception as e:
+                    counter["errors"] += 1
+                    log(f"[{name}] FAILED: {type(e).__name__}: {e}")
+                    await _artifact(artifacts.append_trace, run_id, "unit_error",
+                                    unit=mrgid, zone=name,
+                                    error=f"{type(e).__name__}: {str(e)[:200]}")
+                    await recorder.event("zone_error", mrgid=mrgid, zone=name,
+                                         error=f"{type(e).__name__}: {str(e)[:200]}")
+                    await db.poe_run_zones.update_one(
+                        {"run_id": run_id, "mrgid": mrgid},
+                        {"$set": {"run_id": run_id, "mrgid": mrgid, "name": name,
+                                  "status": "erreur", "poe_count": 0,
+                                  "last_error": f"{type(e).__name__}: {str(e)[:200]}",
+                                  "generated_at": poe.now_iso()}},
+                        upsert=True)
+                    state.results.append({"mrgid": mrgid, "name": name, "error": str(e)[:120]})
+                finally:
+                    counter["done"] += 1
+                    state.progress = counter["done"]
+                    await db.poe_runs.update_one({"_id": run_id}, {"$set": {
+                        "zones_done": counter["done"], "last_zone": name,
+                    }})
+
+        await asyncio.gather(*(_one(z) for z in todo))
+
+        cancelled = state.cancel
+        by_status: dict[str, int] = {}
+        async for z in db.poe_run_zones.find({"run_id": run_id}, {"status": 1}):
+            s = z.get("status") or "erreur"
+            by_status[s] = by_status.get(s, 0) + 1
+        ports_total = await db.poe_run_ports.count_documents({"run_id": run_id})
+        catalog_skipped = 0
+        try:
+            catalog_skipped = await db.poe_run_events.count_documents({
+                "run_id": run_id, "step": "extraction_compare",
+                "payload.skipped_llm": True,
+            })
+        except Exception:
+            pass
+        summary = {
+            "run_id": run_id,
+            "zones_total": len(zones),
+            "zones_done": counter["done"],
+            "by_status": by_status,
+            "ports_total": ports_total,
+            "errors": counter["errors"],
+            "cancelled": cancelled,
+            "duration_s": round(time.time() - t0, 1),
+            "catalog_skipped_zones": catalog_skipped,
+            "git_sha": (params.get("code") or {}).get("git_sha"),
+        }
+        from app.core.tokenfactory import attach
+        attach(summary, run_id)
+        await db.poe_runs.update_one({"_id": run_id}, {"$set": {
+            "state": "cancelled" if cancelled else "done",
+            "finished_at": poe.now_iso(),
+            "summary": summary,
+            "by_status": by_status,
+            "ports_total": ports_total,
+        }})
+        await recorder.event("run_done", **summary)
+        final_state = "cancelled" if cancelled else "done"
+        await _artifact(artifacts.append_trace, run_id, "run_done", state=final_state,
+                        zones_done=counter["done"], ports_total=ports_total,
+                        errors=counter["errors"])
+        await write_manifest(db, run_id, final_state, params, {
+            "zones_total": len(zones), "zones_done": counter["done"],
+            "by_status": by_status, "ports_total": ports_total,
+            "errors": counter["errors"],
+        }, cost=summary.get("tokenfactory"))
+        log(f"run {run_id} terminé: {summary}")
+        return summary
+    finally:
+        beat.cancel()
+        await _release(db, run_id, owner)

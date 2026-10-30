@@ -39,11 +39,19 @@ def _get(doc, key):
 
 def _match(doc, q):
     for k, v in (q or {}).items():
+        if k == "$or":
+            if not any(_match(doc, sub) for sub in v):
+                return False
+            continue
         val = _get(doc, k)
         if isinstance(v, dict) and any(op.startswith("$") for op in v):
             if "$in" in v and val not in v["$in"]:
                 return False
             if "$exists" in v and (val is not None) != bool(v["$exists"]):
+                return False
+            if "$ne" in v and val == v["$ne"]:
+                return False
+            if "$lt" in v and (val is None or not val < v["$lt"]):
                 return False
         elif val != v:
             return False
@@ -129,6 +137,16 @@ class _Coll:
                 target[k] = target.get(k, 0) + v
         for k, v in (update.get("$push") or {}).items():
             target.setdefault(k, []).append(v)
+
+    async def find_one_and_update(self, q, update):
+        """Atomic like Mongo's: no await between the match and the write.
+        Returns the document before the update (Mongo's default)."""
+        target = next((d for d in self.docs if _match(d, q)), None)
+        if target is None:
+            return None
+        before = dict(target)
+        target.update(update.get("$set") or {})
+        return before
 
 
 class _DB:
@@ -1144,3 +1162,130 @@ def test_manifest_build_failure_does_not_break_a_run(env, monkeypatch):
     run = env["db"].poe_runs.docs[0]
     assert run["state"] == "done" and rid == "r-build"
     assert "manifest_sha256" not in run
+
+
+# ── one process at a time per run, across processes (Mongo lease) ────
+
+def _running_elsewhere(db, rid, *, age_s=1.0, code=None):
+    """A run another process is executing: state running, recent heartbeat."""
+    import time as _time
+    params = {"limit": 0, "only_zones": None, "concurrency": 1, "variant": "tinyfish"}
+    if code is not None:
+        params["code"] = code
+    db.poe_runs.docs.append({"_id": rid, "state": "running", "label": "x",
+                             "lease_owner": "other-host:4242:abcd",
+                             "heartbeat_ts": _time.time() - age_s, "params": params})
+
+
+def test_resume_refused_while_another_process_runs_it(env, monkeypatch):
+    db = env["db"]
+    _running_elsewhere(db, "r-busy")
+    calls: list = []
+    monkeypatch.setattr(poe_runs.poe, "generate_zone_poe", _zone_stub(calls, attempt=1))
+    with pytest.raises(unified_runs.RunBusy):
+        _run(unified_runs.start_run(db, TaskState(), run_id="r-busy", resume=True))
+    assert calls == [] and db.poe_run_ports.docs == []
+    assert db.poe_runs.docs[0]["lease_owner"] == "other-host:4242:abcd"
+    # force takes it over.
+    _run(unified_runs.start_run(db, TaskState(), run_id="r-busy", resume=True, force=True))
+    assert sorted(calls) == [1, 2, 3, 4]
+    assert db.poe_runs.docs[0]["state"] == "done"
+
+
+def test_stale_running_run_can_be_resumed(env, monkeypatch):
+    db = env["db"]
+    monkeypatch.setenv("BI_RUN_STALE_AFTER_S", "120")
+    _running_elsewhere(db, "r-stale", age_s=121)
+    calls: list = []
+    monkeypatch.setattr(poe_runs.poe, "generate_zone_poe", _zone_stub(calls, attempt=1))
+    _run(unified_runs.start_run(db, TaskState(), run_id="r-stale", resume=True))
+    assert sorted(calls) == [1, 2, 3, 4]
+    _running_elsewhere(db, "r-fresh", age_s=60)
+    with pytest.raises(unified_runs.RunBusy):
+        _run(unified_runs.resolve_launch(db, run_id="r-fresh", resume=True))
+
+
+def test_claim_is_atomic_across_processes(env, monkeypatch):
+    """Two processes (no shared RUN_STATES) resume the same run at once:
+    the status check and the claim are one Mongo update, so one wins."""
+    db = env["db"]
+    db.poe_runs.docs.append({"_id": "r-race", "state": "cancelled", "label": "x",
+                             "params": {"limit": 0, "only_zones": None,
+                                        "concurrency": 1, "variant": "tinyfish"}})
+    plain_find_one = _Coll.find_one
+
+    async def yielding_find_one(self, q, proj=None):
+        await asyncio.sleep(0)  # a real Mongo lookup suspends the caller
+        return await plain_find_one(self, q, proj)
+
+    monkeypatch.setattr(_Coll, "find_one", yielding_find_one)
+
+    async def go():
+        return await asyncio.gather(*(unified_runs.resolve_launch(db, run_id="r-race", resume=True)
+                                      for _ in range(2)), return_exceptions=True)
+
+    res = _run(go())
+    assert sum(isinstance(r, dict) for r in res) == 1, res
+    assert sum(isinstance(r, unified_runs.RunBusy) for r in res) == 1, res
+    winner = next(r for r in res if isinstance(r, dict))
+    assert db.poe_runs.docs[0]["lease_owner"] == winner["lease_owner"]
+
+
+def test_heartbeat_written_during_run_and_lease_released(env, monkeypatch):
+    db = env["db"]
+    monkeypatch.setenv("BI_RUN_HEARTBEAT_S", "0.01")
+    beats: list = []
+    real_update = _Coll.update_one
+
+    async def spy_update(self, q, update, upsert=False):
+        if "heartbeat_ts" in (update.get("$set") or {}) and "lease_owner" in q:
+            beats.append(update["$set"]["heartbeat_ts"])
+        return await real_update(self, q, update, upsert)
+
+    monkeypatch.setattr(_Coll, "update_one", spy_update)
+    inner = _zone_stub([], attempt=1)
+
+    async def slow_zone(db_, mrgid, logger=None, force=False, run=None):
+        await asyncio.sleep(0.05)
+        return await inner(db_, mrgid, logger=logger, force=force, run=run)
+
+    monkeypatch.setattr(poe_runs.poe, "generate_zone_poe", slow_zone)
+    _run(unified_runs.start_run(db, TaskState(), run_id="r-beat", zones=[1, 2]))
+    assert len([b for b in beats if b is not None]) >= 3  # periodic refresh
+    run = db.poe_runs.docs[0]
+    assert run["state"] == "done"
+    assert run["heartbeat_ts"] is None and run["lease_owner"] is None
+
+
+def test_crash_releases_the_lease_so_resume_is_not_blocked(env, monkeypatch):
+    db = env["db"]
+    monkeypatch.setattr(poe_runs.poe, "generate_zone_poe",
+                        _zone_stub([], attempt=1, crash_on=2))
+    with pytest.raises(_Crash):
+        _run(unified_runs.start_run(db, TaskState(), run_id="r-rel-crash", concurrency=1))
+    run = db.poe_runs.docs[0]
+    assert run["state"] == "running" and run["heartbeat_ts"] is None
+    _run(unified_runs.resolve_launch(db, run_id="r-rel-crash", resume=True))
+
+
+def test_cli_resume_refused_while_running_elsewhere(env, monkeypatch, cli, capsys):
+    _running_elsewhere(env["db"], "r-cli-busy", code={"sample_mode": True})
+    calls: list = []
+    monkeypatch.setattr(poe_runs.poe, "generate_zone_poe", _zone_stub(calls, attempt=1))
+    assert cli.main(["--no-dotenv", "--resume", "r-cli-busy"]) == 4
+    assert calls == [] and capsys.readouterr().out == ""
+    assert cli.main(["--no-dotenv", "--resume", "r-cli-busy", "--force"]) == 0
+    assert sorted(calls) == [1, 2, 3, 4]
+    with pytest.raises(SystemExit):
+        cli.main(["--no-dotenv", "--export", "r-cli-busy", "--force"])
+
+
+def test_api_resume_refused_while_running_elsewhere(env, api):
+    _running_elsewhere(env["db"], "r-api-busy")
+    res = _post_concurrently(api["app"], [("/api/runs", {"run_id": "r-api-busy", "resume": True})])
+    assert res[0].status_code == 409 and "another process" in res[0].json()["detail"]
+    assert api["started"] == []
+    assert "r-api-busy" not in api["router"].RUN_STATES
+    res = _post_concurrently(api["app"], [("/api/runs", {"run_id": "r-api-busy", "resume": True,
+                                                         "force": True})])
+    assert res[0].status_code == 202 and api["started"] == ["r-api-busy"]

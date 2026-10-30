@@ -33,6 +33,28 @@ endpoints but write the same trace and manifest.
 A run_id is launched at most once at a time per API process (a concurrent
 start or resume of the same run gets 409).
 
+Across processes (API and CLI, or two CLIs) a resume first claims the run in
+Mongo with one `find_one_and_update` whose filter holds the status check, so
+two processes cannot both claim it. While a run executes, its process
+refreshes `poe_runs.heartbeat_ts` (epoch seconds) every `BI_RUN_HEARTBEAT_S`
+(default 30 s, at most a third of the window) and records `lease_owner`
+(`host:pid:random`). A resume is refused (409 on the API, exit code 4 on the
+CLI) while the run is `running` with a heartbeat younger than
+`BI_RUN_STALE_AFTER_S` (default 600 s). It is accepted when the run is not
+`running`, when the heartbeat is older than that window, or when it has no
+heartbeat: the lease is released whenever the run returns or raises
+(including Ctrl-C and task cancellation), and runs from before heartbeats
+existed have none. `"force": true` (API) or `--force` (CLI) takes the run
+regardless.
+
+Trade-off: a process killed hard (SIGKILL, power loss) cannot release its
+lease, so its run stays refused until the window has passed. A shorter window
+frees it sooner but risks treating a live process whose heartbeat is delayed
+(Mongo unreachable, event loop stalled) as dead, which lets a second process
+redo the same zones and double the spend. `--force` skips the check
+entirely: use it only when the other process is known to be gone. The old
+process is not stopped by a takeover; it only stops refreshing the heartbeat.
+
 A resume never changes the run's mode. The mode is recorded at start
 (`params.code.sample_mode`); a resume whose `SAMPLE_MODE` differs is refused
 (400 on the API). The CLI never switches `SAMPLE_MODE` on by itself for

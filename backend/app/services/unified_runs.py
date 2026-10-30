@@ -21,6 +21,7 @@ import asyncio
 import json
 import os
 import shutil
+import time
 from pathlib import Path
 
 from app.config import DATA_DIR
@@ -58,6 +59,38 @@ class ExportIncomplete(ValueError):
 
 class ModeMismatch(ValueError):
     """The run cannot be resumed in the mode (live / sample) it was started in."""
+
+
+class RunBusy(ValueError):
+    """The run is marked running in Mongo with a fresh heartbeat (another process)."""
+
+
+async def claim_run(db, run_id: str, *, force: bool = False) -> str:
+    """Take the run for this process; return the lease owner token.
+
+    One find_one_and_update with the status in its filter, so two processes
+    (API and CLI, or two CLIs) cannot both pass the check. A run marked
+    running is free only when its heartbeat is missing (released after an
+    exception, or written before heartbeats existed) or older than
+    poe_runs.stale_after_s(). force=True takes it regardless.
+    """
+    now = time.time()
+    owner = poe_runs.new_lease_owner()
+    q: dict = {"_id": run_id}
+    if not force:
+        q["$or"] = [{"state": {"$ne": "running"}},
+                    {"heartbeat_ts": None},
+                    {"heartbeat_ts": {"$lt": now - poe_runs.stale_after_s()}}]
+    claimed = await db.poe_runs.find_one_and_update(
+        q, {"$set": {"state": "running", "lease_owner": owner, "heartbeat_ts": now}})
+    if claimed is None:
+        current = await db.poe_runs.find_one({"_id": run_id}) or {}
+        age = now - float(current.get("heartbeat_ts") or now)
+        raise RunBusy(
+            f"run {run_id} is running in another process ({current.get('lease_owner')}, "
+            f"heartbeat {age:.0f}s ago, stale after {poe_runs.stale_after_s():.0f}s) "
+            f"— refused; pass force to take it over")
+    return owner
 
 
 def recorded_sample_mode(run: dict | None) -> bool | None:
@@ -108,12 +141,14 @@ async def resolve_launch(db, *, layer: str = "poe", run_id: str | None = None,
                          resume: bool = False, label: str = "", limit: int = 0,
                          zones: list[int] | None = None, concurrency: int = 2,
                          variant: str = "tinyfish",
-                         retry_errored: bool = False) -> dict:
+                         retry_errored: bool = False, force: bool = False) -> dict:
     """Check the request and return the execute_run arguments.
 
     A new run never reuses an existing run_id. A resume reuses the stored
-    parameters so the zone list cannot drift between attempts.
-    retry_errored only applies to a resume.
+    parameters so the zone list cannot drift between attempts, and claims
+    the run in Mongo (claim_run): a run another process is running is
+    refused (RunBusy) unless force=True.
+    retry_errored and force only apply to a resume.
     """
     normalize_layer(layer)
     if retry_errored and not resume:
@@ -127,6 +162,7 @@ async def resolve_launch(db, *, layer: str = "poe", run_id: str | None = None,
             raise ValueError(f"run {run_id} unknown — cannot resume")
         check_resume_mode(existing)
         params = existing.get("params") or {}
+        owner = await claim_run(db, run_id, force=force)
         return {
             "run_id": run_id, "resume": True,
             "label": label or existing.get("label") or "",
@@ -135,6 +171,7 @@ async def resolve_launch(db, *, layer: str = "poe", run_id: str | None = None,
             "concurrency": int(params.get("concurrency") or concurrency),
             "variant": params.get("variant") or variant,
             "retry_errored": bool(retry_errored),
+            "lease_owner": owner,
         }
     rid = run_id or poe_runs.new_run_id()
     artifacts.safe_run_id(rid)
@@ -150,7 +187,7 @@ async def start_run(db, state, *, layer: str = "poe", run_id: str | None = None,
                     zones: list[int] | None = None, concurrency: int = 2,
                     variant: str = "tinyfish", rules_overrides: dict | None = None,
                     profile: str | None = None, resolved: dict | None = None,
-                    retry_errored: bool = False) -> dict:
+                    retry_errored: bool = False, force: bool = False) -> dict:
     """Launch (or resume) a run. Writes the Mongo run doc, trace and manifest.
 
     retry_errored=True (resume only): zones whose last trace status is an
@@ -160,14 +197,15 @@ async def start_run(db, state, *, layer: str = "poe", run_id: str | None = None,
     args = resolved or await resolve_launch(
         db, layer=layer, run_id=run_id, resume=resume, label=label, limit=limit,
         zones=zones, concurrency=concurrency, variant=variant,
-        retry_errored=retry_errored)
+        retry_errored=retry_errored, force=force)
     return await poe_runs.execute_run(
         db, state, args["run_id"], label=args["label"], limit=args["limit"],
         only_zones=args["only_zones"], concurrency=args["concurrency"],
         resume=args["resume"], variant=args["variant"],
         rules_overrides=None if args["resume"] else rules_overrides,
         profile=None if args["resume"] else profile,
-        retry_errored=bool(args.get("retry_errored")))
+        retry_errored=bool(args.get("retry_errored")),
+        lease_owner=args.get("lease_owner"))
 
 
 def _feature_collection(run_id: str, ports: list[dict]) -> dict:

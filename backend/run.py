@@ -4,7 +4,7 @@
   python backend/run.py --zone "Bermuda" [--run-id RUN123] [--sample-mode] [--timeout 300] [--trace PATH]
   python backend/run.py --input input_examples/01_bermuda.json [--output out.json]
   python backend/run.py --serve        # POST /run, demo page and GET /healthz on PORT (default 8000)
-  python backend/run.py --resume RUN_ID [--retry-errored]   # resume a PoE run (unified runner, P0-4)
+  python backend/run.py --resume RUN_ID [--retry-errored] [--force]   # resume a PoE run (unified runner, P0-4)
   python backend/run.py --export RUN_ID                     # export a finished run (data/exports/RUN_ID)
   python backend/run.py --upload RUN_ID                     # retry the upload of an existing export
 
@@ -139,7 +139,8 @@ async def check_resume_mode(run_id: str, db=None) -> None:
                           f'({", ".join(missing)}); refusing to resume it in sample mode')
 
 
-async def resume_run(run_id: str, *, retry_errored: bool = False, db=None, state=None) -> dict:
+async def resume_run(run_id: str, *, retry_errored: bool = False, force: bool = False,
+                     db=None, state=None) -> dict:
     """Resume a run through the unified runner; logs go to stderr."""
     from app.core.tasks import TaskState
     from app.services import unified_runs
@@ -156,7 +157,7 @@ async def resume_run(run_id: str, *, retry_errored: bool = False, db=None, state
     try:
         return await unified_runs.start_run(db if db is not None else _default_db(), state,
                                             run_id=run_id, resume=True,
-                                            retry_errored=retry_errored)
+                                            retry_errored=retry_errored, force=force)
     finally:
         state.finish()
 
@@ -166,9 +167,10 @@ async def export_run(run_id: str, *, db=None, **kwargs) -> dict:
     return await unified_runs.export_run(db if db is not None else _default_db(), run_id, **kwargs)
 
 
-async def _checked_resume(run_id: str, *, retry_errored: bool, db=None) -> dict:
+async def _checked_resume(run_id: str, *, retry_errored: bool, force: bool = False,
+                          db=None) -> dict:
     await check_resume_mode(run_id, db=db)
-    return await resume_run(run_id, retry_errored=retry_errored, db=db)
+    return await resume_run(run_id, retry_errored=retry_errored, force=force, db=db)
 
 
 async def upload_run(run_id: str, *, db=None, **kwargs) -> dict:
@@ -182,12 +184,15 @@ def run_command(args, db=None) -> int:
 
     Exit codes: 2 unknown run / existing export / export that does not match
     its manifest, 3 resume refused because the
-    run's recorded mode cannot be honoured, 1 resume finished with zone errors.
+    run's recorded mode cannot be honoured, 4 resume refused because another
+    process is running the run (--force overrides), 1 resume finished with zone errors.
     """
     import asyncio
+    from app.services.unified_runs import RunBusy
     try:
         if args.resume:
-            result = asyncio.run(_checked_resume(args.resume, retry_errored=args.retry_errored, db=db))
+            result = asyncio.run(_checked_resume(args.resume, retry_errored=args.retry_errored,
+                                                 force=args.force, db=db))
         elif args.upload:
             result = asyncio.run(upload_run(args.upload, db=db))
         else:
@@ -195,6 +200,9 @@ def run_command(args, db=None) -> int:
     except ModeRefused as exc:
         LOG.error('%s', exc)
         return 3
+    except RunBusy as exc:
+        LOG.error('%s', exc)
+        return 4
     except (ValueError, FileExistsError) as exc:
         LOG.error('%s', exc)
         return 2
@@ -216,6 +224,8 @@ def main(argv: list[str] | None = None) -> int:
                       help='upload an existing export again (verified against its manifest)')
     parser.add_argument('--retry-errored', action='store_true',
                         help='with --resume: redo errored zones once (default: errored zones count as done)')
+    parser.add_argument('--force', action='store_true',
+                        help='with --resume: take over a run another process has marked running')
     parser.add_argument('--run-id', help='Run ID (generated if not provided)')
     parser.add_argument('--sample-mode', action='store_true',
                         help='Run in sample mode (offline, no API keys needed)')
@@ -228,6 +238,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.retry_errored and not args.resume:
         parser.error('--retry-errored requires --resume')
+    if args.force and not args.resume:
+        parser.error('--force requires --resume')
     level = os.environ.get('LOG_LEVEL', 'INFO').upper()
     logging.basicConfig(level=getattr(logging, level, logging.INFO), stream=sys.stderr,
                         format='%(levelname)s %(name)s: %(message)s')

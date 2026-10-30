@@ -154,7 +154,7 @@ async def _launch_run(*, resume: bool, run_id: str, label: str, limit: int,
                       zones, concurrency: int, variant: str,
                       rules_overrides: dict | None = None,
                       profile: str | None = None,
-                      retry_errored: bool = False) -> str:
+                      retry_errored: bool = False, force: bool = False) -> str:
     if len(_active_ids()) >= MAX_PARALLEL_RUNS:
         raise HTTPException(409, f"déjà {MAX_PARALLEL_RUNS} runs actifs")
     if run_id in RUN_STATES and RUN_STATES[run_id].running:
@@ -170,7 +170,7 @@ async def _launch_run(*, resume: bool, run_id: str, label: str, limit: int,
         resolved = await unified_runs.resolve_launch(
             _db, run_id=run_id, resume=resume, label=label, limit=limit,
             zones=zones, concurrency=concurrency, variant=variant,
-            retry_errored=retry_errored)
+            retry_errored=retry_errored, force=force)
     except BaseException as e:
         if RUN_STATES.get(run_id) is state:
             if previous is None:
@@ -178,8 +178,8 @@ async def _launch_run(*, resume: bool, run_id: str, label: str, limit: int,
             else:
                 RUN_STATES[run_id] = previous
         if isinstance(e, ValueError):
-            raise HTTPException(409 if isinstance(e, unified_runs.RunExists) else 400,
-                                str(e)) from e
+            busy = isinstance(e, (unified_runs.RunExists, unified_runs.RunBusy))
+            raise HTTPException(409 if busy else 400, str(e)) from e
         raise
 
     async def _runner():
@@ -825,6 +825,7 @@ class UnifiedRunBody(BaseModel):
     run_id: str | None = None
     resume: bool = False
     retry_errored: bool = False         # resume only: redo errored zones once
+    force: bool = False                 # resume only: take over a run marked running
     label: str = ""
     limit: int = 0
     concurrency: int = 2
@@ -860,7 +861,8 @@ async def unified_run_start(body: UnifiedRunBody | None = None):
                       concurrency=body.concurrency, variant=variant,
                       rules_overrides=None if body.resume else body.rules,
                       profile=None if body.resume else body.profile,
-                      retry_errored=body.retry_errored)
+                      retry_errored=body.retry_errored,
+                      force=body.resume and body.force)
     return {"status": "started", "run_id": run_id, "resume": body.resume,
             "layer": "poe", "variant": variant}
 
