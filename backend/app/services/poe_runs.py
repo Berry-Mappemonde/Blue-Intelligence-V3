@@ -9,22 +9,70 @@ in a dedicated space, never touching v1 collections:
                       also JSONL in backend/data/runs/<run_id>.jsonl.
 
 Resume: an interrupted run (server restart…) continues where it
-stopped — zones already in poe_run_zones for this run are skipped.
+stopped — zones already in poe_run_zones for this run, or marked
+`unit_done` in data/runs/<run_id>/trace.jsonl, are skipped.
+Each run also keeps data/runs/<run_id>/manifest.json (run_artifacts).
 v1 ↔ run comparison and the report live in poe_diff / poe_report.
+
+Launch through unified_runs.start_run; calling execute_run directly
+still works but is deprecated.
 """
 import asyncio
+import logging
 import time
 import uuid
 
 from app.core.events import RunContext, RunRecorder
 from app.services import poe_pipeline as poe
+from app.services import run_artifacts as artifacts
 from app.services.poe_pipeline import normalize_variant
 from app.core.run_rules import attach_rules, bind_rules, get_rule, snapshot_for_run
 from app.services.run_fingerprint import (
     build_code_fingerprint, merge_run_params, resume_params,
 )
 
+logger = logging.getLogger(__name__)
+
 ZONE_TIMEOUT_S = 900  # the v2 pipeline does more work (render, dual geocoding)
+LAYER = "poe"
+
+
+async def _artifact(fn, *args, **kwargs):
+    """File artifacts must never break a run: Mongo stays the source of truth."""
+    try:
+        return await asyncio.to_thread(fn, *args, **kwargs)
+    except Exception as exc:
+        logger.warning("run artifact %s failed: %s", getattr(fn, "__name__", fn), exc)
+        return None
+
+
+async def _run_sources(db, run_id: str) -> dict:
+    urls = []
+    try:
+        async for z in db.poe_run_zones.find({"run_id": run_id}, {"sources": 1}):
+            for s in z.get("sources") or []:
+                urls.append(s.get("url") if isinstance(s, dict) else s)
+    except Exception:
+        pass
+    return artifacts.sources_summary(urls)
+
+
+async def write_manifest(db, run_id: str, state: str, params: dict,
+                         counts: dict, cost: dict | None = None) -> str | None:
+    manifest = artifacts.build_manifest(
+        run_id=run_id, layer=LAYER, state=state, params=params, counts=counts,
+        sources=await _run_sources(db, run_id), cost=cost)
+    sha = await _artifact(artifacts.write_run_manifest, run_id, manifest)
+    if sha:
+        await db.poe_runs.update_one({"_id": run_id}, {"$set": {
+            "artifacts": {
+                "dir": str(artifacts.run_dir(run_id)),
+                "trace": artifacts.TRACE_NAME,
+                "manifest": artifacts.MANIFEST_NAME,
+            },
+            "manifest_sha256": sha,
+        }})
+    return sha
 
 
 def new_run_id() -> str:
@@ -78,6 +126,10 @@ async def execute_run(db, state, run_id: str, label: str = "",
     if resume:
         done_mrgids = {z["mrgid"] async for z in db.poe_run_zones.find(
             {"run_id": run_id}, {"mrgid": 1})}
+        traced = await _artifact(artifacts.completed_units, run_id) or set()
+        selected = {z["mrgid"] for z in zones}
+        done_mrgids |= {int(m) for m in traced
+                        if isinstance(m, int) and m in selected}
         if done_mrgids:
             log(f"reprise du run {run_id}: {len(done_mrgids)} zone(s) déjà générées, sautées")
     todo = [z for z in zones if z["mrgid"] not in done_mrgids]
@@ -130,6 +182,12 @@ async def execute_run(db, state, run_id: str, label: str = "",
     else:
         await recorder.event("run_resume", params=params, zones_total=len(zones),
                              already_done=len(done_mrgids))
+    await _artifact(artifacts.append_trace, run_id,
+                    "run_resume" if resume else "run_start", layer=LAYER,
+                    zones_total=len(zones), already_done=sorted(done_mrgids),
+                    variant=variant)
+    await write_manifest(db, run_id, "running", params, {
+        "zones_total": len(zones), "zones_done": len(done_mrgids)})
     log(f"run {run_id}: variant={variant} — {len(todo)} zone(s) à générer from scratch "
         f"(concurrency={concurrency}, timeout {timeout_s}s/zone, "
         f"rules={rules.get('hash')} profile={rules.get('profile')})")
@@ -144,6 +202,8 @@ async def execute_run(db, state, run_id: str, label: str = "",
         async with sem:
             if state.cancel:
                 return
+            await _artifact(artifacts.append_trace, run_id, "unit_start",
+                            unit=mrgid, zone=name)
             try:
                 doc = await asyncio.wait_for(
                     poe.generate_zone_poe(
@@ -154,9 +214,16 @@ async def execute_run(db, state, run_id: str, label: str = "",
                 state.results.append({"mrgid": mrgid, "name": name,
                                       "status": (doc or {}).get("status"),
                                       "poe_count": (doc or {}).get("poe_count", 0)})
+                await _artifact(artifacts.append_trace, run_id, "unit_done",
+                                unit=mrgid, zone=name,
+                                status=(doc or {}).get("status"),
+                                poe_count=(doc or {}).get("poe_count", 0))
             except Exception as e:
                 counter["errors"] += 1
                 log(f"[{name}] FAILED: {type(e).__name__}: {e}")
+                await _artifact(artifacts.append_trace, run_id, "unit_error",
+                                unit=mrgid, zone=name,
+                                error=f"{type(e).__name__}: {str(e)[:200]}")
                 await recorder.event("zone_error", mrgid=mrgid, zone=name,
                                      error=f"{type(e).__name__}: {str(e)[:200]}")
                 await db.poe_run_zones.update_one(
@@ -212,5 +279,14 @@ async def execute_run(db, state, run_id: str, label: str = "",
         "ports_total": ports_total,
     }})
     await recorder.event("run_done", **summary)
+    final_state = "cancelled" if cancelled else "done"
+    await _artifact(artifacts.append_trace, run_id, "run_done", state=final_state,
+                    zones_done=counter["done"], ports_total=ports_total,
+                    errors=counter["errors"])
+    await write_manifest(db, run_id, final_state, params, {
+        "zones_total": len(zones), "zones_done": counter["done"],
+        "by_status": by_status, "ports_total": ports_total,
+        "errors": counter["errors"],
+    }, cost=summary.get("tokenfactory"))
     log(f"run {run_id} terminé: {summary}")
     return summary
