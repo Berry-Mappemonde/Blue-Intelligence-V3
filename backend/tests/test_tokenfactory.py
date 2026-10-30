@@ -522,3 +522,13 @@ def test_ask_json_accepts_a_tokenfactory_generator_result(monkeypatch):
     assert data == {"ok": True}
     assert engine == "tokenfactory-" + tokenfactory.TF_ULTRA.split("/")[-1]
     assert llm._public_engine(engine, "Extractor") == "TokenFactory Extractor"
+
+
+def test_take_calls_is_per_run_and_partial():
+    assert tokenfactory.take_calls(3, 5, "run-a") == 3
+    assert tokenfactory.take_calls(3, 5, "run-a") == 2
+    assert tokenfactory.take_calls(1, 5, "run-a") == 0
+    assert tokenfactory.take_calls(4, 5, "run-b") == 4
+    assert tokenfactory.calls_taken("run-a") == 5
+    tokenfactory.reset_ledger("run-a")
+    assert tokenfactory.calls_taken("run-a") == 0 and tokenfactory.calls_taken("run-b") == 4

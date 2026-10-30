@@ -72,12 +72,17 @@ _THINK_END = "</think>"
 
 _current: ContextVar[str | None] = ContextVar("tf_run_id", default=None)
 _LEDGER: dict[str, list[dict]] = {}
+_CALLS: dict[str, int] = {}  # LLM calls reserved per run (take_calls), any provider
 _ledger_guard = threading.Lock()
 _locks: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
 
 
 class TokenFactoryBudgetExceeded(RuntimeError):
     """TF_RUN_BUDGET_USD reached for this run; the call was not sent."""
+
+
+class LLMCallCapReached(RuntimeError):
+    """The run's cap on LLM calls is used up; the call was not sent."""
 
 
 def get_key() -> str:
@@ -307,8 +312,29 @@ def reset_ledger(run_id: str | None = None) -> None:
     with _ledger_guard:
         if run_id is None:
             _LEDGER.clear()
+            _CALLS.clear()
         else:
             _LEDGER.pop(run_id, None)
+            _CALLS.pop(run_id, None)
+
+
+def take_calls(wanted: int, cap: int, run_id: str | None = None) -> int:
+    """Reserve up to ``wanted`` LLM calls against the run's ``cap``; return how many were granted.
+
+    Counts calls whatever the provider (Nightshift, NIM, OpenRouter, Token Factory), on the
+    same per-run key as the USD ledger.
+    """
+    rid = ledger_key(run_id)
+    with _ledger_guard:
+        used = _CALLS.get(rid, 0)
+        granted = max(0, min(int(wanted), int(cap) - used))
+        _CALLS[rid] = used + granted
+    return granted
+
+
+def calls_taken(run_id: str | None = None) -> int:
+    with _ledger_guard:
+        return _CALLS.get(ledger_key(run_id), 0)
 
 
 def spent_usd(run_id: str | None = None) -> float:
