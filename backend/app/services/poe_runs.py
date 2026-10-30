@@ -62,9 +62,13 @@ async def _run_sources(db, run_id: str) -> dict:
 
 async def write_manifest(db, run_id: str, state: str, params: dict,
                          counts: dict, cost: dict | None = None) -> str | None:
-    manifest = artifacts.build_manifest(
-        run_id=run_id, layer=LAYER, state=state, params=params, counts=counts,
-        sources=await _run_sources(db, run_id), cost=cost)
+    # Building the manifest (run id check, tool versions) is guarded like the
+    # write: a manifest problem never stops the run.
+    manifest = await _artifact(
+        artifacts.build_manifest, run_id=run_id, layer=LAYER, state=state,
+        params=params, counts=counts, sources=await _run_sources(db, run_id), cost=cost)
+    if manifest is None:
+        return None
     sha = await _artifact(artifacts.write_run_manifest, run_id, manifest)
     if sha:
         await db.poe_runs.update_one({"_id": run_id}, {"$set": {

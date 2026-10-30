@@ -1131,3 +1131,16 @@ def test_override_dirs_outside_data_dir_are_not_leaked(env, monkeypatch, tmp_pat
     _no_server_path(out["dir"], tmp_path)
     _no_server_path(run["exports"][0]["dir"], tmp_path)
     assert out["dir"] == "exports/r-rel2"
+
+
+# ── a failure while building the manifest never stops a run ──────────
+
+def test_manifest_build_failure_does_not_break_a_run(env, monkeypatch):
+    def boom(*a, **k):
+        raise RuntimeError("tool_versions exploded")
+
+    monkeypatch.setattr(artifacts, "build_manifest", boom)
+    rid = _finished_run(env, monkeypatch, run_id="r-build")
+    run = env["db"].poe_runs.docs[0]
+    assert run["state"] == "done" and rid == "r-build"
+    assert "manifest_sha256" not in run
