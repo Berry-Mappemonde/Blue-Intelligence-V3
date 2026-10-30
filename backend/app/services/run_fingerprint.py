@@ -46,6 +46,10 @@ def _key_configured(*candidates: str) -> bool:
     return any(bool((c or "").strip()) for c in candidates)
 
 
+def sample_mode_enabled() -> bool:
+    return (os.environ.get("SAMPLE_MODE") or "").strip().lower() == "true"
+
+
 def build_code_fingerprint(settings: dict | None = None,
                            zone_timeout_s: int | None = None) -> dict:
     """Snapshot of the code and flags (not secrets) at run time."""
@@ -89,6 +93,9 @@ def build_code_fingerprint(settings: dict | None = None,
             s.get("serper_api_key"), env_serper),
         "searxng_url": env_searx,
         "catalog_skip": True,
+        # SAMPLE_MODE swaps Zetaris, evidence and the judge for fixtures; a
+        # resume must run in the same mode (unified_runs.check_resume_mode).
+        "sample_mode": sample_mode_enabled(),
         "zone_timeout_s": timeout,
         "features": {
             "p0_pdf_isolated": _module_has("app.core.pdf_worker", "extract_pdf_file"),

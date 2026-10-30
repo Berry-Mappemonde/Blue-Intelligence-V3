@@ -806,3 +806,79 @@ def test_failed_lookup_releases_the_reserved_run(env, api):
     env["db"].poe_runs.docs.append({"_id": "r-x", "state": "done", "params": {}})
     res = _post_concurrently(api["app"], [("/api/runs", {"run_id": "r-x", "resume": True})])
     assert res[0].status_code == 202 and api["started"] == ["r-x"]
+
+
+# ── resume never changes the run's mode (live vs sample) ─────────────
+
+_LIVE_VARS = ("ZETARIS_API_KEY", "ZETARIS_ORG_ID", "METERLESS_RUNTIME_TOKEN",
+              "MODEL_API_KEY")
+
+
+def _live_env(monkeypatch, *, creds: bool):
+    """No SAMPLE_MODE; dummy (never used) credentials or none. Restored after."""
+    monkeypatch.delenv("SAMPLE_MODE", raising=False)
+    for name in _LIVE_VARS:
+        if creds:
+            monkeypatch.setenv(name, "dummy-not-a-key")
+        else:
+            monkeypatch.delenv(name, raising=False)
+
+
+def _mode_cli(env, monkeypatch):
+    mod = _cli()
+    monkeypatch.setattr(mod, "_default_db", lambda: env["db"])
+    return mod
+
+
+def test_cli_resume_refuses_live_run_without_credentials(env, monkeypatch, capsys):
+    _live_env(monkeypatch, creds=True)
+    rid = _run_with_errors(env, monkeypatch, run_id="r-live-mode")
+    assert env["db"].poe_runs.docs[0]["params"]["code"]["sample_mode"] is False
+    zones_before, ports_before = _snapshot(env["db"], rid)
+    _live_env(monkeypatch, creds=False)
+    calls: list = []
+    monkeypatch.setattr(poe_runs.poe, "generate_zone_poe",
+                        _failing_stub(calls, attempt=2, fail={}))
+    cli = _mode_cli(env, monkeypatch)
+    assert cli.main(["--no-dotenv", "--resume", rid, "--retry-errored"]) == 3
+    assert calls == [] and capsys.readouterr().out == ""
+    assert os.environ.get("SAMPLE_MODE") is None  # not switched on behind our back
+    assert _snapshot(env["db"], rid) == (zones_before, ports_before)
+
+
+def test_cli_resume_refuses_mode_switch_either_way(env, monkeypatch, capsys):
+    _live_env(monkeypatch, creds=True)
+    live = _run_with_errors(env, monkeypatch, run_id="r-live-2")
+    cli = _mode_cli(env, monkeypatch)
+    calls: list = []
+    monkeypatch.setattr(poe_runs.poe, "generate_zone_poe",
+                        _failing_stub(calls, attempt=2, fail={}))
+    assert cli.main(["--no-dotenv", "--sample-mode", "--resume", live]) == 3
+
+    _live_env(monkeypatch, creds=False)
+    monkeypatch.setenv("SAMPLE_MODE", "true")
+    sample = _run_with_errors(env, monkeypatch, run_id="r-sample-2")
+    _live_env(monkeypatch, creds=True)
+    monkeypatch.setattr(poe_runs.poe, "generate_zone_poe",
+                        _failing_stub(calls, attempt=2, fail={}))
+    assert cli.main(["--no-dotenv", "--resume", sample, "--retry-errored"]) == 3
+    assert calls == []
+
+
+def test_cli_resume_in_recorded_mode_works(env, monkeypatch, capsys):
+    _live_env(monkeypatch, creds=True)
+    rid = _run_with_errors(env, monkeypatch, run_id="r-live-ok")
+    calls: list = []
+    monkeypatch.setattr(poe_runs.poe, "generate_zone_poe",
+                        _failing_stub(calls, attempt=2, fail={}))
+    cli = _mode_cli(env, monkeypatch)
+    assert cli.main(["--no-dotenv", "--resume", rid, "--retry-errored"]) == 0
+    assert sorted(calls) == [2, 4]
+
+
+def test_api_resume_refuses_recorded_mode_mismatch(env, monkeypatch):
+    monkeypatch.setenv("SAMPLE_MODE", "true")
+    rid = _run_with_errors(env, monkeypatch, run_id="r-api-mode")
+    monkeypatch.delenv("SAMPLE_MODE")
+    with pytest.raises(unified_runs.ModeMismatch):
+        _run(unified_runs.resolve_launch(env["db"], run_id=rid, resume=True))

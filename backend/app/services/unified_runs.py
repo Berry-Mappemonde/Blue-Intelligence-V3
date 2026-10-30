@@ -26,6 +26,7 @@ from app.config import DATA_DIR
 from app.services import object_storage
 from app.services import poe_runs
 from app.services import run_artifacts as artifacts
+from app.services.run_fingerprint import sample_mode_enabled
 
 POE_LAYERS = ("poe", "formalities")
 LEGACY_ENDPOINTS = {
@@ -44,6 +45,38 @@ class RunExists(ValueError):
 
 class UnsupportedLayer(ValueError):
     pass
+
+
+class ModeMismatch(ValueError):
+    """The run cannot be resumed in the mode (live / sample) it was started in."""
+
+
+def recorded_sample_mode(run: dict | None) -> bool | None:
+    """params.code.sample_mode of a run; None for runs started before it was recorded."""
+    code = ((run or {}).get("params") or {}).get("code")
+    value = code.get("sample_mode") if isinstance(code, dict) else None
+    return value if isinstance(value, bool) else None
+
+
+def check_resume_mode(run: dict, *, unknown_is_live: bool = False) -> None:
+    """Refuse a resume that would run in another mode than the one recorded.
+
+    A resumed zone is written into the same run as the zones already done:
+    sample fixtures must never be mixed into a live run, or the reverse.
+    unknown_is_live: treat runs without a recorded mode as live (they were
+    started through the API before the field existed).
+    """
+    recorded = recorded_sample_mode(run)
+    if recorded is None:
+        if not unknown_is_live:
+            return
+        recorded = False
+    current = sample_mode_enabled()
+    if recorded != current:
+        want, got = ("sample", "live") if recorded else ("live", "sample")
+        raise ModeMismatch(
+            f"run {run.get('_id')} was started in {want} mode; resuming it in "
+            f"{got} mode would mix {got} results into it — refused")
 
 
 def normalize_layer(layer: str) -> str:
@@ -83,6 +116,7 @@ async def resolve_launch(db, *, layer: str = "poe", run_id: str | None = None,
         existing = await db.poe_runs.find_one({"_id": run_id})
         if not existing:
             raise ValueError(f"run {run_id} unknown — cannot resume")
+        check_resume_mode(existing)
         params = existing.get("params") or {}
         return {
             "run_id": run_id, "resume": True,

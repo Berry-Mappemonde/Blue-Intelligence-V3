@@ -13,7 +13,8 @@ Intelligence API use uvicorn app.main:app on port 8001.
 Works from a fresh clone with no credentials and no MongoDB: the repo-root .env
 and backend/.env are loaded if present (never overriding the real environment),
 Mongo defaults satisfy app.config at import (the pipeline never connects), and
-SAMPLE_MODE is switched on when Zetaris or Meterless credentials are missing.
+SAMPLE_MODE is switched on when Zetaris or Meterless credentials are missing
+(except for --resume / --export: a resume keeps the run's recorded mode or exits 3).
 Trace events and the result JSON go to stdout; the readable summary and logs go to stderr.
 
 --resume and --export work on the Mongo run space (poe_runs, ...) through
@@ -39,8 +40,17 @@ _CREDENTIALS = {
 }
 
 
-def prepare_environment(load_env_files: bool = True) -> None:
-    """Run before any app import: .env files, Mongo defaults, SAMPLE_MODE switch."""
+def _missing_credentials() -> list[str]:
+    return [' or '.join(names) for groups in _CREDENTIALS.values() for names in groups
+            if not any(os.environ.get(name, '').strip() for name in names)]
+
+
+def prepare_environment(load_env_files: bool = True, auto_sample: bool = True) -> None:
+    """Run before any app import: .env files, Mongo defaults, SAMPLE_MODE switch.
+
+    auto_sample=False (--resume / --export): SAMPLE_MODE is never switched on
+    here; a resume runs in the mode the run was recorded with, or not at all.
+    """
     if load_env_files:
         from dotenv import load_dotenv
         for path in (REPO_ROOT / '.env', BACKEND_DIR / '.env'):
@@ -49,10 +59,11 @@ def prepare_environment(load_env_files: bool = True) -> None:
     # app.config reads these at import time; the pipeline itself never connects.
     os.environ.setdefault('MONGO_URL', 'mongodb://127.0.0.1:27017')
     os.environ.setdefault('DB_NAME', 'bi_local')
-    missing = [' or '.join(names) for groups in _CREDENTIALS.values() for names in groups
-               if not any(os.environ.get(name, '').strip() for name in names)]
+    missing = _missing_credentials()
     if os.environ.get('SAMPLE_MODE', '').strip():
         LOG.info('SAMPLE_MODE=%s (set explicitly)', os.environ['SAMPLE_MODE'])
+    elif missing and not auto_sample:
+        LOG.info('SAMPLE_MODE not set; missing: %s', ', '.join(missing))
     elif missing:
         os.environ['SAMPLE_MODE'] = 'true'
         LOG.warning('SAMPLE_MODE enabled automatically; missing: %s', ', '.join(missing))
@@ -101,6 +112,32 @@ def _default_db():
     return db
 
 
+class ModeRefused(Exception):
+    pass
+
+
+async def check_resume_mode(run_id: str, db=None) -> None:
+    """--resume never changes the run's mode: refuse if it cannot be honoured.
+
+    A live run (or one started before the mode was recorded) needs SAMPLE_MODE
+    off and the Zetaris / Meterless credentials, otherwise the adapters fall
+    back to fixtures; a sample run needs SAMPLE_MODE=true.
+    """
+    from app.services import unified_runs
+
+    run = await (db if db is not None else _default_db()).poe_runs.find_one({'_id': run_id})
+    if not run:
+        return  # start_run reports the unknown run
+    try:
+        unified_runs.check_resume_mode(run, unknown_is_live=True)
+    except unified_runs.ModeMismatch as exc:
+        raise ModeRefused(f'{exc}; pass --sample-mode only for sample runs') from exc
+    missing = _missing_credentials()
+    if unified_runs.recorded_sample_mode(run) is not True and missing:
+        raise ModeRefused(f'run {run_id} is a live run but credentials are missing '
+                          f'({", ".join(missing)}); refusing to resume it in sample mode')
+
+
 async def resume_run(run_id: str, *, retry_errored: bool = False, db=None, state=None) -> dict:
     """Resume a run through the unified runner; logs go to stderr."""
     from app.core.tasks import TaskState
@@ -128,14 +165,26 @@ async def export_run(run_id: str, *, db=None, **kwargs) -> dict:
     return await unified_runs.export_run(db if db is not None else _default_db(), run_id, **kwargs)
 
 
+async def _checked_resume(run_id: str, *, retry_errored: bool, db=None) -> dict:
+    await check_resume_mode(run_id, db=db)
+    return await resume_run(run_id, retry_errored=retry_errored, db=db)
+
+
 def run_command(args, db=None) -> int:
-    """--resume / --export. Result JSON on stdout, errors on stderr."""
+    """--resume / --export. Result JSON on stdout, errors on stderr.
+
+    Exit codes: 2 unknown run / existing export, 3 resume refused because the
+    run's recorded mode cannot be honoured, 1 resume finished with zone errors.
+    """
     import asyncio
     try:
         if args.resume:
-            result = asyncio.run(resume_run(args.resume, retry_errored=args.retry_errored, db=db))
+            result = asyncio.run(_checked_resume(args.resume, retry_errored=args.retry_errored, db=db))
         else:
             result = asyncio.run(export_run(args.export, db=db))
+    except ModeRefused as exc:
+        LOG.error('%s', exc)
+        return 3
     except (ValueError, FileExistsError) as exc:
         LOG.error('%s', exc)
         return 2
@@ -172,7 +221,8 @@ def main(argv: list[str] | None = None) -> int:
         os.environ['SAMPLE_MODE'] = 'true'
     if args.trace:
         os.environ['TRACE_LOG_PATH'] = args.trace
-    prepare_environment(load_env_files=not args.no_dotenv)
+    prepare_environment(load_env_files=not args.no_dotenv,
+                        auto_sample=not (args.resume or args.export))
 
     if args.resume or args.export:
         return run_command(args)
