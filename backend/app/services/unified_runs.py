@@ -38,6 +38,10 @@ LEGACY_ENDPOINTS = {
 }
 EXPORT_FILES = ("ports.geojson", "zones.json", artifacts.TRACE_NAME)
 GEOPARQUET_NOTE = "not written: pyarrow / geopandas are not backend dependencies"
+# Run ids with an export in progress in this process. Checked and set with
+# no await in between, so a second concurrent export of the same run is
+# refused (409) instead of deleting the first one's .partial folder.
+_EXPORTING: set[str] = set()
 
 
 class RunExists(ValueError):
@@ -197,6 +201,17 @@ async def export_run(db, run_id: str, *, out_root: Path | None = None,
         raise ValueError(f"run {rid} unknown")
     if run.get("state") not in ("done", "cancelled"):
         raise ValueError(f"run {rid} is {run.get('state')!r}, not finished")
+    if rid in _EXPORTING:
+        raise FileExistsError(f"export of run {rid} already in progress")
+    _EXPORTING.add(rid)
+    try:
+        return await _export_locked(db, run, rid, out_root, storage_config, storage_client)
+    finally:
+        _EXPORTING.discard(rid)
+
+
+async def _export_locked(db, run: dict, rid: str, out_root, storage_config,
+                         storage_client) -> dict:
     root = Path(out_root) if out_root else export_root()
     out = root / rid
     if out.exists():
@@ -258,6 +273,9 @@ def _write_export(run: dict, rid: str, root: Path, ports: list, zones: list,
         extra={"export": {"formats": ["geojson"], "geoparquet": GEOPARQUET_NOTE,
                           "run_manifest_sha256": run.get("manifest_sha256")}})
     artifacts.write_json_atomic(partial / artifacts.MANIFEST_NAME, manifest)
+    if out.exists():  # another process exported meanwhile: keep its folder
+        shutil.rmtree(partial, ignore_errors=True)
+        raise FileExistsError(f"export {out} already exists")
     os.replace(partial, out)
     manifest_sha = artifacts.sha256_file(out / artifacts.MANIFEST_NAME)
     upload = _safe_upload(out, rid, storage_config, storage_client)

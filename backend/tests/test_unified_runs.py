@@ -1062,3 +1062,30 @@ def test_retry_errored_is_once_across_resumes(env, monkeypatch):
     skipped = [r for r in artifacts.read_trace(rid) if r["event"] == "unit_retry_skipped"
                and r.get("reason") == "already retried once"]
     assert sorted(r["unit"] for r in skipped) == [2, 4]
+
+
+# ── concurrent exports of one run ────────────────────────────────────
+
+def test_concurrent_exports_of_one_run(env, monkeypatch):
+    import time as _time
+    rid = _finished_run(env, monkeypatch, run_id="r-twice")
+    real_dump = unified_runs._dump
+
+    def slow_dump(path, doc):  # a large export: the folder takes time to write
+        _time.sleep(0.05)
+        return real_dump(path, doc)
+
+    monkeypatch.setattr(unified_runs, "_dump", slow_dump)
+
+    async def go():
+        return await asyncio.gather(*(unified_runs.export_run(env["db"], rid)
+                                      for _ in range(3)), return_exceptions=True)
+
+    res = _run(go())
+    ok = [r for r in res if isinstance(r, dict)]
+    refused = [r for r in res if isinstance(r, FileExistsError)]
+    assert len(ok) == 1 and len(refused) == 2, res
+    base = env["exports"] / rid
+    assert unified_runs.verify_export(base) == ok[0]["manifest_sha256"]
+    assert sorted(p.name for p in env["exports"].iterdir()) == [rid]  # no .partial left
+    assert len(env["db"].poe_runs.docs[0]["exports"]) == 1
