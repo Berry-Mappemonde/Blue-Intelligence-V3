@@ -32,6 +32,9 @@ JSON_SYSTEM = ("You are the Blue Intelligence maritime OSINT engine. "
 # (``llm_context_chars.set(...)``) when it keeps a raw catalog; other callers keep 20,000.
 LLM_CONTEXT_CHARS = 20000
 llm_context_chars: ContextVar[int] = ContextVar("llm_context_chars", default=LLM_CONTEXT_CHARS)
+# Set by poe_pipeline.zone_extract_budget: returns False when the zone's share of
+# formalities.extract_max_llm_calls cannot cover one more provider step of extract_ports.
+extract_call_gate: ContextVar = ContextVar("extract_call_gate", default=None)
 
 
 def reader_context(context: str | None) -> str:
@@ -581,9 +584,25 @@ async def extract_ports_nightshift(context: str, zone: dict, log=None) -> list[d
     return ports
 
 
+def _charge_fallback(step: str, log=None) -> None:
+    """Each fallback step of extract_ports counts as one more call (``extract_call_gate``);
+    refused, the chain stops there instead of reaching a paid reader uncounted."""
+    gate = extract_call_gate.get()
+    if gate is not None and not gate():
+        from app.core.tokenfactory import LLMCallCapReached
+        if log:
+            log(f"plafond d'appels LLM: repli {step} non lancé")
+        raise LLMCallCapReached("formalities.extract_max_llm_calls reached")
+
+
 async def extract_ports(context: str, zone: dict, settings: dict | None = None, log=None) -> list[dict]:
     """Primary reader: Nemotron via Nightshift, then NIM, OpenRouter, Claude. The second
-    reader (gpt-oss / Kimi) is orchestrated in poe_pipeline.extract_ports_llm."""
+    reader (gpt-oss / Kimi) is orchestrated in poe_pipeline.extract_ports_llm.
+
+    Call cap: the caller pays one call for the first step (Nightshift, including the
+    generator's own Token Factory / NIM fallback); NIM, OpenRouter and Claude each pay
+    one more before they start (``_charge_fallback``). Retries inside one step (NIM model
+    loop, no-JSON retry) are not counted separately."""
     s = settings
     if s is None:
         try:
@@ -597,17 +616,21 @@ async def extract_ports(context: str, zone: dict, settings: dict | None = None, 
     from app.core.nvidia import extract_ports_nvidia, nvidia_enabled
     from app.core import claude
     if nvidia_enabled(s):
+        _charge_fallback("NIM", log)
         try:
             return await extract_ports_nvidia(context, zone, settings=s, log=log)
         except Exception as e:
             if log:
                 log(f"NVIDIA extract épuisé: {type(e).__name__}: {str(e)[:100]}")
+    if get_llm_key(s):  # without a key the reader fails before any request
+        _charge_fallback("OpenRouter", log)
     try:
         return await extract_ports_openrouter(context, zone, settings=s, log=log)
     except Exception as e:
         if log:
             log(f"OpenRouter extract: {type(e).__name__}: {str(e)[:100]}")
     if claude.claude_enabled(s) and claude.budget_allows_call(s):
+        _charge_fallback("Claude", log)
         return await claude.extract_ports_claude(context, zone, settings=s, log=log)
     raise RuntimeError("extract_ports: no backend")
 

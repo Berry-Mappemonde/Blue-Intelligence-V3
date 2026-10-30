@@ -394,3 +394,74 @@ def test_batch_failing_twice_marks_the_zone_partial(reader, monkeypatch):
     assert len(reader) == 4  # one retry, not more
     assert gaps == {"failed_batches": 1}
     assert any("1 lot(s) en échec relancé(s) une fois" in m for m in logs)
+
+
+# --- what one call means (finding 4) -------------------------------------------------
+
+@pytest.fixture
+def provider_chain(monkeypatch):
+    """Real llm.extract_ports with every provider stubbed: Nightshift unavailable, NIM
+    failing, OpenRouter answering, Claude on. Records which providers were reached."""
+    import app.core.ml as ml
+    from app.core import claude, nvidia
+    reached: list[str] = []
+
+    async def nightshift(context, zone, log=None):
+        reached.append("nightshift")
+        return None
+
+    async def nim(context, zone, settings=None, log=None, **kwargs):
+        reached.append("nvidia")
+        raise RuntimeError("NIM down")
+
+    async def openrouter(context, zone, settings=None, log=None):
+        reached.append("openrouter")
+        return [{"name": "Port Router", "extraction_engine": "openrouter"}]
+
+    async def claude_reader(context, zone, settings=None, log=None):
+        reached.append("claude")
+        return [{"name": "Port Claude", "extraction_engine": "claude"}]
+
+    monkeypatch.setattr(ml, "extract_entities", lambda text: [])
+    monkeypatch.setattr(poe, "extract_structured_ports", lambda raw: [])
+    monkeypatch.setattr(poe, "extract_ports", llm.extract_ports)
+    monkeypatch.setattr(llm, "extract_ports_nightshift", nightshift)
+    monkeypatch.setattr(nvidia, "nvidia_enabled", lambda settings=None: True)
+    monkeypatch.setattr(nvidia, "second_extract_choice", lambda context: None)
+    monkeypatch.setattr(nvidia, "extract_ports_nvidia", nim)
+    monkeypatch.setattr(llm, "get_llm_key", lambda settings=None: "test-key")
+    monkeypatch.setattr(llm, "extract_ports_openrouter", openrouter)
+    monkeypatch.setattr(claude, "claude_enabled", lambda settings=None: True)
+    monkeypatch.setattr(claude, "budget_allows_call", lambda settings=None: True)
+    monkeypatch.setattr(claude, "extract_ports_claude", claude_reader)
+    return reached
+
+
+def _zone_with_cap(cap: int) -> tuple[list[dict], dict, int]:
+    snap = snapshot_for_run(mode="formalities", overrides={"formalities.extract_max_llm_calls": cap})
+    token = bind_rules(snap)
+
+    async def run():
+        with poe.zone_extract_budget() as state:
+            ports = await poe._extract_ports_core("Port Bravo.", ZONE, lambda m: None,
+                                                  catalog_text="Port Bravo.", settings={})
+            return ports, poe.extraction_gaps(), state["used"]
+
+    try:
+        return asyncio.run(run())
+    finally:
+        reset_rules(token)
+
+
+def test_each_provider_step_counts_as_one_call(provider_chain):
+    ports, gaps, used = _zone_with_cap(10)
+    assert provider_chain == ["nightshift", "nvidia", "openrouter"]
+    assert [p["name"] for p in ports] == ["Port Router"]
+    assert used == 3 and gaps == {}
+
+
+def test_fallback_chain_stops_at_the_cap(provider_chain):
+    ports, gaps, used = _zone_with_cap(2)
+    # Nightshift + NIM use the two calls: OpenRouter and both Claude paths stay off.
+    assert provider_chain == ["nightshift", "nvidia"]
+    assert ports == [] and gaps == {"capped": True} and used == 2

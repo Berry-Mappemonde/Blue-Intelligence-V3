@@ -327,8 +327,10 @@ def reset_ledger(run_id: str | None = None) -> None:
 def take_calls(wanted: int, cap: int, run_id: str | None = None) -> int:
     """Reserve up to ``wanted`` LLM calls against the run's ``cap``; return how many were granted.
 
-    Counts calls whatever the provider (Nightshift, NIM, OpenRouter, Token Factory), on the
-    same per-run key as the USD ledger.
+    Counts calls whatever the provider, on the same per-run key as the USD ledger. One
+    call is one provider step started: a primary-reader batch, each fallback step of
+    ``llm.extract_ports`` (NIM, OpenRouter, Claude), the second reader, the Claude last
+    resort. Retries inside one step are not counted separately.
     """
     rid = ledger_key(run_id)
     with _ledger_guard:

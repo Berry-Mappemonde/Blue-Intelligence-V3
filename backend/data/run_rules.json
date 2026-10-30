@@ -1822,7 +1822,7 @@
         20000
       ],
       "vary": true,
-      "principle": "Plafond d'appels d'extraction par run, compté comme le budget USD Token Factory (même clé de run). Chaque ZEE reçoit une part équitable (appels libres / ZEE restantes, au moins formalities.extract_min_zone_calls) : une grosse ZEE en tête d'ordre alphabétique ne vide plus le plafond des suivantes. Part épuisée : les lots restants ne partent pas (les plus riches en listes d'abord), aucun lecteur de repli non compté (second lecteur, Claude) n'est lancé, et la ZEE est marquée extraction_partial (capped). Sans run, le plafond vaut pour une ZEE.",
+      "principle": "Plafond d'appels d'extraction par run, compté comme le budget USD Token Factory (même clé de run). Chaque ZEE reçoit une part équitable (appels libres / ZEE restantes, au moins formalities.extract_min_zone_calls) : une grosse ZEE en tête d'ordre alphabétique ne vide plus le plafond des suivantes. Part épuisée : les lots restants ne partent pas (les plus riches en listes d'abord), aucun lecteur de repli non compté (second lecteur, Claude) n'est lancé, et la ZEE est marquée extraction_partial (capped). Sans run, le plafond vaut pour une ZEE. Un appel = une étape de fournisseur lancée : un lot du lecteur principal (Nightshift, avec le repli Token Factory / NIM interne au générateur), puis chaque repli de llm.extract_ports (NIM, OpenRouter, Claude), le second lecteur, Claude en dernier recours. Les relances internes à une étape ne comptent pas à part.",
       "cdc": "PLAN-V3.md §4 P0-3",
       "code": [
         "app/services/poe_pipeline.py:_extract_primary",

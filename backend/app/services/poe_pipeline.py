@@ -48,8 +48,8 @@ from app.core.extract import (
 )
 from app.core.geo import classify_poe_point, geocode_port_dual, inland_exception_flags
 from app.core.llm import (
-    LLM_CONTEXT_CHARS, extract_ports, extract_ports_per_answer, grounded_search,
-    llm_context_chars, llm_geocode_port,
+    LLM_CONTEXT_CHARS, extract_call_gate, extract_ports, extract_ports_per_answer,
+    grounded_search, llm_context_chars, llm_geocode_port,
 )
 from app.core.rag import chunk_text, list_like_score, select_list_context, semantic_similarity
 from app.adapters import evidence_store
@@ -1285,9 +1285,11 @@ def zone_extract_budget():
         return
     state = {"allowance": None, "used": 0, "run_id": None, "capped": False}
     token = _zone_extract.set(state)
+    gate_token = extract_call_gate.set(lambda: _take_extract_calls(1) > 0)
     try:
         yield state
     finally:
+        extract_call_gate.reset(gate_token)
         _zone_extract.reset(token)
         from app.core import tokenfactory
         if state["run_id"] is not None:
