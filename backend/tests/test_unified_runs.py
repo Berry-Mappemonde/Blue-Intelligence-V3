@@ -643,3 +643,91 @@ def test_cli_argument_rules(cli):
         cli.main(["--no-dotenv", "--zone", "Bermuda", "--retry-errored"])
     with pytest.raises(SystemExit):
         cli.main(["--no-dotenv", "--resume", "a", "--export", "a"])
+
+
+# ── crash robustness: atomic manifest, fsynced trace, torn last line ─
+
+def _torn_trace(rid: str, tail: bytes) -> Path:
+    artifacts.append_trace(rid, "run_start", layer="poe")
+    artifacts.append_trace(rid, "unit_done", unit=1, status="ia")
+    path = artifacts.trace_path(rid)
+    with path.open("ab") as f:
+        f.write(tail)  # crash in the middle of the next line
+    return path
+
+
+def test_truncated_final_trace_line_is_ignored_with_warning(env, caplog):
+    _torn_trace("r-torn", b'{"ts": "2026-10-30", "run_id": "r-torn", "event": "unit_do')
+    with caplog.at_level("WARNING", logger=artifacts.__name__):
+        recs = artifacts.read_trace("r-torn")
+    assert [r["event"] for r in recs] == ["run_start", "unit_done"]
+    assert artifacts.completed_units("r-torn") == {1}
+    assert any("truncated final line" in r.getMessage() for r in caplog.records)
+
+
+def test_torn_utf8_sequence_does_not_crash(env, caplog):
+    tail = '{"event": "unit_done", "zone": "Curaçao'.encode("utf-8")
+    _torn_trace("r-utf8", tail[:-len("ao") - 1])  # cut inside the 2-byte "ç"
+    with caplog.at_level("WARNING", logger=artifacts.__name__):
+        assert len(artifacts.read_trace("r-utf8")) == 2
+    assert any("truncated final line" in r.getMessage() for r in caplog.records)
+
+
+def test_append_after_torn_line_starts_a_new_line(env):
+    _torn_trace("r-next", b'{"event": "unit_st')
+    artifacts.append_trace("r-next", "run_resume", layer="poe")
+    recs = artifacts.read_trace("r-next")
+    assert [r["event"] for r in recs] == ["run_start", "unit_done", "run_resume"]
+
+
+def test_resume_with_truncated_trace(env, monkeypatch):
+    db = env["db"]
+    db.poe_runs.docs.append({"_id": "r-crash2", "state": "running", "label": "x",
+                             "params": {"limit": 0, "only_zones": None,
+                                        "concurrency": 1, "variant": "tinyfish"}})
+    _torn_trace("r-crash2", b'{"ts": "x", "event": "unit_done", "unit": 2')
+    calls: list = []
+    monkeypatch.setattr(poe_runs.poe, "generate_zone_poe", _zone_stub(calls, attempt=1))
+    summary = _run(unified_runs.start_run(db, TaskState(), run_id="r-crash2", resume=True))
+    # zone 1 is done in the trace; the torn unit_done for zone 2 does not count.
+    assert sorted(calls) == [2, 3, 4]
+    assert summary["zones_done"] == 4
+    events_ = [r["event"] for r in artifacts.read_trace("r-crash2")]
+    assert events_[-1] == "run_done"
+
+
+def test_trace_lines_are_flushed_and_fsynced(env, monkeypatch):
+    synced = []
+    real = os.fsync
+    monkeypatch.setattr(artifacts.os, "fsync", lambda fd: (synced.append(fd), real(fd)))
+    artifacts.append_trace("r-sync", "run_start")
+    artifacts.append_trace("r-sync", "unit_start", unit=1)
+    assert len(synced) == 2
+
+
+def test_manifest_write_is_atomic(env, monkeypatch):
+    path = artifacts.manifest_path("r-atomic")
+    first = artifacts.write_json_atomic(path, {"run_id": "r-atomic", "v": 1})
+    assert artifacts.sha256_file(path) == first
+
+    def crash(src, dst):
+        raise OSError("killed during rename")
+
+    monkeypatch.setattr(artifacts.os, "replace", crash)
+    with pytest.raises(OSError):
+        artifacts.write_json_atomic(path, {"run_id": "r-atomic", "v": 2})
+    # The previous manifest is intact and no temp file is left behind.
+    assert json.loads(path.read_text())["v"] == 1
+    assert sorted(p.name for p in path.parent.iterdir()) == ["manifest.json"]
+    monkeypatch.undo()
+
+    order = []
+    real_fsync, real_replace = os.fsync, os.replace
+    monkeypatch.setattr(artifacts.os, "fsync", lambda fd: (order.append("fsync"),
+                                                           real_fsync(fd)))
+    monkeypatch.setattr(artifacts.os, "replace", lambda a, b: (order.append("replace"),
+                                                               real_replace(a, b)))
+    artifacts.write_json_atomic(path, {"run_id": "r-atomic", "v": 3})
+    assert order[:2] == ["fsync", "replace"]
+    assert json.loads(path.read_text())["v"] == 3
+    assert oct(path.stat().st_mode & 0o777) == oct(0o644)

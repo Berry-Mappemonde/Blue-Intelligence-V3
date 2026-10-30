@@ -20,6 +20,7 @@ import logging
 import os
 import platform
 import re
+import tempfile
 import threading
 from datetime import datetime, timezone
 from importlib import metadata
@@ -78,37 +79,51 @@ def manifest_path(run_id: str, root: Path | None = None) -> Path:
 # ── trace ────────────────────────────────────────────────────────────
 
 def append_trace(run_id: str, event: str, root: Path | None = None, **payload) -> dict:
-    """Append one line. Never rewrites earlier lines."""
+    """Append one line, flushed and fsynced. Never rewrites earlier lines.
+
+    If a crash left the last line without its newline, a newline is added
+    first so the new record never merges with the torn one.
+    """
     rec = {"ts": now_iso(), "run_id": safe_run_id(run_id), "event": event,
            **_strip_secrets(payload)}
-    line = json.dumps(rec, ensure_ascii=False, default=str)
+    data = (json.dumps(rec, ensure_ascii=False, default=str) + "\n").encode("utf-8")
     path = trace_path(run_id, root)
     with _LOCK:
         path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("a", encoding="utf-8") as f:
-            f.write(line + "\n")
+        with path.open("ab") as f:
+            if f.tell() > 0 and not _ends_with_newline(path):
+                data = b"\n" + data
+            f.write(data)
             f.flush()
             os.fsync(f.fileno())
     return rec
 
 
+def _ends_with_newline(path: Path) -> bool:
+    with path.open("rb") as f:
+        f.seek(-1, os.SEEK_END)
+        return f.read(1) == b"\n"
+
+
 def read_trace(run_id: str, root: Path | None = None) -> list[dict]:
-    """All readable lines; a line torn by a crash is skipped."""
+    """All readable lines. A line torn by a crash is skipped with a warning."""
     path = trace_path(run_id, root)
     if not path.is_file():
         return []
     out = []
-    with path.open("r", encoding="utf-8") as f:
-        for raw in f:
-            raw = raw.strip()
-            if not raw:
-                continue
-            try:
-                rec = json.loads(raw)
-            except json.JSONDecodeError:
-                continue
-            if isinstance(rec, dict):
-                out.append(rec)
+    raw_lines = path.read_bytes().split(b"\n")
+    last = len(raw_lines) - 1
+    for i, raw in enumerate(raw_lines):
+        if not raw.strip():
+            continue
+        try:
+            rec = json.loads(raw.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            where = "truncated final line" if i == last else f"unreadable line {i + 1}"
+            logger.warning("trace %s: %s ignored (%d bytes)", path, where, len(raw))
+            continue
+        if isinstance(rec, dict):
+            out.append(rec)
     return out
 
 
@@ -249,13 +264,41 @@ def build_manifest(*, run_id: str, layer: str, state: str, params: dict | None,
 
 
 def write_json_atomic(path: Path, doc: dict) -> str:
-    """Write via a temp file + rename; return the SHA-256 of the result."""
+    """Write via a fsynced temp file in the same directory + rename.
+
+    Readers see either the previous file or the new one, never a partial
+    write. Returns the SHA-256 of the result.
+    """
+    path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(path.name + ".tmp")
-    tmp.write_text(json.dumps(doc, ensure_ascii=False, indent=2, default=str) + "\n",
-                   encoding="utf-8")
-    os.replace(tmp, path)
+    data = (json.dumps(doc, ensure_ascii=False, indent=2, default=str) + "\n").encode("utf-8")
+    fd, tmp = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
+    try:
+        with os.fdopen(fd, "wb") as f:
+            f.write(data)
+            f.flush()
+            os.fsync(f.fileno())
+        os.chmod(tmp, 0o644)  # mkstemp creates 0600
+        os.replace(tmp, path)
+    except BaseException:
+        Path(tmp).unlink(missing_ok=True)
+        raise
+    _fsync_dir(path.parent)
     return sha256_file(path)
+
+
+def _fsync_dir(directory: Path) -> None:
+    """Persist the rename itself (best effort: not supported everywhere)."""
+    try:
+        fd = os.open(directory, os.O_RDONLY)
+    except OSError:
+        return
+    try:
+        os.fsync(fd)
+    except OSError:
+        pass
+    finally:
+        os.close(fd)
 
 
 def write_run_manifest(run_id: str, manifest: dict, root: Path | None = None) -> str:
