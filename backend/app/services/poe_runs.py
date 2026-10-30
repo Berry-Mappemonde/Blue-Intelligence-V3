@@ -134,7 +134,10 @@ async def execute_run(db, state, run_id: str, label: str = "",
         f"(concurrency={concurrency}, timeout {timeout_s}s/zone, "
         f"rules={rules.get('hash')} profile={rules.get('profile')})")
 
-    from app.core.tokenfactory import plan_zone_calls
+    from app.core.tokenfactory import calls_taken, plan_zone_calls, restore_calls
+    if resume:  # the call count lives in memory: a restart would hand out a fresh cap
+        restore_calls(existing.get("calls_taken") or ((existing.get("summary") or {}).get(
+            "tokenfactory") or {}).get("calls_taken") or 0, run_id)
     plan_zone_calls(len(todo), run_id)  # each zone gets a fair share of the call cap
     sem = asyncio.Semaphore(max(1, concurrency))
     counter = {"done": len(done_mrgids), "errors": 0}
@@ -177,6 +180,7 @@ async def execute_run(db, state, run_id: str, label: str = "",
                 state.progress = counter["done"]
                 await db.poe_runs.update_one({"_id": run_id}, {"$set": {
                     "zones_done": counter["done"], "last_zone": name,
+                    "calls_taken": calls_taken(run_id),
                 }})
 
     await asyncio.gather(*(_one(z) for z in todo))

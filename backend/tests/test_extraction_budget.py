@@ -465,3 +465,40 @@ def test_fallback_chain_stops_at_the_cap(provider_chain):
     # Nightshift + NIM use the two calls: OpenRouter and both Claude paths stay off.
     assert provider_chain == ["nightshift", "nvidia"]
     assert ports == [] and gaps == {"capped": True} and used == 2
+
+
+# --- calls_taken persisted with the run (finding 5) ----------------------------------
+
+def test_calls_taken_is_in_the_run_cost_summary():
+    tokenfactory.reset_ledger()
+    try:
+        tokenfactory.take_calls(4, 100, "run-r3-cost")
+        summary = tokenfactory.attach({}, "run-r3-cost")
+        assert summary["tokenfactory"]["calls_taken"] == 4
+        persisted = {"calls": 2, "calls_taken": 7}  # stored cost, process restarted
+        assert tokenfactory.public_cost("run-r3-other", persisted)["calls_taken"] == 7
+    finally:
+        tokenfactory.reset_ledger()
+
+
+def test_resume_after_restart_keeps_the_calls_already_taken(run_harness, monkeypatch):
+    async def fake_zone(db, mrgid, logger=None, force=False, run=None):
+        with poe.zone_extract_budget():
+            assert poe._take_extract_calls(3) == 3
+        await db.poe_run_zones.update_one({"run_id": run.run_id, "mrgid": mrgid},
+                                          {"$set": {"status": "ia", "poe_count": 1}}, upsert=True)
+        return {"status": "ia", "poe_count": 1}
+
+    monkeypatch.setattr(run_harness.poe, "generate_zone_poe", fake_zone)
+    db = _MemDB([{"mrgid": 1, "name": "A"}, {"mrgid": 2, "name": "B"}])
+    summary = _execute(run_harness, db, "run-r3-resume")
+    assert summary["tokenfactory"]["calls_taken"] == 6
+    doc = asyncio.run(db.poe_runs.find_one({"_id": "run-r3-resume"}))
+    assert doc["calls_taken"] == 6
+
+    # Restart: the in-memory count is gone; zone B is regenerated on resume.
+    tokenfactory.reset_ledger()
+    db.poe_run_zones.docs = [d for d in db.poe_run_zones.docs if d["mrgid"] == 1]
+    summary = _execute(run_harness, db, "run-r3-resume", resume=True)
+    assert summary["tokenfactory"]["calls_taken"] == 9
+    assert tokenfactory.calls_taken("run-r3-resume") == 9

@@ -345,6 +345,13 @@ def calls_taken(run_id: str | None = None) -> int:
         return _CALLS.get(ledger_key(run_id), 0)
 
 
+def restore_calls(n: int, run_id: str | None = None) -> None:
+    """Resume after a restart: the run's calls already taken, from the run document."""
+    rid = ledger_key(run_id)
+    with _ledger_guard:
+        _CALLS[rid] = max(_CALLS.get(rid, 0), int(n or 0))
+
+
 def plan_zone_calls(zones: int, run_id: str | None = None) -> None:
     """Number of zones still to run; each takes a fair share of the cap (``reserve_zone_calls``)."""
     with _ledger_guard:
@@ -442,6 +449,9 @@ def summary(run_id: str | None = None) -> dict:
         "provider": "tokenfactory",
         "host": EU_HOST,
         "calls": len(rows),
+        # Calls counted against formalities.extract_max_llm_calls (any provider), not
+        # only the Token Factory requests in "calls".
+        "calls_taken": calls_taken(rid),
         "tokens_in": tokens_in,
         "tokens_out": tokens_out,
         "usd_estimated": spent,
@@ -456,7 +466,9 @@ def public_cost(run_id: str, persisted: dict | None = None) -> dict:
     """Live accumulator, or the cost stored on the run document if this process has none."""
     live = summary(run_id)
     if live["calls"] == 0 and isinstance(persisted, dict) and int(persisted.get("calls") or 0) > 0:
-        return dict(persisted)
+        out = dict(persisted)
+        out["calls_taken"] = max(int(persisted.get("calls_taken") or 0), live["calls_taken"])
+        return out
     return live
 
 
