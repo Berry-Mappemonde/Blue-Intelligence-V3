@@ -251,17 +251,24 @@ def test_resume_after_crash_keeps_completed_zones(env, monkeypatch):
     assert sorted(r["unit"] for r in trace if r["event"] == "unit_done") == [1, 2, 3, 4]
 
 
-def test_trace_alone_marks_zone_done(env, monkeypatch):
-    """A unit_done line is enough to skip a zone, even without its Mongo doc."""
+def test_trace_alone_does_not_mark_zone_done(env, monkeypatch):
+    """Mongo is the source of truth: a unit_done line without its poe_run_zones
+    doc (restore, other DB, manual cleanup) is flagged and the zone is re-run."""
     db = env["db"]
     db.poe_runs.docs.append({"_id": "r-trace", "state": "running", "label": "x",
                              "params": {"limit": 0, "only_zones": None,
                                         "concurrency": 1, "variant": "tinyfish"}})
+    db.poe_run_zones.docs.append({"run_id": "r-trace", "mrgid": 3, "status": "ia"})
     artifacts.append_trace("r-trace", "unit_done", unit=2)
+    artifacts.append_trace("r-trace", "unit_done", unit=3)
     calls: list = []
     monkeypatch.setattr(poe_runs.poe, "generate_zone_poe", _zone_stub(calls, attempt=1))
     _run(unified_runs.start_run(db, TaskState(), run_id="r-trace", resume=True))
-    assert sorted(calls) == [1, 3, 4]
+    assert sorted(calls) == [1, 2, 4]
+    flagged = [r for r in artifacts.read_trace("r-trace")
+               if r["event"] == "unit_missing_in_mongo"]
+    assert [r["unit"] for r in flagged] == [2]
+    assert {d["mrgid"] for d in db.poe_run_zones.docs} == {1, 2, 3, 4}
 
 
 def test_new_run_never_reuses_an_existing_id(env):
@@ -685,11 +692,13 @@ def test_resume_with_truncated_trace(env, monkeypatch):
     db.poe_runs.docs.append({"_id": "r-crash2", "state": "running", "label": "x",
                              "params": {"limit": 0, "only_zones": None,
                                         "concurrency": 1, "variant": "tinyfish"}})
+    # Zone 1 was persisted, then traced; the crash cut zone 2's unit_done line.
+    db.poe_run_zones.docs.append({"run_id": "r-crash2", "mrgid": 1, "status": "ia"})
     _torn_trace("r-crash2", b'{"ts": "x", "event": "unit_done", "unit": 2')
     calls: list = []
     monkeypatch.setattr(poe_runs.poe, "generate_zone_poe", _zone_stub(calls, attempt=1))
     summary = _run(unified_runs.start_run(db, TaskState(), run_id="r-crash2", resume=True))
-    # zone 1 is done in the trace; the torn unit_done for zone 2 does not count.
+    # zone 1 is done; the torn unit_done for zone 2 does not count.
     assert sorted(calls) == [2, 3, 4]
     assert summary["zones_done"] == 4
     events_ = [r["event"] for r in artifacts.read_trace("r-crash2")]

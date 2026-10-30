@@ -9,9 +9,11 @@ in a dedicated space, never touching v1 collections:
                       also JSONL in backend/data/runs/<run_id>.jsonl.
 
 Resume: an interrupted run (server restart…) continues where it
-stopped — zones already in poe_run_zones for this run, or marked
-`unit_done` in data/runs/<run_id>/trace.jsonl, are skipped. Errored
-zones count as done unless retry_errored=True.
+stopped — zones already in poe_run_zones for this run are skipped.
+Mongo is the source of truth: a zone marked `unit_done` in
+data/runs/<run_id>/trace.jsonl but missing from poe_run_zones is
+flagged (`unit_missing_in_mongo`) and re-run. Errored zones count as
+done unless retry_errored=True.
 Each run also keeps data/runs/<run_id>/manifest.json (run_artifacts).
 v1 ↔ run comparison and the report live in poe_diff / poe_report.
 
@@ -166,8 +168,11 @@ async def execute_run(db, state, run_id: str, label: str = "",
         done_mrgids = set(zone_status)
         traced = await _artifact(artifacts.completed_units, run_id) or set()
         selected = {z["mrgid"] for z in zones}
-        done_mrgids |= {int(m) for m in traced
-                        if isinstance(m, int) and m in selected}
+        for mrgid in sorted(m for m in traced if isinstance(m, int)
+                            and m in selected and m not in done_mrgids):
+            log(f"zone {mrgid} terminée dans la trace mais absente de Mongo — relancée")
+            await _artifact(artifacts.append_trace, run_id, "unit_missing_in_mongo",
+                            unit=mrgid)
         if retry_errored:
             retry_mrgids = await _retryable_zones(db, run_id, selected, zone_status, log)
             done_mrgids -= retry_mrgids
