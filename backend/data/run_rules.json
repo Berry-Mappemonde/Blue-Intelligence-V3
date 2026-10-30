@@ -1822,7 +1822,7 @@
         20000
       ],
       "vary": true,
-      "principle": "Plafond d'appels d'extraction (lecteur principal) par run, compté comme le budget USD Token Factory (même clé de run). Au-delà, les lots restants ne partent pas : les plus riches en listes passent d'abord, puis catalogue / NER en repli. Sans run, le plafond vaut pour une ZEE.",
+      "principle": "Plafond d'appels d'extraction par run, compté comme le budget USD Token Factory (même clé de run). Chaque ZEE reçoit une part équitable (appels libres / ZEE restantes, au moins formalities.extract_min_zone_calls) : une grosse ZEE en tête d'ordre alphabétique ne vide plus le plafond des suivantes. Part épuisée : les lots restants ne partent pas (les plus riches en listes d'abord), aucun lecteur de repli non compté (second lecteur, Claude) n'est lancé, et la ZEE est marquée extraction_partial (capped). Sans run, le plafond vaut pour une ZEE.",
       "cdc": "PLAN-V3.md §4 P0-3",
       "code": [
         "app/services/poe_pipeline.py:_extract_primary",
@@ -1833,8 +1833,36 @@
         "en": "Max extraction calls per run"
       },
       "help": {
-        "fr": "Nombre maximal d'appels au lecteur principal pour tout un run. Atteint : les lots restants sont sautés et notés dans le journal.",
-        "en": "Maximum primary-reader calls for a whole run. Once reached, the remaining batches are skipped and logged."
+        "fr": "Nombre maximal d'appels d'extraction pour tout un run, partagé équitablement entre les ZEE. Part atteinte : les lots restants sont sautés, la ZEE est marquée partielle.",
+        "en": "Maximum extraction calls for a whole run, shared fairly between EEZs. Once a zone's share is used, its remaining batches are skipped and the zone is marked partial."
+      },
+      "group": "budget"
+    },
+    {
+      "id": "formalities.extract_min_zone_calls",
+      "mode": "formalities",
+      "kind": "budget",
+      "value": 6,
+      "numeric": "int",
+      "unit": "calls",
+      "interval": [
+        1,
+        200
+      ],
+      "vary": true,
+      "principle": "Plancher de la part d'une ZEE dans formalities.extract_max_llm_calls. Part = appels libres / ZEE restantes, jamais moins que ce plancher tant qu'il reste des appels libres. 6 = une source longue de 120 000 chars (7 lots) presque entière, ou une ZEE ordinaire (1 appel + second lecteur) avec marge pour les replis.",
+      "cdc": "PLAN-V3.md §4 P0-3",
+      "code": [
+        "app/services/poe_pipeline.py:_take_extract_calls",
+        "app/core/tokenfactory.py:reserve_zone_calls"
+      ],
+      "title": {
+        "fr": "Part minimale d'appels par ZEE",
+        "en": "Minimum call share per EEZ"
+      },
+      "help": {
+        "fr": "Appels d'extraction garantis à chaque ZEE tant que le plafond du run n'est pas épuisé.",
+        "en": "Extraction calls each EEZ is guaranteed while the run cap is not used up."
       },
       "group": "budget"
     },

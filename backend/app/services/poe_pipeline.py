@@ -28,6 +28,8 @@ import re
 import threading
 import time
 import uuid
+from contextlib import ExitStack, contextmanager
+from contextvars import ContextVar
 
 import httpx
 import pycountry
@@ -1268,16 +1270,65 @@ def _list_density(text: str) -> float:
     return sum(list_like_score(c) for c in chunks) / max(1, len(chunks))
 
 
+EXTRACT_MIN_ZONE_CALLS = 6  # floor of one zone's share of the run cap
+# One zone's extraction budget and what it could not read (see extraction_gaps).
+_zone_extract: ContextVar[dict | None] = ContextVar("zone_extract", default=None)
+
+
+@contextmanager
+def zone_extract_budget():
+    """Zone scope of the call cap. The zone takes its share of the run cap on its first
+    call and gives back the unused part on exit; nested scopes reuse the outer one."""
+    outer = _zone_extract.get()
+    if outer is not None:
+        yield outer
+        return
+    state = {"allowance": None, "used": 0, "run_id": None, "capped": False}
+    token = _zone_extract.set(state)
+    try:
+        yield state
+    finally:
+        _zone_extract.reset(token)
+        from app.core import tokenfactory
+        if state["run_id"] is not None:
+            tokenfactory.close_zone_calls(state["allowance"] - state["used"], state["run_id"])
+        elif state["allowance"] is None and tokenfactory.current_run_id() is not None:
+            tokenfactory.close_zone_calls(None, tokenfactory.current_run_id())
+
+
+def extraction_gaps() -> dict:
+    """What the current zone's extraction left out; empty when it read everything."""
+    state = _zone_extract.get() or {}
+    return {k: state[k] for k in ("capped",) if state.get(k)}
+
+
 def _take_extract_calls(wanted: int) -> int:
-    """Calls granted under ``formalities.extract_max_llm_calls``: counted per run on the
-    Token Factory ledger key; without a run, the cap holds for this zone alone."""
+    """Calls granted under ``formalities.extract_max_llm_calls``. In a run, each zone gets
+    a fair share (free calls / zones left, at least ``formalities.extract_min_zone_calls``)
+    on the Token Factory ledger key; without a run, the cap holds for this zone alone.
+    A refused call marks the zone ``capped``."""
     from app.core import tokenfactory
     from app.core.run_rules import get_rule
-    cap = int(get_rule("formalities.extract_max_llm_calls", EXTRACT_MAX_LLM_CALLS))
-    run_id = tokenfactory.current_run_id()
-    if run_id is None:
-        return max(0, min(wanted, cap))
-    return tokenfactory.take_calls(wanted, cap, run_id)
+    state = _zone_extract.get()
+    if state is None:
+        with zone_extract_budget():
+            return _take_extract_calls(wanted)
+    if state["allowance"] is None:
+        cap = int(get_rule("formalities.extract_max_llm_calls", EXTRACT_MAX_LLM_CALLS))
+        run_id = tokenfactory.current_run_id()
+        if run_id is None:
+            state["allowance"] = cap
+        else:
+            floor = int(get_rule("formalities.extract_min_zone_calls", EXTRACT_MIN_ZONE_CALLS))
+            state["allowance"] = tokenfactory.reserve_zone_calls(cap, floor, run_id)
+            state["run_id"] = run_id
+    granted = max(0, min(int(wanted), state["allowance"] - state["used"]))
+    if granted and state["run_id"] is not None:
+        tokenfactory.use_zone_calls(granted, state["run_id"])
+    state["used"] += granted
+    if granted < wanted:
+        state["capped"] = True
+    return granted
 
 
 async def _extract_primary(context: str, zone: dict, log, rec=None,
@@ -1345,6 +1396,14 @@ async def _extract_primary(context: str, zone: dict, log, rec=None,
 async def _extract_ports_core(context: str, zone: dict, log, rec=None,
                               catalog_text: str | None = None,
                               settings: dict | None = None) -> list[dict]:
+    with zone_extract_budget():
+        return await _extract_ports_compared(context, zone, log, rec=rec,
+                                             catalog_text=catalog_text, settings=settings)
+
+
+async def _extract_ports_compared(context: str, zone: dict, log, rec=None,
+                                  catalog_text: str | None = None,
+                                  settings: dict | None = None) -> list[dict]:
     """LLM and local NER run IN PARALLEL on the same context and their
     lists are compared port by port (no longer a simple fallback):
       - port seen by both → extraction_agreement=True (confidence signal);
@@ -1391,6 +1450,10 @@ async def _extract_ports_core(context: str, zone: dict, log, rec=None,
                 if not choice:
                     return None
                 model, engine = choice
+                if not _take_extract_calls(1):
+                    if log:
+                        log("second lecteur: plafond d'appels LLM atteint, non lancé")
+                    return None
                 ports = await nvidia.extract_ports_nvidia(
                     context, zone, settings=settings, log=log,
                     model=model, engine=engine, fallback=False)
@@ -1427,7 +1490,16 @@ async def _extract_ports_core(context: str, zone: dict, log, rec=None,
         claude_names = []  # already the primary list
     if llm_ports is None:
         from app.core import claude
-        if claude.claude_enabled(settings) and claude.budget_allows_call(settings):
+        from app.core.tokenfactory import LLMCallCapReached
+        if isinstance(llm_err, LLMCallCapReached):
+            # The zone's share of the cap is used up: no uncounted reader behind it.
+            log("plafond d'appels LLM atteint — Claude (dernier recours) sauté, zone marquée plafonnée")
+        elif not (claude.claude_enabled(settings) and claude.budget_allows_call(settings)):
+            pass
+        elif not _take_extract_calls(1):
+            log("plafond d'appels LLM atteint — Claude (dernier recours) non lancé")
+            llm_err = LLMCallCapReached("formalities.extract_max_llm_calls reached")
+        else:
             try:
                 llm_ports = await claude.extract_ports_claude(
                     context, zone, settings=settings, log=log)
@@ -2657,6 +2729,7 @@ async def _persist_zone_run(db, zone: dict, docs: list[dict], status: str,
     in the same run replaces its ports."""
     mrgid = int(zone["mrgid"])
     docs = deduplicate_list(docs, title_key="name") if docs else []
+    gaps = extraction_gaps()
     ports_coll = db[run.ports_coll]
     await ports_coll.delete_many({"run_id": run.run_id, "mrgid": mrgid})
     if docs:
@@ -2678,13 +2751,16 @@ async def _persist_zone_run(db, zone: dict, docs: list[dict], status: str,
         "pipeline_variant": getattr(run, "variant", None),
         "sources_official": bool(any(s.get("official") for s in used_sources)),
         "confidence_avg": zone_confidence_avg(docs),
+        # Partial, not complete: the call cap (or a batch failure, the deadline) left text unread.
+        "extraction_partial": bool(gaps),
+        "extraction_gaps": gaps or None,
     }
     await db[run.zones_coll].update_one(
         {"run_id": run.run_id, "mrgid": mrgid}, {"$set": zone_doc}, upsert=True)
     await emit(rec, "persist", inserted=len(docs), status=zone_doc["status"],
-               run_id=run.run_id)
+               run_id=run.run_id, extraction_gaps=gaps or None)
     log(f"terminé (run {run.run_id[:8]}): {len(docs)} PoE écrits dans l'espace du run, "
-        f"statut {zone_doc['status']}")
+        f"statut {zone_doc['status']}" + (f", extraction partielle {gaps}" if gaps else ""))
     return zone_doc
 
 
@@ -2734,6 +2810,8 @@ async def _persist_zone(db, zone: dict, docs: list[dict], status: str,
             "last_error": None,
             "sources_official": bool(any(s.get("official") for s in used_sources)),
             "confidence_avg": zone_confidence_avg(docs),
+            "extraction_partial": bool(extraction_gaps()),
+            "extraction_gaps": extraction_gaps() or None,
         }, "$unset": {"unclos": ""}})
         log(f"terminé: {inserted} nouveau(x) PoE, {merged} fusionné(s) — total zone {poe_count}, statut {status}")
     elif zone.get("poe_count", 0) > 0:
@@ -2820,6 +2898,8 @@ async def generate_zone_poe(db, mrgid: int, logger=None, force: bool = False,
     from app.core.extract import allow_tinyfish_fetch
     _tf_token = allow_tinyfish_fetch.set(variant == "tinyfish")
     _ctx_token = llm_context_chars.set(LLM_CONTEXT_CHARS)
+    _budget = ExitStack()
+    _budget.enter_context(zone_extract_budget())
     log(f"=== {name} (mrgid {mrgid}) — variant={variant} whitelist: {', '.join(whitelist[:8]) or 'vide'}")
     await emit(rec, "zone_start", iso2=zone.get("iso2"), sov_iso2=zone.get("sov_iso2"),
                sovereign=zone.get("sovereign"), pol_type=zone.get("pol_type"),
@@ -2959,6 +3039,7 @@ async def generate_zone_poe(db, mrgid: int, logger=None, force: bool = False,
                    duration_s=round(time.time() - t0, 1))
         raise
     finally:
+        _budget.close()
         llm_context_chars.reset(_ctx_token)
         allow_tinyfish_fetch.reset(_tf_token)
 

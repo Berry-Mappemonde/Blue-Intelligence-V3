@@ -73,6 +73,8 @@ _THINK_END = "</think>"
 _current: ContextVar[str | None] = ContextVar("tf_run_id", default=None)
 _LEDGER: dict[str, list[dict]] = {}
 _CALLS: dict[str, int] = {}  # LLM calls reserved per run (take_calls), any provider
+_CALLS_HELD: dict[str, int] = {}  # calls set aside for zones in progress, not used yet
+_ZONES_LEFT: dict[str, int] = {}  # zones of the run that have not taken their share yet
 _ledger_guard = threading.Lock()
 _locks: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
 
@@ -313,9 +315,13 @@ def reset_ledger(run_id: str | None = None) -> None:
         if run_id is None:
             _LEDGER.clear()
             _CALLS.clear()
+            _CALLS_HELD.clear()
+            _ZONES_LEFT.clear()
         else:
             _LEDGER.pop(run_id, None)
             _CALLS.pop(run_id, None)
+            _CALLS_HELD.pop(run_id, None)
+            _ZONES_LEFT.pop(run_id, None)
 
 
 def take_calls(wanted: int, cap: int, run_id: str | None = None) -> int:
@@ -335,6 +341,46 @@ def take_calls(wanted: int, cap: int, run_id: str | None = None) -> int:
 def calls_taken(run_id: str | None = None) -> int:
     with _ledger_guard:
         return _CALLS.get(ledger_key(run_id), 0)
+
+
+def plan_zone_calls(zones: int, run_id: str | None = None) -> None:
+    """Number of zones still to run; each takes a fair share of the cap (``reserve_zone_calls``)."""
+    with _ledger_guard:
+        _ZONES_LEFT[ledger_key(run_id)] = max(0, int(zones))
+
+
+def reserve_zone_calls(cap: int, floor: int, run_id: str | None = None) -> int:
+    """Set aside one zone's share of the run cap: free calls / zones left, at least
+    ``floor``, never more than what is free. Free = cap - used - held by other zones."""
+    rid = ledger_key(run_id)
+    with _ledger_guard:
+        free = max(0, int(cap) - _CALLS.get(rid, 0) - _CALLS_HELD.get(rid, 0))
+        left = max(1, _ZONES_LEFT.get(rid, 1))
+        share = min(free, max(int(floor), free // left))
+        _CALLS_HELD[rid] = _CALLS_HELD.get(rid, 0) + share
+        if rid in _ZONES_LEFT:
+            _ZONES_LEFT[rid] = max(0, _ZONES_LEFT[rid] - 1)
+    return share
+
+
+def use_zone_calls(n: int, run_id: str | None = None) -> None:
+    """Move ``n`` calls of a zone's share from held to used."""
+    rid = ledger_key(run_id)
+    with _ledger_guard:
+        _CALLS[rid] = _CALLS.get(rid, 0) + int(n)
+        _CALLS_HELD[rid] = max(0, _CALLS_HELD.get(rid, 0) - int(n))
+
+
+def close_zone_calls(unused: int | None, run_id: str | None = None) -> None:
+    """Zone finished: give back its unused share. ``None``: it never took a share, so it
+    leaves the zones still to run."""
+    rid = ledger_key(run_id)
+    with _ledger_guard:
+        if unused is None:
+            if rid in _ZONES_LEFT:
+                _ZONES_LEFT[rid] = max(0, _ZONES_LEFT[rid] - 1)
+            return
+        _CALLS_HELD[rid] = max(0, _CALLS_HELD.get(rid, 0) - int(unused))
 
 
 def spent_usd(run_id: str | None = None) -> float:
