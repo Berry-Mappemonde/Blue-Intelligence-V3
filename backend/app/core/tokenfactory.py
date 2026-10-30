@@ -398,6 +398,15 @@ def use_zone_calls(n: int, run_id: str | None = None) -> None:
         _CALLS_HELD[rid] = max(0, _CALLS_HELD.get(rid, 0) - int(n))
 
 
+def return_zone_calls(n: int, run_id: str | None = None) -> None:
+    """Move ``n`` used calls of a zone's share back to held (calls never started)."""
+    rid = ledger_key(run_id)
+    with _ledger_guard:
+        n = min(int(n), _CALLS.get(rid, 0))
+        _CALLS[rid] = _CALLS.get(rid, 0) - n
+        _CALLS_HELD[rid] = _CALLS_HELD.get(rid, 0) + n
+
+
 def close_zone_calls(unused: int | None, run_id: str | None = None) -> None:
     """Zone finished: give back its unused share. ``None``: it never took a share, so it
     leaves the zones still to run."""

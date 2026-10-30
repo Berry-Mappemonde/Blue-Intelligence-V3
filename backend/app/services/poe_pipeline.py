@@ -1360,6 +1360,19 @@ def _take_extract_calls(wanted: int) -> int:
     return granted
 
 
+def _return_extract_calls(n: int) -> None:
+    """Give back ``n`` calls taken by ``_take_extract_calls`` that were never started;
+    the zone returns them to the run when it closes."""
+    from app.core import tokenfactory
+    state = _zone_extract.get()
+    n = min(int(n), (state or {}).get("used", 0))
+    if n <= 0:
+        return
+    state["used"] -= n
+    if state["run_id"] is not None:
+        tokenfactory.return_zone_calls(n, state["run_id"])
+
+
 async def _extract_primary(context: str, zone: dict, log, rec=None,
                            catalog_text: str | None = None,
                            settings: dict | None = None) -> list[dict]:
@@ -1404,9 +1417,11 @@ async def _extract_primary(context: str, zone: dict, log, rec=None,
         log(f"plafond d'appels LLM: {granted}/{len(batches)} lot(s) envoyés, "
             f"{sum(len(b) for i, b in enumerate(batches) if i not in kept)} chars non lus")
     sem = asyncio.Semaphore(max(1, workers))
+    started: set[int] = set()
 
     async def read(i: int) -> list[dict]:
         async with sem:
+            started.add(i)
             token = llm_context_chars.set(size)
             try:
                 return await extract_ports(batches[i], zone, settings=settings, log=log)
@@ -1432,6 +1447,8 @@ async def _extract_primary(context: str, zone: dict, log, rec=None,
                 task.cancel()
             if left:
                 await asyncio.gather(*left, return_exceptions=True)
+            # A batch cut before it started sent nothing: its call goes back to the cap.
+            _return_extract_calls(sum(tasks[t] not in started for t in left))
         for task in done:
             if not task.cancelled():
                 results[tasks[task]] = task.exception() or task.result()

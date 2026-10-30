@@ -294,6 +294,31 @@ def test_zone_cancelled_from_outside_cancels_its_batches(reader, monkeypatch):
     assert stopped_in_loop == 3 and left == []
 
 
+def test_deadline_returns_the_calls_of_batches_never_started(reader, run_cap, monkeypatch):
+    """Round 4, finding 3: batches the deadline cut before they started give their call
+    back to the run cap; batches cut in flight stay counted (a request was sent)."""
+    async def hang(context, zone, settings=None, log=None):
+        reader.append(context)
+        await asyncio.sleep(30)
+
+    monkeypatch.setattr(poe, "extract_ports", hang)
+    run_cap(cap=20, zones=1)  # 6 batches, 3 workers: 3 in flight, 3 never started
+
+    async def zone():
+        poe.set_zone_deadline(0.6)  # reading stops after 0.4 s
+        with poe.zone_extract_budget() as state:
+            with pytest.raises(asyncio.TimeoutError):
+                await poe._extract_primary("x", ZONE, lambda m: None, catalog_text=_big_zone(6))
+            return state["used"], poe.extraction_gaps()
+
+    used, gaps = asyncio.run(asyncio.wait_for(zone(), timeout=5))
+    assert len(reader) == 3 and used == 3
+    assert gaps == {"deadline_hit": True, "unread_batches": 6}
+    assert tokenfactory.calls_taken("run-r3-share") == 3
+    # Nothing stays held: the returned calls are free for the next zones.
+    assert tokenfactory._CALLS_HELD.get("run-r3-share", 0) == 0
+
+
 class _Cursor:
     def __init__(self, docs):
         self.docs = docs
