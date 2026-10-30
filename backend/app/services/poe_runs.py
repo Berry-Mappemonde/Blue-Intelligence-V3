@@ -146,6 +146,8 @@ async def execute_run(db, state, run_id: str, label: str = "",
         async with sem:
             if state.cancel:
                 return
+            # Batch reading stops before the timeout and keeps the batches already read.
+            deadline_token = poe.set_zone_deadline(timeout_s)
             try:
                 doc = await asyncio.wait_for(
                     poe.generate_zone_poe(
@@ -170,6 +172,7 @@ async def execute_run(db, state, run_id: str, label: str = "",
                     upsert=True)
                 state.results.append({"mrgid": mrgid, "name": name, "error": str(e)[:120]})
             finally:
+                poe.zone_deadline.reset(deadline_token)
                 counter["done"] += 1
                 state.progress = counter["done"]
                 await db.poe_runs.update_one({"_id": run_id}, {"$set": {

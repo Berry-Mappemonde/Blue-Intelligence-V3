@@ -125,7 +125,7 @@ def test_capped_zone_is_marked_and_skips_uncounted_readers(reader, run_cap, paid
     # The primary takes the whole share (3 of 5 batches); the second reader is counted
     # too, so it does not start.
     assert len(reader) == 3 and paid_fallbacks == []
-    assert gaps == {"capped": True}
+    assert gaps == {"capped": True, "unread_batches": 2}
     assert tokenfactory.calls_taken("run-r3-share") == 3
 
     # Cap used up: next zone (planned beyond the cap) sends nothing, Claude included.
@@ -201,8 +201,158 @@ def test_capped_zone_is_recorded_partial_in_the_run(reader, run_cap):
                 None, lambda m: None)
 
     doc = asyncio.run(zone())
-    assert doc["extraction_partial"] is True and doc["extraction_gaps"] == {"capped": True}
+    assert doc["extraction_partial"] is True
+    assert doc["extraction_gaps"] == {"capped": True, "unread_batches": 2}
     assert db.poe_run_zones.docs[-1]["extraction_partial"] is True
 
     complete = _persist(_RunDB())  # nothing left out: complete
     assert complete["extraction_partial"] is False and complete["extraction_gaps"] is None
+
+
+# --- per-source ceiling and the extraction deadline (finding 2) ----------------------
+
+def test_source_ceiling_fits_the_zone_timeout():
+    from app.core import generator
+    from app.core.run_rules import catalog_default
+    from app.services import poe_runs
+    ceiling = catalog_default("formalities.source_max_chars")
+    assert ceiling == poe.SOURCE_MAX_CHARS
+    size = catalog_default("formalities.extract_batch_chars")
+    overlap = catalog_default("formalities.extract_batch_overlap_chars")
+    workers = catalog_default("formalities.extract_batch_concurrency")
+    reserve = catalog_default("formalities.extract_deadline_reserve_s")
+    assert reserve == poe.EXTRACT_DEADLINE_RESERVE_S
+    batches = poe.extraction_batches(_source("https://gov.example/full", _prose(ceiling)), size,
+                                     overlap)
+    rounds = -(-len(batches) // workers)
+    search_and_collect_s = 120  # estimate, see the rule text
+    window = poe_runs.ZONE_TIMEOUT_S - reserve - search_and_collect_s
+    # Two sources at the ceiling are read in time even if every call takes the full timeout.
+    assert 2 * rounds * generator.REQUEST_TIMEOUT_S <= window + generator.REQUEST_TIMEOUT_S
+    assert ceiling > 71457  # the Bermuda passage is still kept
+
+
+def test_deadline_keeps_the_batches_already_read(reader, monkeypatch):
+    async def slow_or_fast(context, zone, settings=None, log=None):
+        text = llm.reader_context(context)
+        reader.append(text)
+        if "SLOW" in text:
+            await asyncio.sleep(30)
+        return [{"name": n, "city": None, "note": None} for n in dict.fromkeys(NAME_RE.findall(text))]
+
+    monkeypatch.setattr(poe, "extract_ports", slow_or_fast)
+    raw = "\n\n".join(
+        [_source(f"https://gov.example/f{i}", _prose(15000) + f" Port {name}.")
+         for i, name in enumerate(("Alpha", "Bravo"))]
+        + [_source(f"https://gov.example/s{i}", _prose(15000) + " SLOW Port Slow.") for i in range(2)])
+    logs: list[str] = []
+
+    async def zone():
+        poe.set_zone_deadline(0.9)  # reserve = 0.3 s (a third): reading stops after 0.6 s
+        with poe.zone_extract_budget():
+            ports = await poe._extract_ports_core("x", ZONE, logs.append, catalog_text=raw)
+            return ports, poe.extraction_gaps()
+
+    ports, gaps = asyncio.run(asyncio.wait_for(zone(), timeout=5))
+    assert {p["name"] for p in ports} == {"Port Alpha", "Port Bravo"}
+    assert gaps == {"deadline_hit": True, "unread_batches": 2}
+    assert any("délai d'extraction atteint: 2/4" in m for m in logs)
+
+
+class _Cursor:
+    def __init__(self, docs):
+        self.docs = docs
+
+    async def to_list(self, n):
+        return list(self.docs[:n])
+
+    def __aiter__(self):
+        async def gen():
+            for d in self.docs:
+                yield d
+        return gen()
+
+
+def _match(doc, query):
+    for k, v in query.items():
+        if isinstance(v, dict) and "$in" in v:
+            if doc.get(k) not in v["$in"]:
+                return False
+        elif doc.get(k) != v:
+            return False
+    return True
+
+
+class _MemColl:
+    def __init__(self, docs=None):
+        self.docs = list(docs or [])
+
+    async def create_index(self, *a, **k):
+        return None
+
+    def find(self, query=None, projection=None):
+        return _Cursor([d for d in self.docs if _match(d, query or {})])
+
+    async def find_one(self, query):
+        return next((d for d in self.docs if _match(d, query)), None)
+
+    async def insert_one(self, doc):
+        self.docs.append(dict(doc))
+
+    async def count_documents(self, query):
+        return sum(_match(d, query) for d in self.docs)
+
+    async def update_one(self, query, update, upsert=False):
+        doc = await self.find_one(query)
+        if doc is None:
+            if not upsert:
+                return None
+            doc = {k: v for k, v in query.items() if not isinstance(v, dict)}
+            doc.update(update.get("$setOnInsert", {}))
+            self.docs.append(doc)
+        doc.update(update.get("$set", {}))
+
+
+class _MemDB:
+    def __init__(self, zones):
+        self.eez_zones = _MemColl(zones)
+        for name in ("poe_runs", "poe_run_zones", "poe_run_ports", "poe_run_events"):
+            setattr(self, name, _MemColl())
+
+
+@pytest.fixture
+def run_harness(monkeypatch, tmp_path):
+    import app.core.events as events
+    import app.db
+    from app.services import poe_runs
+
+    async def no_settings():
+        return {}
+
+    monkeypatch.setattr(events, "RUNS_DIR", tmp_path)
+    monkeypatch.setattr(app.db, "get_settings", no_settings)
+    tokenfactory.reset_ledger()
+    yield poe_runs
+    tokenfactory.reset_ledger()
+
+
+def _execute(poe_runs, db, run_id, resume=False):
+    from app.core.tasks import TaskState
+    return asyncio.run(poe_runs.execute_run(db, TaskState(), run_id, only_zones=[1, 2],
+                                            concurrency=1, resume=resume))
+
+
+def test_run_sets_the_zone_deadline_for_batch_reading(run_harness, monkeypatch):
+    seen = []
+
+    async def fake_zone(db, mrgid, logger=None, force=False, run=None):
+        seen.append(poe.zone_deadline.get())
+        await db.poe_run_zones.update_one({"run_id": run.run_id, "mrgid": mrgid},
+                                          {"$set": {"status": "ia", "poe_count": 1}}, upsert=True)
+        return {"status": "ia", "poe_count": 1}
+
+    monkeypatch.setattr(run_harness.poe, "generate_zone_poe", fake_zone)
+    db = _MemDB([{"mrgid": 1, "name": "A"}, {"mrgid": 2, "name": "B"}])
+    _execute(run_harness, db, "run-r3-deadline")
+    assert len(seen) == 2 and all(s is not None and s[1] == run_harness.ZONE_TIMEOUT_S for s in seen)
+    assert poe.zone_deadline.get() is None

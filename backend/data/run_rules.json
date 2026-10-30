@@ -1867,6 +1867,33 @@
       "group": "budget"
     },
     {
+      "id": "formalities.extract_deadline_reserve_s",
+      "mode": "formalities",
+      "kind": "budget",
+      "value": 300,
+      "numeric": "int",
+      "unit": "s",
+      "interval": [
+        0,
+        900
+      ],
+      "vary": true,
+      "principle": "Temps de la ZEE gardé après l'extraction par lots (géocodage double, validation, écriture). La lecture des lots s'arrête à formalities.zone_timeout_s moins cette réserve (au plus un tiers du délai) et garde les lots déjà lus, au lieu que le délai de la ZEE jette tout. ZEE coupée : extraction_partial (deadline_hit).",
+      "cdc": "PLAN-V3.md §4 P0-3",
+      "code": [
+        "app/services/poe_pipeline.py:_extract_stop_time"
+      ],
+      "title": {
+        "fr": "Réserve de temps après l'extraction",
+        "en": "Time kept after extraction"
+      },
+      "help": {
+        "fr": "Secondes de la ZEE gardées pour le géocodage et l'écriture. Les lots non lus avant sont sautés, ceux déjà lus sont gardés.",
+        "en": "Seconds of the EEZ budget kept for geocoding and writing. Batches not read by then are skipped; batches already read are kept."
+      },
+      "group": "budget"
+    },
+    {
       "id": "formalities.extract_output_tokens",
       "mode": "formalities",
       "kind": "budget",
@@ -1926,7 +1953,7 @@
       "id": "formalities.source_max_chars",
       "mode": "formalities",
       "kind": "budget",
-      "value": 500000,
+      "value": 120000,
       "numeric": "int",
       "unit": "chars",
       "interval": [
@@ -1934,7 +1961,7 @@
         5000000
       ],
       "vary": true,
-      "principle": "Plafond de sécurité par source collectée. L'ancienne coupe dure à 60 000 chars perdait les ports nommés plus loin (Bermudes : passage désignant à l'offset 71 457). Le texte entier passe désormais à l'extraction par lots ; ce plafond ne borne qu'un document démesuré (500 000 chars ≈ 25 lots de 20 000).",
+      "principle": "Plafond par source collectée. L'ancienne coupe dure à 60 000 chars perdait les ports nommés plus loin (Bermudes : passage désignant à l'offset 71 457, gardé). Calcul : un lot de 20 000 chars avec 1 500 de chevauchement avance de 18 500 ; un appel ≤ 90 s (REQUEST_TIMEOUT_S) ; 3 lots en parallèle ; ZEE 900 s − 300 s de réserve (formalities.extract_deadline_reserve_s) − ~120 s de recherche et collecte (estimé) ≈ 480 s d'extraction = 5 tours = 15 lots. 120 000 chars = 7 lots = 3 tours = 270 s ; deux sources pleines = 14 lots = 5 tours = 450 s. 500 000 chars = 27 lots = 9 tours = 810 s pour une seule source : hors délai. Au-delà de 15 lots, le délai d'extraction garde les lots terminés et marque la ZEE partielle.",
       "cdc": "PLAN-V3.md §4 P0-3",
       "code": [
         "app/services/poe_pipeline.py:_collect_texts"

@@ -1175,7 +1175,7 @@ async def extract_ports_llm(context: str, zone: dict, log, rec=None,
 EXTRACT_BATCH_OVERLAP_CHARS = 1500
 EXTRACT_BATCH_CONCURRENCY = 3
 EXTRACT_MAX_LLM_CALLS = 1000
-SOURCE_MAX_CHARS = 500_000  # per fetched source; was a hard 60,000 cut before batching
+SOURCE_MAX_CHARS = 120_000  # per fetched source; was a hard 60,000 cut before batching
 _SOURCE_BLOCK_RE = re.compile(r"\n\n(?=\[(?:SOURCE: |SYNTHÈSE DE RECHERCHE))")
 
 
@@ -1299,7 +1299,33 @@ def zone_extract_budget():
 def extraction_gaps() -> dict:
     """What the current zone's extraction left out; empty when it read everything."""
     state = _zone_extract.get() or {}
-    return {k: state[k] for k in ("capped",) if state.get(k)}
+    return {k: state[k] for k in ("capped", "deadline_hit", "unread_batches") if state.get(k)}
+
+
+EXTRACT_DEADLINE_RESERVE_S = 300  # zone time kept for geocoding and writing after extraction
+# (loop.time() at which the zone is cut, zone timeout in s), set by the caller of
+# generate_zone_poe that wraps it in asyncio.wait_for.
+zone_deadline: ContextVar[tuple[float, float] | None] = ContextVar("zone_deadline", default=None)
+
+
+def set_zone_deadline(timeout_s: float):
+    """Call just before ``asyncio.wait_for(generate_zone_poe(...), timeout_s)``."""
+    return zone_deadline.set((asyncio.get_running_loop().time() + timeout_s, float(timeout_s)))
+
+
+def _extract_stop_time() -> float | None:
+    """loop.time() at which batch reading stops and keeps what finished: the zone deadline
+    minus ``formalities.extract_deadline_reserve_s`` (at most a third of the zone timeout).
+    If that time has already passed, half of the time left before the hard timeout."""
+    from app.core.run_rules import get_rule
+    bound = zone_deadline.get()
+    if bound is None:
+        return None
+    deadline, total = bound
+    reserve = min(float(get_rule("formalities.extract_deadline_reserve_s",
+                                 EXTRACT_DEADLINE_RESERVE_S)), total / 3)
+    now = asyncio.get_running_loop().time()
+    return max(deadline - reserve, now + max(0.0, deadline - now) / 2)
 
 
 def _take_extract_calls(wanted: int) -> int:
@@ -1357,37 +1383,69 @@ async def _extract_primary(context: str, zone: dict, log, rec=None,
     if len(batches) > len(window_batches):
         log(f"plafond de sortie (~{max_ports} ports par réponse): "
             f"{len(window_batches)} → {len(batches)} lot(s)")
+    state = _zone_extract.get() or {}
     granted = _take_extract_calls(len(batches))
     if not granted:
+        state["unread_batches"] = state.get("unread_batches", 0) + len(batches)
         raise LLMCallCapReached("formalities.extract_max_llm_calls reached")
     kept = list(range(len(batches)))
-    if granted < len(batches):
-        # The cap cuts the zone short: the most list-like batches go first.
+    if granted < len(batches) or len(batches) > workers:
+        # The most list-like batches go first: they survive the cap and the deadline.
         ranked = sorted(kept, key=lambda i: _list_density(batches[i]), reverse=True)
-        kept = sorted(ranked[:granted])
+    else:
+        ranked = kept
+    if granted < len(batches):
+        ranked = ranked[:granted]
+        kept = sorted(ranked)
+        state["unread_batches"] = state.get("unread_batches", 0) + len(batches) - granted
         log(f"plafond d'appels LLM: {granted}/{len(batches)} lot(s) envoyés, "
             f"{sum(len(b) for i, b in enumerate(batches) if i not in kept)} chars non lus")
     sem = asyncio.Semaphore(max(1, workers))
 
-    async def read(text: str) -> list[dict]:
+    async def read(i: int) -> list[dict]:
         async with sem:
             token = llm_context_chars.set(size)
             try:
-                return await extract_ports(text, zone, settings=settings, log=log)
+                return await extract_ports(batches[i], zone, settings=settings, log=log)
             finally:
                 llm_context_chars.reset(token)
 
-    results = await asyncio.gather(*(read(batches[i]) for i in kept), return_exceptions=True)
-    found = [p for r in results if isinstance(r, list) for p in r]
-    errors = [r for r in results if isinstance(r, BaseException)]
-    if len(errors) == len(results):
-        raise errors[0]
+    results: dict[int, list | BaseException] = {}
+    stop_at = _extract_stop_time()
+
+    async def read_all(order: list[int]) -> list[int]:
+        """Read ``order``; at the extraction deadline cancel what is left and keep what
+        finished. Returns the batches that were not read."""
+        tasks = {asyncio.ensure_future(read(i)): i for i in order}
+        loop = asyncio.get_running_loop()
+        timeout = None if stop_at is None else max(0.0, stop_at - loop.time())
+        done, pending = await asyncio.wait(list(tasks), timeout=timeout)
+        for task in pending:
+            task.cancel()
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
+        for task in done:
+            if not task.cancelled():
+                results[tasks[task]] = task.exception() or task.result()
+        return sorted(tasks[t] for t in pending)
+
+    unread = await read_all(ranked)
+    if unread:
+        state["deadline_hit"] = True
+        state["unread_batches"] = state.get("unread_batches", 0) + len(unread)
+        log(f"délai d'extraction atteint: {len(unread)}/{len(kept)} lot(s) non lus, "
+            f"{len(kept) - len(unread)} lot(s) terminés gardés")
+    found = [p for i in kept if isinstance(results.get(i), list) for p in results[i]]
+    errors = [results[i] for i in kept if isinstance(results.get(i), BaseException)]
+    if not any(isinstance(r, list) for r in results.values()):
+        raise errors[0] if errors else asyncio.TimeoutError("extraction deadline reached")
     merged = deduplicate_list(found, title_key="name")
     log(f"extraction par lots: {len(kept)}/{len(batches)} lot(s) de ≤{size} chars sur "
         f"{len(catalog_text)} chars, {len(found)} port(s) lus → {len(merged)} après dédup"
         + (f", {len(errors)} lot(s) en échec" if errors else ""))
     await emit(rec, "extraction_batches", batches=len(batches), sent=len(kept),
-               failed=len(errors), batch_chars=size, raw_chars=len(catalog_text),
+               failed=len(errors), unread=len(unread), batch_chars=size,
+               raw_chars=len(catalog_text),
                window_batches=len(window_batches), max_ports_per_answer=max_ports,
                ports_read=len(found), ports=len(merged))
     return merged
