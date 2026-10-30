@@ -891,3 +891,101 @@ def test_api_resume_refuses_recorded_mode_mismatch(env, monkeypatch):
     monkeypatch.delenv("SAMPLE_MODE")
     with pytest.raises(unified_runs.ModeMismatch):
         _run(unified_runs.resolve_launch(env["db"], run_id=rid, resume=True))
+
+
+# ── upload failure after export: retry the upload, never re-export ───
+
+class _FailingClient(_StubClient):
+    def put_file(self, path, bucket, key):
+        super().put_file(path, bucket, key)
+        raise OSError("connection reset")
+
+
+def _enable_upload(monkeypatch):
+    monkeypatch.setenv("BI_OBJECT_STORAGE_UPLOAD", "1")
+    monkeypatch.setenv("BI_OBJECT_STORAGE_ENDPOINT", "https://storage.example.invalid")
+    monkeypatch.setenv("BI_OBJECT_STORAGE_BUCKET", "bi-runs")
+
+
+def _export_with_failed_upload(env, monkeypatch, rid="r-up"):
+    _enable_upload(monkeypatch)
+    _finished_run(env, monkeypatch, run_id=rid)
+    out = _run(unified_runs.export_run(env["db"], rid, storage_client=_FailingClient()))
+    return rid, out
+
+
+def _hashes(base: Path) -> dict:
+    return {p.name: artifacts.sha256_file(p) for p in sorted(base.iterdir())}
+
+
+def test_upload_failure_keeps_the_export_and_is_recorded(env, monkeypatch):
+    rid, out = _export_with_failed_upload(env, monkeypatch)
+    assert out["upload"]["uploaded"] is False
+    assert "connection reset" in out["upload"]["error"]
+    entry = env["db"].poe_runs.docs[0]["exports"][0]
+    assert entry["uploaded"] is False and "connection reset" in entry["upload_error"]
+    assert (env["exports"] / rid / "manifest.json").is_file()
+
+
+def test_upload_existing_export_without_reexport(env, monkeypatch):
+    rid, _ = _export_with_failed_upload(env, monkeypatch)
+    base = env["exports"] / rid
+    before = _hashes(base)
+    stub = _StubClient()
+    up = _run(unified_runs.upload_existing_export(env["db"], rid, storage_client=stub))
+    assert up["uploaded"] is True
+    assert [c[0] for c in stub.calls] == ["ports.geojson", "trace.jsonl", "zones.json",
+                                          "manifest.json"]
+    assert _hashes(base) == before  # nothing rewritten
+    run = env["db"].poe_runs.docs[0]
+    assert len(run["exports"]) == 1
+    assert run["uploads"][-1]["uploaded"] is True
+    assert run["uploads"][-1]["manifest_sha256"] == before["manifest.json"]
+
+
+def test_upload_existing_export_refuses_tampered_or_incomplete(env, monkeypatch):
+    rid, _ = _export_with_failed_upload(env, monkeypatch)
+    base = env["exports"] / rid
+    (base / "zones.json").write_text("[]\n")
+    stub = _StubClient()
+    with pytest.raises(unified_runs.ExportIncomplete):
+        _run(unified_runs.upload_existing_export(env["db"], rid, storage_client=stub))
+    (base / "manifest.json").unlink()
+    with pytest.raises(unified_runs.ExportIncomplete):
+        _run(unified_runs.upload_existing_export(env["db"], rid, storage_client=stub))
+    with pytest.raises(unified_runs.ExportIncomplete):
+        _run(unified_runs.upload_existing_export(env["db"], "r-none", storage_client=stub))
+    assert stub.calls == []
+
+
+def _bare_runs_app(env, monkeypatch):
+    from fastapi import FastAPI
+    from app.routers import runs as runs_router
+
+    monkeypatch.setattr(runs_router, "_db", env["db"])
+    app = FastAPI()
+    app.include_router(runs_router.router)
+    return app
+
+
+def test_upload_route_after_failed_upload(env, monkeypatch):
+    rid, _ = _export_with_failed_upload(env, monkeypatch, rid="r-up-route")
+    stub = _StubClient()
+    monkeypatch.setattr(object_storage, "S3Client", lambda cfg: stub)
+    app = _bare_runs_app(env, monkeypatch)
+    res = _post_concurrently(app, [(f"/api/runs/{rid}/export", {})])
+    assert res[0].status_code == 409  # the export itself is never redone
+    res = _post_concurrently(app, [(f"/api/runs/{rid}/upload", {})])
+    assert res[0].status_code == 200 and res[0].json()["uploaded"] is True
+    assert stub.calls[-1][0] == "manifest.json"
+
+
+def test_cli_upload_existing_export(env, monkeypatch, cli, capsys):
+    rid, _ = _export_with_failed_upload(env, monkeypatch, rid="r-up-cli")
+    stub = _StubClient()
+    monkeypatch.setattr(object_storage, "S3Client", lambda cfg: stub)
+    assert cli.main(["--no-dotenv", "--upload", rid]) == 0
+    assert json.loads(capsys.readouterr().out)["uploaded"] is True
+    assert stub.calls[-1][0] == "manifest.json"
+    (env["exports"] / rid / "ports.geojson").write_text("{}\n")
+    assert cli.main(["--no-dotenv", "--upload", rid]) == 2

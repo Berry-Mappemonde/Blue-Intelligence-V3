@@ -47,6 +47,10 @@ class UnsupportedLayer(ValueError):
     pass
 
 
+class ExportIncomplete(ValueError):
+    """No export folder, or one whose files do not match its manifest."""
+
+
 class ModeMismatch(ValueError):
     """The run cannot be resumed in the mode (live / sample) it was started in."""
 
@@ -238,12 +242,70 @@ async def export_run(db, run_id: str, *, out_root: Path | None = None,
     os.replace(partial, out)
     manifest_sha = artifacts.sha256_file(out / artifacts.MANIFEST_NAME)
 
-    upload = object_storage.upload_export(
-        out, rid, config=storage_config, client=storage_client)
-    await db.poe_runs.update_one({"_id": rid}, {"$push": {"exports": {
-        "dir": str(out), "manifest_sha256": manifest_sha,
-        "written_at": manifest["written_at"],
-        "uploaded": bool(upload.get("uploaded")),
-    }}})
+    upload = _safe_upload(out, rid, storage_config, storage_client)
+    entry = {"dir": str(out), "manifest_sha256": manifest_sha,
+             "written_at": manifest["written_at"],
+             "uploaded": bool(upload.get("uploaded"))}
+    if upload.get("error"):
+        entry["upload_error"] = upload["error"]
+    await db.poe_runs.update_one({"_id": rid}, {"$push": {"exports": entry}})
     return {"run_id": rid, "dir": str(out), "manifest_sha256": manifest_sha,
             "files": manifest["files"], "counts": counts, "upload": upload}
+
+
+def _safe_upload(out: Path, rid: str, storage_config, storage_client) -> dict:
+    """An upload failure is reported, never raised: the export stays usable
+    and upload_existing_export can retry it."""
+    try:
+        return object_storage.upload_export(
+            out, rid, config=storage_config, client=storage_client)
+    except Exception as exc:
+        return {"uploaded": False, "reason": "error",
+                "error": f"{type(exc).__name__}: {str(exc)[:200]}"}
+
+
+def verify_export(out: Path) -> str:
+    """Check a finished export against its manifest; return the manifest SHA-256.
+
+    Every listed file must exist with the recorded size and hash, and the
+    folder must hold nothing else, since every file in it is uploaded.
+    """
+    manifest_file = out / artifacts.MANIFEST_NAME
+    manifest = artifacts.read_manifest(manifest_file) if out.is_dir() else None
+    if not isinstance(manifest, dict) or not isinstance(manifest.get("files"), list):
+        raise ExportIncomplete(f"export {out.name} has no readable manifest")
+    listed = set()
+    for f in manifest["files"]:
+        path = out / str(f.get("path"))
+        listed.add(path.name)
+        if (not path.is_file() or path.stat().st_size != f.get("bytes")
+                or artifacts.sha256_file(path) != f.get("sha256")):
+            raise ExportIncomplete(f"export {out.name}: {path.name} does not match the manifest")
+    extra = {p.name for p in out.iterdir()} - listed - {artifacts.MANIFEST_NAME}
+    if extra:
+        raise ExportIncomplete(f"export {out.name}: unexpected files {sorted(extra)}")
+    return artifacts.sha256_file(manifest_file)
+
+
+async def upload_existing_export(db, run_id: str, *, out_root: Path | None = None,
+                                 storage_config: object_storage.StorageConfig | None = None,
+                                 storage_client=None) -> dict:
+    """Upload an existing export again (e.g. after a failed upload), without
+    re-exporting. The folder is verified against its manifest first, and
+    against the manifest hash recorded on the run when there is one."""
+    rid = artifacts.safe_run_id(run_id)
+    out = (Path(out_root) if out_root else export_root()) / rid
+    manifest_sha = verify_export(out)
+    run = await db.poe_runs.find_one({"_id": rid}) or {}
+    recorded = {e.get("manifest_sha256") for e in run.get("exports") or []
+                if isinstance(e, dict)} - {None}
+    if recorded and manifest_sha not in recorded:
+        raise ExportIncomplete(f"export {rid}: manifest differs from the one recorded on the run")
+    upload = _safe_upload(out, rid, storage_config, storage_client)
+    if run:
+        entry = {"manifest_sha256": manifest_sha, "at": artifacts.now_iso(),
+                 "uploaded": bool(upload.get("uploaded"))}
+        if upload.get("error"):
+            entry["error"] = upload["error"]
+        await db.poe_runs.update_one({"_id": rid}, {"$push": {"uploads": entry}})
+    return {"run_id": rid, "dir": str(out), "manifest_sha256": manifest_sha, **upload}

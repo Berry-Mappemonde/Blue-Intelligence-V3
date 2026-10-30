@@ -4,6 +4,7 @@ app.routers.runs — Versioned PoE pipeline runs (several in parallel).
 POST /api/runs                         unified entry: start or resume (P0-4)
 GET  /api/runs/{id}/manifest           data/runs/<id>/manifest.json
 POST /api/runs/{id}/export             GeoJSON + manifest export (+ optional upload)
+POST /api/runs/{id}/upload             retry the upload of an existing, verified export
 POST /api/poe/runs                     start (or resume) a run — wrapper of /api/runs
 POST /api/poe/runs/multi               deprecated: v1 + v2 + tinyfish in parallel
 GET  /api/poe/runs                     list of runs
@@ -883,6 +884,18 @@ async def unified_run_export(run_id: str):
     try:
         return await unified_runs.export_run(_db, run_id)
     except FileExistsError as e:
+        raise HTTPException(409, str(e)) from e
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@router.post("/runs/{run_id}/upload")
+async def unified_run_upload(run_id: str):
+    """Upload an existing export again (after a failed upload); never re-exports.
+    The export is checked against its manifest hashes first."""
+    try:
+        return await unified_runs.upload_existing_export(_db, run_id)
+    except unified_runs.ExportIncomplete as e:
         raise HTTPException(409, str(e)) from e
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
