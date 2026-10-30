@@ -46,9 +46,16 @@ def embedding_backend() -> str:
     return "sentence-transformers" if _get_st() is not None else "tfidf"
 
 
+def _normalize_space(text: str) -> str:
+    """Collapse spaces and tabs inside each line and drop blank lines, but keep the
+    line breaks: a port list stays one name per line for the reader."""
+    lines = (re.sub(r"[^\S\n]+", " ", ln).strip() for ln in (text or "").splitlines())
+    return "\n".join(ln for ln in lines if ln)
+
+
 def chunk_text(text: str, size: int = 500, overlap: int = 60) -> list[str]:
-    """Smart chunking: ~size-char blocks aligned on sentence ends."""
-    text = re.sub(r"\s+", " ", text or "").strip()
+    """Smart chunking: ~size-char blocks aligned on line breaks, else sentence ends."""
+    text = _normalize_space(text)
     if len(text) <= size:
         return [text] if text else []
     chunks = []
@@ -56,7 +63,9 @@ def chunk_text(text: str, size: int = 500, overlap: int = 60) -> list[str]:
     while start < len(text):
         end = min(start + size, len(text))
         if end < len(text):
-            cut = text.rfind(". ", start + size // 2, end)
+            cut = text.rfind("\n", start + size // 2, end)
+            if cut == -1:
+                cut = text.rfind(". ", start + size // 2, end)
             if cut == -1:
                 cut = text.rfind(" ", start + size // 2, end)
             if cut > start:
@@ -102,7 +111,8 @@ def select_context(query: str, text: str, max_chars: int = 8000, size: int = 500
 _LIST_CHUNK_RE = re.compile(
     r"port of entry|ports of entry|puertos habilitados|puerto de entrada|"
     r"ports? d['’ ]?entr[eé]e|portos de entrada|designated port|"
-    r"harbour|harbor|capitan[ií]a|latitud|longitud|gazette|decreto|décret|"
+    r"harbour|harbor|\b(?:marinas?|docks?|wharf|wharves|quays?|piers?|anchorages?)\b|"
+    r"capitan[ií]a|latitud|longitud|gazette|decreto|décret|"
     r"customs|douane|aduana|\b1[.)]\s+\w+|\b\d+\.\-\s+\w+",
     re.I,
 )
