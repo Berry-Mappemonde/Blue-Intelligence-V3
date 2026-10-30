@@ -83,6 +83,12 @@ def _trace_terminal_units(run_id: str) -> set:
             if r.get("event") in ("unit_done", "unit_error")}
 
 
+def _retried_units(run_id: str) -> set:
+    """Zones already retried once: unit_start lines with retry=True."""
+    return {r.get("unit") for r in artifacts.read_trace(run_id)
+            if r.get("event") == "unit_start" and r.get("retry")}
+
+
 async def _retryable_zones(db, run_id: str, selected: set, zone_status: dict,
                            log) -> set[int]:
     """Errored zones to redo once on resume (retry_errored=True).
@@ -91,14 +97,22 @@ async def _retryable_zones(db, run_id: str, selected: set, zone_status: dict,
     zones without any trace line fall back to their poe_run_zones status
     (runs started before the trace existed). A zone that already has ports
     stored for this run is not retried, so stored ports are never replaced.
+    A zone is retried at most once across all resumes: each retry is recorded
+    as a unit_start line with retry=True, and such zones are not retried again.
     """
     errored = {int(m) for m in (await _artifact(artifacts.errored_units, run_id) or set())
                if isinstance(m, int)}
     terminal = await _artifact(_trace_terminal_units, run_id) or set()
+    retried = await _artifact(_retried_units, run_id) or set()
     errored |= {m for m, s in zone_status.items()
                 if m not in terminal and artifacts.is_error_status(s)}
     retry: set[int] = set()
     for mrgid in sorted(errored & selected):
+        if mrgid in retried:
+            log(f"zone {mrgid} en erreur mais déjà relancée une fois — non relancée")
+            await _artifact(artifacts.append_trace, run_id, "unit_retry_skipped",
+                            unit=mrgid, reason="already retried once")
+            continue
         if await db.poe_run_ports.count_documents({"run_id": run_id, "mrgid": mrgid}):
             log(f"zone {mrgid} en erreur mais a déjà des ports stockés — non relancée")
             await _artifact(artifacts.append_trace, run_id, "unit_retry_skipped",
@@ -145,7 +159,7 @@ async def execute_run(db, state, run_id: str, label: str = "",
     """Execute (or resume) a full run. `state` is a TaskState (live logs,
     progress, cancel); durable state lives in db.poe_runs.
     variant: v1 | v2 | tinyfish — never writes poe_ports.
-    retry_errored: on resume, errored zones are redone once (see
+    retry_errored: on resume, errored zones are redone once in total (see
     _retryable_zones); completed zones are never re-run.
     """
     await ensure_run_indexes(db)

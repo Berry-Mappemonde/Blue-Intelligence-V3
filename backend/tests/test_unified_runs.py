@@ -1036,3 +1036,29 @@ def test_export_and_upload_io_runs_off_the_event_loop(env, monkeypatch):
     loop_thread, client = _run(go(unified_runs.upload_existing_export))
     assert client.calls and loop_thread not in client.threads
     assert seen["sha"] and loop_thread not in seen["sha"]
+
+
+# ── retry_errored: at most one retry per zone across all resumes ─────
+
+def test_retry_errored_is_once_across_resumes(env, monkeypatch):
+    db = env["db"]
+    rid = _run_with_errors(env, monkeypatch, run_id="r-once")
+    calls: list = []
+    monkeypatch.setattr(poe_runs.poe, "generate_zone_poe",
+                        _failing_stub(calls, attempt=2, fail={2: "raise", 4: "raise"}))
+    _run(unified_runs.start_run(db, TaskState(), run_id=rid, resume=True,
+                                retry_errored=True))
+    assert sorted(calls) == [2, 4]
+    zones_before, ports_before = _snapshot(db, rid)
+
+    calls2: list = []
+    monkeypatch.setattr(poe_runs.poe, "generate_zone_poe",
+                        _failing_stub(calls2, attempt=3, fail={}))
+    summary = _run(unified_runs.start_run(db, TaskState(), run_id=rid, resume=True,
+                                          retry_errored=True))
+    assert calls2 == []  # 2 and 4 already had their one retry
+    assert summary["errors"] == 0
+    assert _snapshot(db, rid) == (zones_before, ports_before)
+    skipped = [r for r in artifacts.read_trace(rid) if r["event"] == "unit_retry_skipped"
+               and r.get("reason") == "already retried once"]
+    assert sorted(r["unit"] for r in skipped) == [2, 4]
