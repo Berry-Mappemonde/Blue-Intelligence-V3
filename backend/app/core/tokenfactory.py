@@ -352,6 +352,24 @@ def restore_calls(n: int, run_id: str | None = None) -> None:
         _CALLS[rid] = max(_CALLS.get(rid, 0), int(n or 0))
 
 
+def restore_spend(cost: dict | None, run_id: str | None = None) -> None:
+    """Resume after a restart: the run's ledger rows from its stored cost summary
+    (``summary()``), so the USD budget and the summary cover the whole run. Does nothing
+    if this process already holds rows for the run."""
+    cost = cost if isinstance(cost, dict) else {}
+    rows = [{"model": e.get("model"), "in": int(e.get("tokens_in") or 0),
+             "out": int(e.get("tokens_out") or 0), "usd": float(e.get("usd") or 0.0)}
+            for e in cost.get("entries") or () if isinstance(e, dict)]
+    if not rows and float(cost.get("usd_estimated") or 0.0) > 0:
+        rows = [{"model": "restored", "in": int(cost.get("tokens_in") or 0),
+                 "out": int(cost.get("tokens_out") or 0),
+                 "usd": float(cost["usd_estimated"])}]
+    rid = ledger_key(run_id)
+    with _ledger_guard:
+        if rows and not _LEDGER.get(rid):
+            _LEDGER[rid] = rows
+
+
 def plan_zone_calls(zones: int, run_id: str | None = None) -> None:
     """Number of zones still to run; each takes a fair share of the cap (``reserve_zone_calls``)."""
     with _ledger_guard:

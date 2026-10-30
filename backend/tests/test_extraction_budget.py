@@ -504,6 +504,43 @@ def test_resume_after_restart_keeps_the_calls_already_taken(run_harness, monkeyp
     assert tokenfactory.calls_taken("run-r3-resume") == 9
 
 
+def test_resume_after_restart_keeps_the_usd_already_spent(run_harness, monkeypatch):
+    """Round 4, finding 1: the USD ledger is restored with calls_taken, so the budget and
+    the run summary cover the whole run, not only the resumed session."""
+    monkeypatch.setattr(tokenfactory, "prices_for", lambda model: (1.0, 0.0))
+
+    async def fake_zone(db, mrgid, logger=None, force=False, run=None):
+        tokenfactory.ensure_budget(run.run_id)
+        tokenfactory.record("m", {"prompt_tokens": 1_000_000}, run.run_id)  # 1 USD
+        await db.poe_run_zones.update_one({"run_id": run.run_id, "mrgid": mrgid},
+                                          {"$set": {"status": "ia", "poe_count": 1}}, upsert=True)
+        return {"status": "ia", "poe_count": 1}
+
+    monkeypatch.setattr(run_harness.poe, "generate_zone_poe", fake_zone)
+    db = _MemDB([{"mrgid": 1, "name": "A"}, {"mrgid": 2, "name": "B"}])
+    summary = _execute(run_harness, db, "run-r4-usd")
+    assert summary["tokenfactory"]["usd_estimated"] == 2.0
+
+    # Restart: zone B is regenerated on resume; the summary covers both sessions.
+    tokenfactory.reset_ledger()
+    db.poe_run_zones.docs = [d for d in db.poe_run_zones.docs if d["mrgid"] == 1]
+    summary = _execute(run_harness, db, "run-r4-usd", resume=True)
+    cost = summary["tokenfactory"]
+    assert cost["usd_estimated"] == 3.0 and cost["calls"] == 3
+    assert tokenfactory.spent_usd("run-r4-usd") == 3.0
+
+    # Crash before the end (no run summary): restored from the per-zone cost; the
+    # budget counts the dollars spent before the restart.
+    tokenfactory.reset_ledger()
+    doc = asyncio.run(db.poe_runs.find_one({"_id": "run-r4-usd"}))
+    doc.pop("summary")
+    db.poe_run_zones.docs = [d for d in db.poe_run_zones.docs if d["mrgid"] == 1]
+    monkeypatch.setattr(tokenfactory, "budget_usd", lambda: 3.0)
+    summary = _execute(run_harness, db, "run-r4-usd", resume=True)
+    assert summary["errors"] == 1  # budget already reached: zone B is refused
+    assert summary["tokenfactory"]["usd_estimated"] == 3.0
+
+
 # --- whole-text CPU work off the event loop (finding 6) ------------------------------
 
 def test_whole_text_steps_run_off_the_event_loop(monkeypatch):
