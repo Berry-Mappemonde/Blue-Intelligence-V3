@@ -1299,7 +1299,8 @@ def zone_extract_budget():
 def extraction_gaps() -> dict:
     """What the current zone's extraction left out; empty when it read everything."""
     state = _zone_extract.get() or {}
-    return {k: state[k] for k in ("capped", "deadline_hit", "unread_batches") if state.get(k)}
+    return {k: state[k] for k in ("capped", "deadline_hit", "unread_batches", "failed_batches")
+            if state.get(k)}
 
 
 EXTRACT_DEADLINE_RESERVE_S = 300  # zone time kept for geocoding and writing after extraction
@@ -1435,8 +1436,20 @@ async def _extract_primary(context: str, zone: dict, log, rec=None,
         state["unread_batches"] = state.get("unread_batches", 0) + len(unread)
         log(f"délai d'extraction atteint: {len(unread)}/{len(kept)} lot(s) non lus, "
             f"{len(kept) - len(unread)} lot(s) terminés gardés")
+    # A failed batch is read once more (it takes a call from the zone's share); one that
+    # still fails leaves the zone partial, never complete.
+    failed = [i for i in kept if isinstance(results.get(i), BaseException)
+              and not isinstance(results[i], LLMCallCapReached)]
+    retried = failed[:_take_extract_calls(len(failed))] if failed and not unread else []
+    if retried:
+        log(f"{len(retried)} lot(s) en échec relancé(s) une fois")
+        late = await read_all(retried)
+        if late:
+            state["deadline_hit"] = True
     found = [p for i in kept if isinstance(results.get(i), list) for p in results[i]]
     errors = [results[i] for i in kept if isinstance(results.get(i), BaseException)]
+    if errors:
+        state["failed_batches"] = state.get("failed_batches", 0) + len(errors)
     if not any(isinstance(r, list) for r in results.values()):
         raise errors[0] if errors else asyncio.TimeoutError("extraction deadline reached")
     merged = deduplicate_list(found, title_key="name")
@@ -1444,7 +1457,7 @@ async def _extract_primary(context: str, zone: dict, log, rec=None,
         f"{len(catalog_text)} chars, {len(found)} port(s) lus → {len(merged)} après dédup"
         + (f", {len(errors)} lot(s) en échec" if errors else ""))
     await emit(rec, "extraction_batches", batches=len(batches), sent=len(kept),
-               failed=len(errors), unread=len(unread), batch_chars=size,
+               failed=len(errors), retried=len(retried), unread=len(unread), batch_chars=size,
                raw_chars=len(catalog_text),
                window_batches=len(window_batches), max_ports_per_answer=max_ports,
                ports_read=len(found), ports=len(merged))

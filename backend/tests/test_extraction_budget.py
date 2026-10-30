@@ -356,3 +356,41 @@ def test_run_sets_the_zone_deadline_for_batch_reading(run_harness, monkeypatch):
     _execute(run_harness, db, "run-r3-deadline")
     assert len(seen) == 2 and all(s is not None and s[1] == run_harness.ZONE_TIMEOUT_S for s in seen)
     assert poe.zone_deadline.get() is None
+
+
+# --- failed batches (finding 3) ------------------------------------------------------
+
+def _flaky(reader, fails: dict):
+    """Reader stub: a batch naming ``Port X`` raises while ``fails[X]`` > 0."""
+    async def extract(context, zone, settings=None, log=None):
+        text = llm.reader_context(context)
+        reader.append(text)
+        names = list(dict.fromkeys(NAME_RE.findall(text)))
+        for n in names:
+            if fails.get(n, 0) > 0:
+                fails[n] -= 1
+                raise RuntimeError("provider 502")
+        return [{"name": n, "city": None, "note": None} for n in names]
+    return extract
+
+
+def _three_sources() -> str:
+    return "\n\n".join(_source(f"https://gov.example/r{i}", _prose(15000) + f" {n}.")
+                       for i, n in enumerate(("Port Alpha", "Port Bravo", "Port Charlie")))
+
+
+def test_failed_batch_is_retried_once_and_the_zone_stays_complete(reader, monkeypatch):
+    monkeypatch.setattr(poe, "extract_ports", _flaky(reader, {"Port Bravo": 1}))
+    ports, gaps = _zone(_three_sources())
+    assert {p["name"] for p in ports} == {"Port Alpha", "Port Bravo", "Port Charlie"}
+    assert len(reader) == 4 and gaps == {}
+
+
+def test_batch_failing_twice_marks_the_zone_partial(reader, monkeypatch):
+    monkeypatch.setattr(poe, "extract_ports", _flaky(reader, {"Port Bravo": 5}))
+    logs: list[str] = []
+    ports, gaps = _zone(_three_sources(), logs)
+    assert {p["name"] for p in ports} == {"Port Alpha", "Port Charlie"}
+    assert len(reader) == 4  # one retry, not more
+    assert gaps == {"failed_batches": 1}
+    assert any("1 lot(s) en échec relancé(s) une fois" in m for m in logs)
