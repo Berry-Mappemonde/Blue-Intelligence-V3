@@ -211,6 +211,12 @@ def _run(coro):
     return asyncio.run(coro)
 
 
+def _export_dir(env, out) -> Path:
+    """out["dir"] is relative (exports/<id>); resolve it against the export root's parent."""
+    assert not Path(out["dir"]).is_absolute()
+    return env["exports"].parent / out["dir"]
+
+
 # ── resume after a crash ─────────────────────────────────────────────
 
 def test_resume_after_crash_keeps_completed_zones(env, monkeypatch):
@@ -313,7 +319,7 @@ def test_run_manifest_hashes_match_files(env, monkeypatch):
 def test_export_manifest_hashes_match_and_never_overwrite(env, monkeypatch):
     rid = _finished_run(env, monkeypatch)
     out = _run(unified_runs.export_run(env["db"], rid))
-    base = Path(out["dir"])
+    base = _export_dir(env, out)
     assert base == env["exports"] / rid
     manifest = json.loads((base / "manifest.json").read_text())
     paths = sorted(f["path"] for f in manifest["files"])
@@ -353,7 +359,7 @@ def test_score_and_level_stay_independent(env, monkeypatch):
 
     rid = _finished_run(env, monkeypatch, run_id="r-lvl", ports_for=ports_for)
     out = _run(unified_runs.export_run(env["db"], rid))
-    fc = json.loads((Path(out["dir"]) / "ports.geojson").read_text())
+    fc = json.loads((_export_dir(env, out) / "ports.geojson").read_text())
     got = {f["properties"]["name"]: (f["properties"]["confidence"],
                                      f["properties"]["confidence_level"])
            for f in fc["features"]}
@@ -361,7 +367,7 @@ def test_score_and_level_stay_independent(env, monkeypatch):
                    "Low score C3": (10, "C3"),
                    "Level only": (None, "C1")}
     assert out["counts"]["with_score"] == 2 and out["counts"]["with_level"] == 2
-    manifest = json.loads((Path(out["dir"]) / "manifest.json").read_text())
+    manifest = json.loads((_export_dir(env, out) / "manifest.json").read_text())
     assert manifest["fields"]["derived_from_each_other"] is False
     assert manifest["fields"]["certification_level"]["nullable"] is True
     # Stored ports are untouched by the export.
@@ -630,7 +636,7 @@ def test_cli_export_then_refuses_overwrite(env, monkeypatch, cli, capsys):
     rid = _finished_run(env, monkeypatch, run_id="r-cli-exp")
     assert cli.main(["--no-dotenv", "--export", rid]) == 0
     out = json.loads(capsys.readouterr().out)
-    assert Path(out["dir"]) == env["exports"] / rid
+    assert _export_dir(env, out) == env["exports"] / rid
     assert out["upload"] == {"uploaded": False, "reason": "disabled"}
     assert cli.main(["--no-dotenv", "--export", rid]) == 2
 
@@ -642,7 +648,7 @@ def test_cli_functions_called_directly_with_stub_db(env, monkeypatch):
     summary = _run(mod.resume_run(rid, db=env["db"]))
     assert summary["run_id"] == rid
     out = _run(mod.export_run(rid, db=env["db"]))
-    assert Path(out["dir"]).is_dir()
+    assert _export_dir(env, out).is_dir()
 
 
 def test_cli_argument_rules(cli):
@@ -1089,3 +1095,39 @@ def test_concurrent_exports_of_one_run(env, monkeypatch):
     assert unified_runs.verify_export(base) == ok[0]["manifest_sha256"]
     assert sorted(p.name for p in env["exports"].iterdir()) == [rid]  # no .partial left
     assert len(env["db"].poe_runs.docs[0]["exports"]) == 1
+
+
+# ── no absolute server paths in Mongo or API responses ───────────────
+
+def _no_server_path(value, tmp_path):
+    assert isinstance(value, str) and not Path(value).is_absolute(), value
+    assert str(tmp_path) not in value
+
+
+def test_paths_are_relative_to_the_data_dir(env, monkeypatch, tmp_path):
+    from app import config
+    data = tmp_path / "data"
+    monkeypatch.setattr(config, "DATA_DIR", data)
+    monkeypatch.setattr(artifacts, "DATA_DIR", data, raising=False)
+    monkeypatch.setenv("BI_RUNS_DIR", str(data / "runs"))
+    monkeypatch.setenv("BI_EXPORT_DIR", str(data / "exports"))
+    _enable_upload(monkeypatch)
+    rid = _finished_run(env, monkeypatch, run_id="r-rel")
+    run = env["db"].poe_runs.docs[0]
+    assert run["artifacts"]["dir"] == "runs/r-rel"
+    out = _run(unified_runs.export_run(env["db"], rid, storage_client=_FailingClient()))
+    assert out["dir"] == "exports/r-rel"
+    assert run["exports"][0]["dir"] == "exports/r-rel"
+    up = _run(unified_runs.upload_existing_export(env["db"], rid,
+                                                  storage_client=_StubClient()))
+    assert up["dir"] == "exports/r-rel"
+
+
+def test_override_dirs_outside_data_dir_are_not_leaked(env, monkeypatch, tmp_path):
+    rid = _finished_run(env, monkeypatch, run_id="r-rel2")
+    run = env["db"].poe_runs.docs[0]
+    _no_server_path(run["artifacts"]["dir"], tmp_path)
+    out = _run(unified_runs.export_run(env["db"], rid))
+    _no_server_path(out["dir"], tmp_path)
+    _no_server_path(run["exports"][0]["dir"], tmp_path)
+    assert out["dir"] == "exports/r-rel2"

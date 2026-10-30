@@ -223,13 +223,14 @@ async def _export_locked(db, run: dict, rid: str, out_root, storage_config,
     # thread so live runs on the event loop are not stalled.
     manifest, manifest_sha, counts, upload = await asyncio.to_thread(
         _write_export, run, rid, root, ports, zones, storage_config, storage_client)
-    entry = {"dir": str(out), "manifest_sha256": manifest_sha,
+    rel = artifacts.data_relative(out, root)
+    entry = {"dir": rel, "manifest_sha256": manifest_sha,
              "written_at": manifest["written_at"],
              "uploaded": bool(upload.get("uploaded"))}
     if upload.get("error"):
         entry["upload_error"] = upload["error"]
     await db.poe_runs.update_one({"_id": rid}, {"$push": {"exports": entry}})
-    return {"run_id": rid, "dir": str(out), "manifest_sha256": manifest_sha,
+    return {"run_id": rid, "dir": rel, "manifest_sha256": manifest_sha,
             "files": manifest["files"], "counts": counts, "upload": upload}
 
 
@@ -323,7 +324,8 @@ async def upload_existing_export(db, run_id: str, *, out_root: Path | None = Non
     re-exporting. The folder is verified against its manifest first, and
     against the manifest hash recorded on the run when there is one."""
     rid = artifacts.safe_run_id(run_id)
-    out = (Path(out_root) if out_root else export_root()) / rid
+    root = Path(out_root) if out_root else export_root()
+    out = root / rid
     manifest_sha = await asyncio.to_thread(verify_export, out)
     run = await db.poe_runs.find_one({"_id": rid}) or {}
     recorded = {e.get("manifest_sha256") for e in run.get("exports") or []
@@ -337,4 +339,5 @@ async def upload_existing_export(db, run_id: str, *, out_root: Path | None = Non
         if upload.get("error"):
             entry["error"] = upload["error"]
         await db.poe_runs.update_one({"_id": rid}, {"$push": {"uploads": entry}})
-    return {"run_id": rid, "dir": str(out), "manifest_sha256": manifest_sha, **upload}
+    return {"run_id": rid, "dir": artifacts.data_relative(out, root),
+            "manifest_sha256": manifest_sha, **upload}

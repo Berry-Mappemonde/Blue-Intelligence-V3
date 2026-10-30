@@ -69,7 +69,8 @@ async def write_manifest(db, run_id: str, state: str, params: dict,
     if sha:
         await db.poe_runs.update_one({"_id": run_id}, {"$set": {
             "artifacts": {
-                "dir": str(artifacts.run_dir(run_id)),
+                "dir": artifacts.data_relative(artifacts.run_dir(run_id),
+                                               artifacts.runs_root()),
                 "trace": artifacts.TRACE_NAME,
                 "manifest": artifacts.MANIFEST_NAME,
             },

@@ -26,6 +26,7 @@ from datetime import datetime, timezone
 from importlib import metadata
 from pathlib import Path
 
+from app.config import DATA_DIR
 from app.core.events import RUNS_DIR
 from app.services.run_journal import _strip_secrets
 
@@ -62,6 +63,20 @@ def safe_run_id(run_id: str) -> str:
 def runs_root() -> Path:
     raw = (os.environ.get("BI_RUNS_DIR") or "").strip()
     return Path(raw) if raw else RUNS_DIR
+
+
+def data_relative(path: Path, root: Path) -> str:
+    """Path to store in Mongo or return from the API: never an absolute server path.
+
+    Relative to DATA_DIR (e.g. runs/<id>, exports/<id>). A root overridden
+    outside DATA_DIR (BI_RUNS_DIR / BI_EXPORT_DIR) is shown relative to its
+    parent, which gives the same <root name>/<id> shape.
+    """
+    path = Path(path).resolve()
+    try:
+        return path.relative_to(Path(DATA_DIR).resolve()).as_posix()
+    except ValueError:
+        return path.relative_to(Path(root).resolve().parent).as_posix()
 
 
 def run_dir(run_id: str, root: Path | None = None) -> Path:
