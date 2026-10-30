@@ -8,7 +8,8 @@ Code: `backend/app/services/unified_runs.py`, `run_artifacts.py`, `poe_runs.py`.
 Each run also has a folder `backend/data/runs/<run_id>/` (`BI_RUNS_DIR` overrides the root):
 
 - `trace.jsonl`: append-only, one line per step (`run_start`, `run_resume`,
-  `unit_start`, `unit_done`, `unit_error`, `unit_retry_skipped`, `run_done`).
+  `unit_start`, `unit_done`, `unit_error`, `unit_retry_skipped`,
+  `unit_missing_in_mongo`, `run_done`).
   Each line is flushed and fsynced. A line torn by a crash is ignored with a
   warning when the trace is read.
 - `manifest.json`: rewritten atomically (temp file + rename) at start and at end.
@@ -29,16 +30,29 @@ endpoints but write the same trace and manifest.
 - CLI: `python backend/run.py --resume <run_id>` (needs `MONGO_URL` / `DB_NAME`
   of the database holding the run; summary JSON on stdout, logs on stderr).
 
+A run_id is launched at most once at a time per API process (a concurrent
+start or resume of the same run gets 409).
+
+A resume never changes the run's mode. The mode is recorded at start
+(`params.code.sample_mode`); a resume whose `SAMPLE_MODE` differs is refused
+(400 on the API). The CLI never switches `SAMPLE_MODE` on by itself for
+`--resume`: a live run (or one started before the mode was recorded) needs
+`SAMPLE_MODE` off and the Zetaris / Meterless credentials, a sample run needs
+`--sample-mode`; otherwise it exits with code 3 and writes nothing.
+
 The stored parameters (zones, limit, variant, rules) are reused. A zone is
-skipped when it has a `poe_run_zones` doc or a `unit_done` trace line, so
-completed zones are never regenerated and their ports never rewritten. A
-zone that was started but not finished is regenerated.
+skipped only when it has a `poe_run_zones` doc, so completed zones are never
+regenerated and their ports never rewritten. Mongo is the source of truth: a
+zone with a `unit_done` trace line but no `poe_run_zones` doc is flagged
+(`unit_missing_in_mongo`) and regenerated. A zone that was started but not
+finished is regenerated.
 
 Errored zones count as done by default. With `retry_errored`
 (`"retry_errored": true`, or `--retry-errored` on the CLI) they are redone
-once per resume: a zone is errored when its last `unit_done` / `unit_error`
-trace line is an error (`poe_run_zones.status` for runs without a trace).
-An errored zone that already has ports stored for the run is not retried.
+once in total, across all resumes: a zone is errored when its last
+`unit_done` / `unit_error` trace line is an error (`poe_run_zones.status` for
+runs without a trace). A zone already retried (a `unit_start` line with
+`retry: true`) or that already has ports stored for the run is not retried.
 
 ## Export
 
@@ -47,8 +61,12 @@ An errored zone that already has ports stored for the run is not retried.
 Only `done` or `cancelled` runs can be exported. Output goes to
 `backend/data/exports/<run_id>/` (`BI_EXPORT_DIR` overrides the root):
 `ports.geojson`, `zones.json`, `trace.jsonl`, `manifest.json`. An existing
-export folder is never overwritten. GeoParquet is not written (no
-pyarrow / geopandas dependency).
+export folder is never overwritten, and a second concurrent export of the
+same run is refused (409). GeoParquet is not written (no pyarrow /
+geopandas dependency).
+
+Paths stored in Mongo (`artifacts.dir`, `exports[].dir`) and returned by the
+API are relative to the data dir (`runs/<run_id>`, `exports/<run_id>`).
 
 ## Manifest fields
 
@@ -76,3 +94,10 @@ Off by default. The export is uploaded to S3-compatible object storage
 `BI_OBJECT_STORAGE_BUCKET` are set (`BI_OBJECT_STORAGE_ENDPOINT`,
 `_REGION`, `_PREFIX` optional). Keys are `runs/<run_id>/<file>`, manifest
 last. Credentials come from boto3's standard chain; the code never reads them.
+
+A failed upload does not fail the export: it is recorded on the run
+(`exports[].uploaded: false`, `upload_error`). Retry it without re-exporting
+with `POST /api/runs/<run_id>/upload` or `python backend/run.py --upload <run_id>`:
+the folder is first checked against its manifest (sizes, SHA-256, no extra
+file, manifest hash recorded on the run), and refused (409 / exit 2) if it
+does not match. Each attempt is recorded under `poe_runs.uploads`.
