@@ -502,3 +502,69 @@ def test_resume_after_restart_keeps_the_calls_already_taken(run_harness, monkeyp
     summary = _execute(run_harness, db, "run-r3-resume", resume=True)
     assert summary["tokenfactory"]["calls_taken"] == 9
     assert tokenfactory.calls_taken("run-r3-resume") == 9
+
+
+# --- whole-text CPU work off the event loop (finding 6) ------------------------------
+
+def test_whole_text_steps_run_off_the_event_loop(monkeypatch):
+    import threading
+    import app.db
+
+    threads: dict[str, int] = {}
+    real_context = poe.extraction_context
+
+    async def no_settings():
+        return {}
+
+    async def find_sources(zone, *args, **kwargs):
+        return [{"url": "https://gov.example/1", "official": True}], True, None
+
+    async def collect(official, log, rec=None, **kwargs):
+        return [_source("https://gov.example/1", _prose(40000) + " Port Alpha.")], {}, official, {}
+
+    async def extract(zone, context, used_sources, log, rec=None, run=None,
+                      catalog_text=None, settings=None):
+        return [{"name": "Port Alpha"}]
+
+    async def persist(db, zone, docs, status, *args, **kwargs):
+        return {"mrgid": zone["mrgid"], "status": status, "poe_count": len(docs)}
+
+    async def evidence(*args, **kwargs):
+        return 0
+
+    def parse(raw):
+        threads["parse"] = threading.get_ident()
+        return []
+
+    def context(raw, raw_catalog, rag_q):
+        threads["rag"] = threading.get_ident()
+        return real_context(raw, raw_catalog, rag_q)
+
+    class _Zones:
+        async def find_one(self, query):
+            return {"mrgid": 1, "name": "Threadland"}
+
+    class _DB:
+        eez_zones = _Zones()
+
+    monkeypatch.setattr(app.db, "get_settings", no_settings)
+    monkeypatch.setattr(poe, "load_exceptions", lambda: {})
+    monkeypatch.setattr(poe, "build_whitelist", lambda *a, **k: [])
+    monkeypatch.setattr(poe, "_find_sources", find_sources)
+    monkeypatch.setattr(poe, "_collect_texts", collect)
+    monkeypatch.setattr(poe, "extract_structured_ports", parse)
+    monkeypatch.setattr(poe, "extraction_context", context)
+    monkeypatch.setattr(poe, "select_list_context", lambda q, raw, max_chars: raw[:max_chars])
+    monkeypatch.setattr(poe, "_extract_and_geocode", extract)
+    monkeypatch.setattr(poe, "_store_evidence", evidence)
+    monkeypatch.setattr(poe, "_persist_zone", persist)
+
+    async def run():
+        loop_thread = threading.get_ident()
+        result = await poe.generate_zone_poe(_DB(), 1)
+        return loop_thread, result
+
+    loop_thread, result = asyncio.run(run())
+    assert result["poe_count"] == 1
+    assert set(threads) == {"parse", "rag"}
+    assert all(t != loop_thread for t in threads.values())

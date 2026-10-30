@@ -1489,7 +1489,7 @@ async def _extract_ports_compared(context: str, zone: dict, log, rec=None,
     Claude only steps in after both NIM/OR readers fail.
     """
     raw_catalog = catalog_text if catalog_text is not None else context
-    catalog = extract_structured_ports(raw_catalog)
+    catalog = await asyncio.to_thread(extract_structured_ports, raw_catalog)
     if catalog_is_sufficient(catalog, raw_catalog):
         kept = catalog_ports_to_keep(catalog)
         if kept:
@@ -2912,9 +2912,9 @@ async def _store_evidence(db, zone: dict, docs: list[dict], raw: str,
                           used_sources: list[dict], log, rec=None) -> int:
     """Build evidence records from the collected official text and store them; never fails."""
     try:
-        records = evidence_store.build_records(
+        records = await asyncio.to_thread(lambda: evidence_store.build_records(
             zone.get("mrgid"), [d.get("name") for d in docs or []],
-            evidence_store.documents_from_context(raw, used_sources))
+            evidence_store.documents_from_context(raw, used_sources)))
         stored = await evidence_store.store(db, records)
     except Exception as e:  # noqa: BLE001 — evidence is optional, generation must finish
         log(f"evidence: non stockée ({type(e).__name__}: {str(e)[:100]})")
@@ -3042,7 +3042,9 @@ async def generate_zone_poe(db, mrgid: int, logger=None, force: bool = False,
         # reads the raw official text (else Alofi / SCT list tail vanish).
         raw = "\n\n".join(context_parts)
         raw_chars = len(raw)
-        raw_catalog = extract_structured_ports(raw)
+        # Whole-text parsing and RAG ranking run in a worker thread: with sources up to
+        # formalities.source_max_chars they would block the other zones and the API.
+        raw_catalog = await asyncio.to_thread(extract_structured_ports, raw)
         if raw_catalog:
             remembered = remember_seed_urls(zone, urls_with_catalog(texts), exceptions)
             if remembered:
@@ -3050,7 +3052,7 @@ async def generate_zone_poe(db, mrgid: int, logger=None, force: bool = False,
                 await emit(rec, "seed_remembered", iso2=zone.get("iso2"), urls=remembered)
         rag_q = (f"official designated ports of entry customs gazette decree "
                  f"puertos habilitados puertos de entrada port of entry {name}")
-        context, window, branch = extraction_context(raw, raw_catalog, rag_q)
+        context, window, branch = await asyncio.to_thread(extraction_context, raw, raw_catalog, rag_q)
         llm_context_chars.set(window)
         sent_chars = min(len(context), window)
         if branch == "catalog":

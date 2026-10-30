@@ -10,22 +10,27 @@ Backend: sentence-transformers (all-MiniLM-L6-v2) if available,
 else TF-IDF fallback (scikit-learn) — same API, no hard dependency.
 """
 import re
+import threading
 
 _st_model = None
 _st_failed = False
 _ce_model = None
 _ce_failed = False
+_load_lock = threading.Lock()  # callers may run in worker threads (asyncio.to_thread)
 
 
 def _get_st():
     global _st_model, _st_failed
     if _st_model is not None or _st_failed:
         return _st_model
-    try:
-        from sentence_transformers import SentenceTransformer
-        _st_model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
-    except Exception:
-        _st_failed = True
+    with _load_lock:
+        if _st_model is not None or _st_failed:
+            return _st_model
+        try:
+            from sentence_transformers import SentenceTransformer
+            _st_model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
+        except Exception:
+            _st_failed = True
     return _st_model
 
 
