@@ -1730,6 +1730,115 @@
       "group": "budget"
     },
     {
+      "id": "formalities.extract_batch_chars",
+      "mode": "formalities",
+      "kind": "budget",
+      "value": 20000,
+      "numeric": "int",
+      "unit": "chars",
+      "interval": [
+        8000,
+        40000
+      ],
+      "vary": true,
+      "principle": "Quand le texte brut des sources dépasse la fenêtre du lecteur, l'extraction se fait par lots de sources entières (une source trop longue est coupée en morceaux qui se chevauchent). 20 000 = la fenêtre historique (LLM_CONTEXT_CHARS). À mesurer sur de vraies ZEE : plus grand = moins d'appels mais la réponse plafonne vers 30-40 ports (max_tokens).",
+      "cdc": "PLAN-V3.md §4 P0-3",
+      "code": [
+        "app/services/poe_pipeline.py:_extract_primary"
+      ],
+      "title": {
+        "fr": "Taille d'un lot d'extraction",
+        "en": "Size of one extraction batch"
+      },
+      "help": {
+        "fr": "Caractères de texte source envoyés par appel quand une ZEE est découpée en lots. Plus grand = moins d'appels, mais une réponse tronquée perd des ports.",
+        "en": "Source characters sent per call when an EEZ is split into batches. Larger means fewer calls, but a truncated answer loses ports."
+      },
+      "group": "reading"
+    },
+    {
+      "id": "formalities.extract_batch_overlap_chars",
+      "mode": "formalities",
+      "kind": "budget",
+      "value": 1500,
+      "numeric": "int",
+      "unit": "chars",
+      "interval": [
+        0,
+        4000
+      ],
+      "vary": true,
+      "principle": "Une source coupée en morceaux répète la fin du morceau précédent, pour qu'un port à cheval sur la coupure soit lu en entier. Les doublons repassent par la dédup (core.dedup).",
+      "cdc": "PLAN-V3.md §4 P0-3",
+      "code": [
+        "app/services/poe_pipeline.py:_extract_primary"
+      ],
+      "title": {
+        "fr": "Chevauchement entre deux morceaux d'une source",
+        "en": "Overlap between two pieces of one source"
+      },
+      "help": {
+        "fr": "Caractères répétés entre deux morceaux d'une source longue, pour ne pas couper un nom de port. Les doublons sont fusionnés.",
+        "en": "Characters repeated between two pieces of a long source so a port name is never cut. Duplicates are merged."
+      },
+      "group": "reading"
+    },
+    {
+      "id": "formalities.extract_batch_concurrency",
+      "mode": "formalities",
+      "kind": "budget",
+      "value": 3,
+      "numeric": "int",
+      "unit": "workers",
+      "interval": [
+        1,
+        8
+      ],
+      "vary": true,
+      "principle": "Lots d'une même ZEE lus en parallèle. 3 garde une ZEE découpée sous formalities.zone_timeout_s sans saturer le fournisseur.",
+      "cdc": "PLAN-V3.md §4 P0-3",
+      "code": [
+        "app/services/poe_pipeline.py:_extract_primary"
+      ],
+      "title": {
+        "fr": "Lots lus en parallèle",
+        "en": "Batches read in parallel"
+      },
+      "help": {
+        "fr": "Nombre de lots d'une ZEE envoyés en même temps. Plus haut = plus rapide, mais plus de risques de limite de débit.",
+        "en": "How many batches of one EEZ are sent at once. Higher is faster but risks rate limits."
+      },
+      "group": "budget"
+    },
+    {
+      "id": "formalities.extract_max_llm_calls",
+      "mode": "formalities",
+      "kind": "budget",
+      "value": 1000,
+      "numeric": "int",
+      "unit": "calls",
+      "interval": [
+        1,
+        20000
+      ],
+      "vary": true,
+      "principle": "Plafond d'appels d'extraction (lecteur principal) par run, compté comme le budget USD Token Factory (même clé de run). Au-delà, les lots restants ne partent pas : les plus riches en listes passent d'abord, puis catalogue / NER en repli. Sans run, le plafond vaut pour une ZEE.",
+      "cdc": "PLAN-V3.md §4 P0-3",
+      "code": [
+        "app/services/poe_pipeline.py:_extract_primary",
+        "app/core/tokenfactory.py:take_calls"
+      ],
+      "title": {
+        "fr": "Appels d'extraction max par run",
+        "en": "Max extraction calls per run"
+      },
+      "help": {
+        "fr": "Nombre maximal d'appels au lecteur principal pour tout un run. Atteint : les lots restants sont sautés et notés dans le journal.",
+        "en": "Maximum primary-reader calls for a whole run. Once reached, the remaining batches are skipped and logged."
+      },
+      "group": "budget"
+    },
+    {
       "id": "formalities.stale_days",
       "mode": "formalities",
       "kind": "budget",

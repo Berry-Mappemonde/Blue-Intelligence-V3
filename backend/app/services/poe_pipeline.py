@@ -48,7 +48,7 @@ from app.core.geo import classify_poe_point, geocode_port_dual, inland_exception
 from app.core.llm import (
     LLM_CONTEXT_CHARS, extract_ports, grounded_search, llm_context_chars, llm_geocode_port,
 )
-from app.core.rag import select_list_context, semantic_similarity
+from app.core.rag import chunk_text, list_like_score, select_list_context, semantic_similarity
 from app.adapters import evidence_store
 from app.adapters.zetaris import ZetarisClient
 from app.agents import registry_check
@@ -1148,7 +1148,7 @@ def _pipeline_run_id(rec, zone: dict) -> str:
 async def extract_ports_llm(context: str, zone: dict, log, rec=None,
                             catalog_text: str | None = None,
                             settings: dict | None = None) -> list[dict]:
-    """Extract once (see ``_extract_ports_core``), then cross-reference Zetaris."""
+    """Extract (see ``_extract_ports_core``; long raw text in batches), then cross-reference Zetaris."""
     ports = await _extract_ports_core(context, zone, log, rec=rec,
                                       catalog_text=catalog_text, settings=settings)
     run_id = _pipeline_run_id(rec, zone)
@@ -1167,6 +1167,129 @@ async def extract_ports_llm(context: str, zone: dict, log, rec=None,
                official_count=len(official), matched=[p["name"] for p in official],
                tiers=tiers, documents_with_text=len(source_texts))
     return ports
+
+
+EXTRACT_BATCH_OVERLAP_CHARS = 1500
+EXTRACT_BATCH_CONCURRENCY = 3
+EXTRACT_MAX_LLM_CALLS = 1000
+_SOURCE_BLOCK_RE = re.compile(r"\n\n(?=\[(?:SOURCE: |SYNTHÈSE DE RECHERCHE))")
+
+
+def _split_block(block: str, size: int, overlap: int) -> list[str]:
+    """Cut one oversized source into pieces of at most ``size`` chars that overlap by
+    ``overlap``; each piece keeps the block's "[SOURCE: url]" header line."""
+    header = ""
+    if block.startswith("["):
+        first, nl, rest = block.partition("\n")
+        if nl and len(first) < size // 4:
+            header, block = first + "\n", rest
+    room = max(1, size - len(header))
+    overlap = max(0, min(overlap, room // 2))
+    pieces, start = [], 0
+    while start < len(block):
+        end = min(start + room, len(block))
+        if end < len(block):
+            # End on a line break (else a space) in the last quarter: never cut a name.
+            cut = block.rfind("\n", start + room * 3 // 4, end)
+            if cut == -1:
+                cut = block.rfind(" ", start + room * 3 // 4, end)
+            if cut > start:
+                end = cut
+        pieces.append(header + block[start:end])
+        if end >= len(block):
+            break
+        start = max(end - overlap, start + 1)
+    return pieces
+
+
+def extraction_batches(raw: str, size: int, overlap: int) -> list[str]:
+    """Split the joined source text into reader batches of at most ``size`` chars.
+
+    Whole "[SOURCE: url]" blocks (and the search synthesis) are packed together in order;
+    a block longer than ``size`` is cut into overlapping pieces (``_split_block``).
+    """
+    pieces: list[str] = []
+    for block in _SOURCE_BLOCK_RE.split(raw or ""):
+        if not block.strip():
+            continue
+        pieces.extend([block] if len(block) <= size else _split_block(block, size, overlap))
+    batches: list[str] = []
+    for piece in pieces:
+        if batches and len(batches[-1]) + 2 + len(piece) <= size:
+            batches[-1] = f"{batches[-1]}\n\n{piece}"
+        else:
+            batches.append(piece)
+    return batches
+
+
+def _list_density(text: str) -> float:
+    chunks = chunk_text(text, size=500)
+    return sum(list_like_score(c) for c in chunks) / max(1, len(chunks))
+
+
+def _take_extract_calls(wanted: int) -> int:
+    """Calls granted under ``formalities.extract_max_llm_calls``: counted per run on the
+    Token Factory ledger key; without a run, the cap holds for this zone alone."""
+    from app.core import tokenfactory
+    from app.core.run_rules import get_rule
+    cap = int(get_rule("formalities.extract_max_llm_calls", EXTRACT_MAX_LLM_CALLS))
+    run_id = tokenfactory.current_run_id()
+    if run_id is None:
+        return max(0, min(wanted, cap))
+    return tokenfactory.take_calls(wanted, cap, run_id)
+
+
+async def _extract_primary(context: str, zone: dict, log, rec=None,
+                           catalog_text: str | None = None,
+                           settings: dict | None = None) -> list[dict]:
+    """Primary reader. Input that fits the reader window: one call on ``context``, as
+    before. Raw source text longer than the window (``catalog_text``, the pipeline's
+    joined sources): one call per batch (``extraction_batches``) so no port sits past
+    the window, merged through ``core.dedup.deduplicate_list``."""
+    from app.core.run_rules import get_rule
+    from app.core.tokenfactory import LLMCallCapReached
+    if catalog_text is None or len(catalog_text) <= llm_context_chars.get():
+        if not _take_extract_calls(1):
+            raise LLMCallCapReached("formalities.extract_max_llm_calls reached")
+        return await extract_ports(context, zone, settings=settings, log=log)
+
+    size = int(get_rule("formalities.extract_batch_chars", LLM_CONTEXT_CHARS))
+    overlap = int(get_rule("formalities.extract_batch_overlap_chars", EXTRACT_BATCH_OVERLAP_CHARS))
+    workers = int(get_rule("formalities.extract_batch_concurrency", EXTRACT_BATCH_CONCURRENCY))
+    batches = extraction_batches(catalog_text, size, overlap)
+    granted = _take_extract_calls(len(batches))
+    if not granted:
+        raise LLMCallCapReached("formalities.extract_max_llm_calls reached")
+    kept = list(range(len(batches)))
+    if granted < len(batches):
+        # The cap cuts the zone short: the most list-like batches go first.
+        ranked = sorted(kept, key=lambda i: _list_density(batches[i]), reverse=True)
+        kept = sorted(ranked[:granted])
+        log(f"plafond d'appels LLM: {granted}/{len(batches)} lot(s) envoyés, "
+            f"{sum(len(b) for i, b in enumerate(batches) if i not in kept)} chars non lus")
+    sem = asyncio.Semaphore(max(1, workers))
+
+    async def read(text: str) -> list[dict]:
+        async with sem:
+            token = llm_context_chars.set(size)
+            try:
+                return await extract_ports(text, zone, settings=settings, log=log)
+            finally:
+                llm_context_chars.reset(token)
+
+    results = await asyncio.gather(*(read(batches[i]) for i in kept), return_exceptions=True)
+    found = [p for r in results if isinstance(r, list) for p in r]
+    errors = [r for r in results if isinstance(r, BaseException)]
+    if len(errors) == len(results):
+        raise errors[0]
+    merged = deduplicate_list(found, title_key="name")
+    log(f"extraction par lots: {len(kept)}/{len(batches)} lot(s) de ≤{size} chars sur "
+        f"{len(catalog_text)} chars, {len(found)} port(s) lus → {len(merged)} après dédup"
+        + (f", {len(errors)} lot(s) en échec" if errors else ""))
+    await emit(rec, "extraction_batches", batches=len(batches), sent=len(kept),
+               failed=len(errors), batch_chars=size, raw_chars=len(catalog_text),
+               ports_read=len(found), ports=len(merged))
+    return merged
 
 
 async def _extract_ports_core(context: str, zone: dict, log, rec=None,
@@ -1205,7 +1328,8 @@ async def _extract_ports_core(context: str, zone: dict, log, rec=None,
 
     async def _primary():
         try:
-            return await extract_ports(context, zone, settings=settings, log=log), None
+            return await _extract_primary(context, zone, log, rec=rec,
+                                          catalog_text=catalog_text, settings=settings), None
         except Exception as e:
             return None, e
 
