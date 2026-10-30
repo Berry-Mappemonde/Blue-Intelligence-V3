@@ -10,7 +10,8 @@ in a dedicated space, never touching v1 collections:
 
 Resume: an interrupted run (server restart…) continues where it
 stopped — zones already in poe_run_zones for this run, or marked
-`unit_done` in data/runs/<run_id>/trace.jsonl, are skipped.
+`unit_done` in data/runs/<run_id>/trace.jsonl, are skipped. Errored
+zones count as done unless retry_errored=True.
 Each run also keeps data/runs/<run_id>/manifest.json (run_artifacts).
 v1 ↔ run comparison and the report live in poe_diff / poe_report.
 
@@ -75,6 +76,38 @@ async def write_manifest(db, run_id: str, state: str, params: dict,
     return sha
 
 
+def _trace_terminal_units(run_id: str) -> set:
+    return {r.get("unit") for r in artifacts.read_trace(run_id)
+            if r.get("event") in ("unit_done", "unit_error")}
+
+
+async def _retryable_zones(db, run_id: str, selected: set, zone_status: dict,
+                           log) -> set[int]:
+    """Errored zones to redo once on resume (retry_errored=True).
+
+    Errored = the last unit_done / unit_error line of the trace is an error;
+    zones without any trace line fall back to their poe_run_zones status
+    (runs started before the trace existed). A zone that already has ports
+    stored for this run is not retried, so stored ports are never replaced.
+    """
+    errored = {int(m) for m in (await _artifact(artifacts.errored_units, run_id) or set())
+               if isinstance(m, int)}
+    terminal = await _artifact(_trace_terminal_units, run_id) or set()
+    errored |= {m for m, s in zone_status.items()
+                if m not in terminal and artifacts.is_error_status(s)}
+    retry: set[int] = set()
+    for mrgid in sorted(errored & selected):
+        if await db.poe_run_ports.count_documents({"run_id": run_id, "mrgid": mrgid}):
+            log(f"zone {mrgid} en erreur mais a déjà des ports stockés — non relancée")
+            await _artifact(artifacts.append_trace, run_id, "unit_retry_skipped",
+                            unit=mrgid, reason="ports already stored")
+            continue
+        retry.add(mrgid)
+    if retry:
+        log(f"reprise du run {run_id}: {len(retry)} zone(s) en erreur relancée(s)")
+    return retry
+
+
 def new_run_id() -> str:
     return time.strftime("%Y%m%d-%H%M%S", time.gmtime()) + "-" + uuid.uuid4().hex[:6]
 
@@ -105,10 +138,13 @@ async def execute_run(db, state, run_id: str, label: str = "",
                       concurrency: int = 2, resume: bool = False,
                       variant: str = "tinyfish",
                       rules_overrides: dict | None = None,
-                      profile: str | None = None) -> dict:
+                      profile: str | None = None,
+                      retry_errored: bool = False) -> dict:
     """Execute (or resume) a full run. `state` is a TaskState (live logs,
     progress, cancel); durable state lives in db.poe_runs.
     variant: v1 | v2 | tinyfish — never writes poe_ports.
+    retry_errored: on resume, errored zones are redone once (see
+    _retryable_zones); completed zones are never re-run.
     """
     await ensure_run_indexes(db)
     from app.core.tokenfactory import bind_run
@@ -123,13 +159,18 @@ async def execute_run(db, state, run_id: str, label: str = "",
         raise ValueError("aucune ZEE candidate — construire le référentiel d'abord")
 
     done_mrgids: set[int] = set()
+    retry_mrgids: set[int] = set()
     if resume:
-        done_mrgids = {z["mrgid"] async for z in db.poe_run_zones.find(
-            {"run_id": run_id}, {"mrgid": 1})}
+        zone_status = {z["mrgid"]: z.get("status") async for z in db.poe_run_zones.find(
+            {"run_id": run_id}, {"mrgid": 1, "status": 1})}
+        done_mrgids = set(zone_status)
         traced = await _artifact(artifacts.completed_units, run_id) or set()
         selected = {z["mrgid"] for z in zones}
         done_mrgids |= {int(m) for m in traced
                         if isinstance(m, int) and m in selected}
+        if retry_errored:
+            retry_mrgids = await _retryable_zones(db, run_id, selected, zone_status, log)
+            done_mrgids -= retry_mrgids
         if done_mrgids:
             log(f"reprise du run {run_id}: {len(done_mrgids)} zone(s) déjà générées, sautées")
     todo = [z for z in zones if z["mrgid"] not in done_mrgids]
@@ -185,7 +226,7 @@ async def execute_run(db, state, run_id: str, label: str = "",
     await _artifact(artifacts.append_trace, run_id,
                     "run_resume" if resume else "run_start", layer=LAYER,
                     zones_total=len(zones), already_done=sorted(done_mrgids),
-                    variant=variant)
+                    retry=sorted(retry_mrgids), variant=variant)
     await write_manifest(db, run_id, "running", params, {
         "zones_total": len(zones), "zones_done": len(done_mrgids)})
     log(f"run {run_id}: variant={variant} — {len(todo)} zone(s) à générer from scratch "
@@ -203,7 +244,7 @@ async def execute_run(db, state, run_id: str, label: str = "",
             if state.cancel:
                 return
             await _artifact(artifacts.append_trace, run_id, "unit_start",
-                            unit=mrgid, zone=name)
+                            unit=mrgid, zone=name, retry=mrgid in retry_mrgids)
             try:
                 doc = await asyncio.wait_for(
                     poe.generate_zone_poe(

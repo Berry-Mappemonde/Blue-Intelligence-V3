@@ -452,3 +452,130 @@ def test_run_id_is_path_safe():
     for bad in ("../x", "a/b", "", ".."):
         with pytest.raises(ValueError):
             artifacts.run_dir(bad)
+
+
+# ── retry of errored zones on resume ─────────────────────────────────
+
+def _failing_stub(calls: list, *, attempt: int, fail: dict):
+    """fail: mrgid -> "raise" | "raise_after_ports" | "status_erreur"."""
+    async def fake_zone(db, mrgid, logger=None, force=False, run=None):
+        calls.append(mrgid)
+        mode = fail.get(mrgid)
+        if mode == "raise":
+            raise RuntimeError(f"zone {mrgid} timed out")
+        ports = [] if mode == "status_erreur" else [
+            {"name": f"Port {mrgid}", "lat": 10.0 + mrgid, "lon": -60.0}]
+        await db.poe_run_ports.delete_many({"run_id": run.run_id, "mrgid": mrgid})
+        await db.poe_run_ports.insert_many([
+            {"_id": f"{run.run_id}:{mrgid}:{i}:a{attempt}", "run_id": run.run_id,
+             "mrgid": mrgid, "attempt": attempt, **p} for i, p in enumerate(ports)])
+        if mode == "raise_after_ports":
+            raise RuntimeError(f"zone {mrgid} failed after persisting")
+        status = "erreur" if mode == "status_erreur" else "ia"
+        await db.poe_run_zones.update_one(
+            {"run_id": run.run_id, "mrgid": mrgid},
+            {"$set": {"run_id": run.run_id, "mrgid": mrgid, "status": status,
+                      "poe_count": len(ports), "attempt": attempt}}, upsert=True)
+        return {"status": status, "poe_count": len(ports)}
+
+    return fake_zone
+
+
+def _run_with_errors(env, monkeypatch, run_id="r-err"):
+    calls: list = []
+    monkeypatch.setattr(poe_runs.poe, "generate_zone_poe", _failing_stub(
+        calls, attempt=1,
+        fail={2: "raise", 3: "raise_after_ports", 4: "status_erreur"}))
+    _run(unified_runs.start_run(env["db"], TaskState(), run_id=run_id, concurrency=1))
+    assert calls == [1, 2, 3, 4]
+    assert artifacts.errored_units(run_id) == {2, 3, 4}
+    return run_id
+
+
+def _snapshot(db, run_id):
+    zones = {d["mrgid"]: dict(d) for d in db.poe_run_zones.docs if d["run_id"] == run_id}
+    ports = {d["_id"]: dict(d) for d in db.poe_run_ports.docs if d["run_id"] == run_id}
+    return zones, ports
+
+
+def test_resume_without_retry_keeps_errored_zones_as_done(env, monkeypatch):
+    db = env["db"]
+    rid = _run_with_errors(env, monkeypatch)
+    zones_before, ports_before = _snapshot(db, rid)
+    calls: list = []
+    monkeypatch.setattr(poe_runs.poe, "generate_zone_poe",
+                        _failing_stub(calls, attempt=2, fail={}))
+    _run(unified_runs.start_run(db, TaskState(), run_id=rid, resume=True))
+    assert calls == []
+    assert _snapshot(db, rid) == (zones_before, ports_before)
+
+
+def test_resume_with_retry_redoes_errored_zones_once(env, monkeypatch):
+    db = env["db"]
+    rid = _run_with_errors(env, monkeypatch)
+    zones_before, ports_before = _snapshot(db, rid)
+    calls: list = []
+    monkeypatch.setattr(poe_runs.poe, "generate_zone_poe",
+                        _failing_stub(calls, attempt=2, fail={}))
+    summary = _run(unified_runs.start_run(db, TaskState(), run_id=rid, resume=True,
+                                          retry_errored=True))
+    # 2 (raised, no ports) and 4 (status erreur, no ports) are redone once;
+    # 3 has ports stored for this run, so it is left alone; 1 is completed.
+    assert sorted(calls) == [2, 4]
+    zones_after, ports_after = _snapshot(db, rid)
+    assert zones_after[1] == zones_before[1]
+    assert zones_after[3] == zones_before[3]
+    assert zones_after[2]["status"] == "ia" and zones_after[2]["attempt"] == 2
+    for pid, doc in ports_before.items():
+        assert ports_after[pid] == doc
+    assert summary["zones_done"] == 4 and summary["errors"] == 0
+    trace = artifacts.read_trace(rid)
+    retried = [r["unit"] for r in trace if r["event"] == "unit_start" and r.get("retry")]
+    assert sorted(retried) == [2, 4]
+    assert [r["unit"] for r in trace if r["event"] == "unit_retry_skipped"] == [3]
+    assert artifacts.errored_units(rid) == {3}
+
+    # A second retry never touches the zones that are now completed.
+    calls2: list = []
+    monkeypatch.setattr(poe_runs.poe, "generate_zone_poe",
+                        _failing_stub(calls2, attempt=3, fail={}))
+    _run(unified_runs.start_run(db, TaskState(), run_id=rid, resume=True,
+                                retry_errored=True))
+    assert calls2 == []
+
+
+def test_retry_that_fails_again_is_attempted_once(env, monkeypatch):
+    db = env["db"]
+    rid = _run_with_errors(env, monkeypatch)
+    calls: list = []
+    monkeypatch.setattr(poe_runs.poe, "generate_zone_poe",
+                        _failing_stub(calls, attempt=2, fail={2: "raise"}))
+    summary = _run(unified_runs.start_run(db, TaskState(), run_id=rid, resume=True,
+                                          retry_errored=True))
+    assert sorted(calls) == [2, 4]
+    assert summary["errors"] == 1
+    assert artifacts.errored_units(rid) == {2, 3}
+
+
+def test_retry_falls_back_to_zone_status_without_trace(env, monkeypatch):
+    """Runs started before the trace existed: the poe_run_zones status is used."""
+    db = env["db"]
+    db.poe_runs.docs.append({"_id": "r-old-err", "state": "done", "label": "x",
+                             "params": {"limit": 0, "only_zones": [1, 2],
+                                        "concurrency": 1, "variant": "tinyfish"}})
+    db.poe_run_zones.docs += [
+        {"run_id": "r-old-err", "mrgid": 1, "status": "ia"},
+        {"run_id": "r-old-err", "mrgid": 2, "status": "erreur"}]
+    calls: list = []
+    monkeypatch.setattr(poe_runs.poe, "generate_zone_poe",
+                        _failing_stub(calls, attempt=1, fail={}))
+    _run(unified_runs.start_run(db, TaskState(), run_id="r-old-err", resume=True,
+                                retry_errored=True))
+    assert calls == [2]
+
+
+def test_retry_errored_requires_resume(env):
+    with pytest.raises(ValueError):
+        _run(unified_runs.start_run(env["db"], TaskState(), run_id="r-new",
+                                    retry_errored=True))
+    assert env["db"].poe_runs.docs == []

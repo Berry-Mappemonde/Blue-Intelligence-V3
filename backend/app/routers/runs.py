@@ -152,7 +152,8 @@ class SeedMineBody(BaseModel):
 async def _launch_run(*, resume: bool, run_id: str, label: str, limit: int,
                       zones, concurrency: int, variant: str,
                       rules_overrides: dict | None = None,
-                      profile: str | None = None) -> str:
+                      profile: str | None = None,
+                      retry_errored: bool = False) -> str:
     if len(_active_ids()) >= MAX_PARALLEL_RUNS:
         raise HTTPException(409, f"déjà {MAX_PARALLEL_RUNS} runs actifs")
     if run_id in RUN_STATES and RUN_STATES[run_id].running:
@@ -160,7 +161,8 @@ async def _launch_run(*, resume: bool, run_id: str, label: str, limit: int,
     try:
         resolved = await unified_runs.resolve_launch(
             _db, run_id=run_id, resume=resume, label=label, limit=limit,
-            zones=zones, concurrency=concurrency, variant=variant)
+            zones=zones, concurrency=concurrency, variant=variant,
+            retry_errored=retry_errored)
     except ValueError as e:
         raise HTTPException(409 if isinstance(e, unified_runs.RunExists) else 400,
                             str(e)) from e
@@ -810,6 +812,7 @@ class UnifiedRunBody(BaseModel):
     layer: str = "poe"
     run_id: str | None = None
     resume: bool = False
+    retry_errored: bool = False         # resume only: redo errored zones once
     label: str = ""
     limit: int = 0
     concurrency: int = 2
@@ -844,7 +847,8 @@ async def unified_run_start(body: UnifiedRunBody | None = None):
                       limit=body.limit, zones=body.zones,
                       concurrency=body.concurrency, variant=variant,
                       rules_overrides=None if body.resume else body.rules,
-                      profile=None if body.resume else body.profile)
+                      profile=None if body.resume else body.profile,
+                      retry_errored=body.retry_errored)
     return {"status": "started", "run_id": run_id, "resume": body.resume,
             "layer": "poe", "variant": variant}
 

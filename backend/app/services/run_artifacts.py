@@ -36,6 +36,9 @@ MANIFEST_NAME = "manifest.json"
 SCORE_FIELD = "confidence"               # V2 score, 0-100
 LEVEL_FIELD = "confidence_level"         # C0-C4, nullable until PR #10 lands
 
+# Zone statuses that mean "failed" (poe_runs writes "erreur").
+ERROR_STATUSES = ("erreur", "error")
+
 TOOL_PACKAGES = ("fastapi", "motor", "pymongo", "httpx", "shapely", "boto3",
                  "trafilatura", "pydantic")
 
@@ -113,6 +116,31 @@ def completed_units(run_id: str, root: Path | None = None) -> set:
     """Units with a `unit_done` line in the trace."""
     return {rec.get("unit") for rec in read_trace(run_id, root)
             if rec.get("event") == "unit_done" and rec.get("unit") is not None}
+
+
+def is_error_status(status) -> bool:
+    return str(status or "").strip().lower() in ERROR_STATUSES
+
+
+def errored_units(run_id: str, root: Path | None = None) -> set:
+    """Units whose last unit_done / unit_error line is an error.
+
+    A unit that ever finished with a non-error status is never returned.
+    """
+    last: dict = {}
+    ok: set = set()
+    for rec in read_trace(run_id, root):
+        unit = rec.get("unit")
+        if unit is None:
+            continue
+        if rec.get("event") == "unit_error":
+            last[unit] = True
+        elif rec.get("event") == "unit_done":
+            failed = is_error_status(rec.get("status"))
+            last[unit] = failed
+            if not failed:
+                ok.add(unit)
+    return {u for u, failed in last.items() if failed and u not in ok}
 
 
 # ── hashes / manifest ────────────────────────────────────────────────

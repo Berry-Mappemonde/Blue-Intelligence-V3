@@ -65,13 +65,17 @@ def export_root() -> Path:
 async def resolve_launch(db, *, layer: str = "poe", run_id: str | None = None,
                          resume: bool = False, label: str = "", limit: int = 0,
                          zones: list[int] | None = None, concurrency: int = 2,
-                         variant: str = "tinyfish") -> dict:
+                         variant: str = "tinyfish",
+                         retry_errored: bool = False) -> dict:
     """Check the request and return the execute_run arguments.
 
     A new run never reuses an existing run_id. A resume reuses the stored
     parameters so the zone list cannot drift between attempts.
+    retry_errored only applies to a resume.
     """
     normalize_layer(layer)
+    if retry_errored and not resume:
+        raise ValueError("retry_errored requires resume=True")
     if resume:
         if not run_id:
             raise ValueError("run_id required to resume")
@@ -87,30 +91,40 @@ async def resolve_launch(db, *, layer: str = "poe", run_id: str | None = None,
             "only_zones": params.get("only_zones"),
             "concurrency": int(params.get("concurrency") or concurrency),
             "variant": params.get("variant") or variant,
+            "retry_errored": bool(retry_errored),
         }
     rid = run_id or poe_runs.new_run_id()
     artifacts.safe_run_id(rid)
     if await db.poe_runs.find_one({"_id": rid}):
         raise RunExists(f"run {rid} already exists — pass resume=True")
     return {"run_id": rid, "resume": False, "label": label, "limit": limit,
-            "only_zones": zones, "concurrency": concurrency, "variant": variant}
+            "only_zones": zones, "concurrency": concurrency, "variant": variant,
+            "retry_errored": False}
 
 
 async def start_run(db, state, *, layer: str = "poe", run_id: str | None = None,
                     resume: bool = False, label: str = "", limit: int = 0,
                     zones: list[int] | None = None, concurrency: int = 2,
                     variant: str = "tinyfish", rules_overrides: dict | None = None,
-                    profile: str | None = None, resolved: dict | None = None) -> dict:
-    """Launch (or resume) a run. Writes the Mongo run doc, trace and manifest."""
+                    profile: str | None = None, resolved: dict | None = None,
+                    retry_errored: bool = False) -> dict:
+    """Launch (or resume) a run. Writes the Mongo run doc, trace and manifest.
+
+    retry_errored=True (resume only): zones whose last trace status is an
+    error are redone once. Completed zones are never re-run and zones that
+    already have stored ports are left alone.
+    """
     args = resolved or await resolve_launch(
         db, layer=layer, run_id=run_id, resume=resume, label=label, limit=limit,
-        zones=zones, concurrency=concurrency, variant=variant)
+        zones=zones, concurrency=concurrency, variant=variant,
+        retry_errored=retry_errored)
     return await poe_runs.execute_run(
         db, state, args["run_id"], label=args["label"], limit=args["limit"],
         only_zones=args["only_zones"], concurrency=args["concurrency"],
         resume=args["resume"], variant=args["variant"],
         rules_overrides=None if args["resume"] else rules_overrides,
-        profile=None if args["resume"] else profile)
+        profile=None if args["resume"] else profile,
+        retry_errored=bool(args.get("retry_errored")))
 
 
 def _feature_collection(run_id: str, ports: list[dict]) -> dict:
