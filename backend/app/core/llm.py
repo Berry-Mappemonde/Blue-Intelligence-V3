@@ -38,6 +38,30 @@ def reader_context(context: str | None) -> str:
     """The part of ``context`` a port-extraction reader actually sends."""
     return (context or "")[:llm_context_chars.get()]
 
+
+# Answer cap (max_tokens) of a port-extraction call. One port object costs about
+# 50-70 tokens, so the cap bounds how many ports one answer can list.
+EXTRACT_OUTPUT_TOKENS = 2000           # Nightshift / Token Factory (generator, role "extract")
+EXTRACT_OUTPUT_TOKENS_FALLBACK = 2500  # NVIDIA NIM and OpenRouter readers
+EXTRACT_TOKENS_PER_PORT = 60
+EXTRACT_OUTPUT_RESERVE_TOKENS = 200    # JSON envelope and slack
+
+
+def extract_output_tokens(fallback: bool = False) -> int:
+    """max_tokens of an extraction answer (formalities.extract_output_tokens[_fallback])."""
+    from app.core.run_rules import get_rule
+    if fallback:
+        return int(get_rule("formalities.extract_output_tokens_fallback",
+                            EXTRACT_OUTPUT_TOKENS_FALLBACK))
+    return int(get_rule("formalities.extract_output_tokens", EXTRACT_OUTPUT_TOKENS))
+
+
+def extract_ports_per_answer() -> int:
+    """Ports one extraction answer can hold under the smallest reader cap (~30 at 2,000)."""
+    cap = min(extract_output_tokens(), extract_output_tokens(fallback=True))
+    return max(1, (cap - EXTRACT_OUTPUT_RESERVE_TOKENS) // EXTRACT_TOKENS_PER_PORT)
+
+
 MARINE_KW = [
     "ocean", "marine", "sea", "coral", "reef", "mangrove", "seagrass", "coastal",
     "fishery", "fisheries", "fishing", "mpa", "marine protected", "kelp", "whale",
@@ -524,7 +548,8 @@ async def extract_ports_openrouter(context: str, zone: dict,
         context=sent,
     )
     data = await _json_openrouter(
-        prompt, "Tu réponds uniquement en JSON strict.", settings, 2500)
+        prompt, "Tu réponds uniquement en JSON strict.", settings,
+        extract_output_tokens(fallback=True))
     ports = coerce_ports(data, context=context)
     for p in ports:
         p["extraction_engine"] = "openrouter"

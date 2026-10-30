@@ -528,7 +528,8 @@ async def _complete_one(key: str, payload: dict, *,
         last_err = "nvidia: no JSON in output"
         if delay is None:
             break
-        used["max_tokens"] = min(int(used.get("max_tokens") or max_tokens) * 2, 2500)
+        used["max_tokens"] = min(int(used.get("max_tokens") or max_tokens) * 2,
+                                 max(2500, max_tokens))
         if log:
             log(f"nvidia {used['model']}: no strict JSON, retry tokens={used['max_tokens']}")
         await asyncio.sleep(2.0)
@@ -656,7 +657,7 @@ async def extract_ports_nvidia(context: str, zone: dict,
                                model: str | None = None,
                                engine: str | None = None,
                                fallback: bool | None = None) -> list[dict]:
-    from app.core.llm import POE_EXTRACT_PROMPT, coerce_ports, reader_context
+    from app.core.llm import POE_EXTRACT_PROMPT, coerce_ports, extract_output_tokens, reader_context
 
     # Primary reader: extract chain (Pro → gpt-oss → Muse).
     # Kimi is second reader only via second_extract_choice (decree).
@@ -670,7 +671,8 @@ async def extract_ports_nvidia(context: str, zone: dict,
     )
     data, used = await complete_json_nvidia_tracked(
         "Tu réponds uniquement en JSON strict.", prompt, settings,
-        model=model, role=role, fallback=do_fb, max_tokens=2500, log=log)
+        model=model, role=role, fallback=do_fb,
+        max_tokens=extract_output_tokens(fallback=True), log=log)
     tag = engine or engine_label(used)
     ports = coerce_ports(data, context=context)
     for p in ports:

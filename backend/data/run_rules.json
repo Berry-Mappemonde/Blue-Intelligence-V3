@@ -1839,6 +1839,62 @@
       "group": "budget"
     },
     {
+      "id": "formalities.extract_output_tokens",
+      "mode": "formalities",
+      "kind": "budget",
+      "value": 2000,
+      "numeric": "int",
+      "unit": "tokens",
+      "interval": [
+        1000,
+        16000
+      ],
+      "vary": true,
+      "principle": "max_tokens de la réponse du lecteur principal (Nemotron via Nightshift / Token Factory, rôle extract). Un port coûte ~60 tokens : 2 000 ≈ 30 ports par réponse, tokens de raisonnement compris. Les lots d'extraction sont resserrés pour ne pas dépasser ce nombre (min des deux plafonds).",
+      "cdc": "PLAN-V3.md §4 P0-3",
+      "code": [
+        "app/core/generator.py:_output_tokens",
+        "app/services/poe_pipeline.py:fit_output_cap"
+      ],
+      "title": {
+        "fr": "Réponse max d'une extraction (Nightshift)",
+        "en": "Max answer of one extraction (Nightshift)"
+      },
+      "help": {
+        "fr": "Taille maximale de la réponse du lecteur principal. Plus bas = des lots plus petits (plus d'appels) pour ne pas tronquer une longue liste.",
+        "en": "Largest answer the primary reader may return. Lower means smaller batches (more calls) so a long list is not cut off."
+      },
+      "group": "budget"
+    },
+    {
+      "id": "formalities.extract_output_tokens_fallback",
+      "mode": "formalities",
+      "kind": "budget",
+      "value": 2500,
+      "numeric": "int",
+      "unit": "tokens",
+      "interval": [
+        1000,
+        16000
+      ],
+      "vary": true,
+      "principle": "max_tokens des lecteurs de repli NVIDIA NIM et OpenRouter (valeur historique 2 500). Le découpage des lots suit le plus petit des deux plafonds.",
+      "cdc": "PLAN-V3.md §4 P0-3",
+      "code": [
+        "app/core/nvidia.py:extract_ports_nvidia",
+        "app/core/llm.py:extract_ports_openrouter"
+      ],
+      "title": {
+        "fr": "Réponse max d'une extraction (NIM / OpenRouter)",
+        "en": "Max answer of one extraction (NIM / OpenRouter)"
+      },
+      "help": {
+        "fr": "Taille maximale de la réponse des lecteurs de repli NVIDIA NIM et OpenRouter.",
+        "en": "Largest answer the NVIDIA NIM and OpenRouter fallback readers may return."
+      },
+      "group": "budget"
+    },
+    {
       "id": "formalities.source_max_chars",
       "mode": "formalities",
       "kind": "budget",

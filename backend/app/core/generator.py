@@ -53,6 +53,7 @@ NVIDIA_URL = 'https://integrate.api.nvidia.com/v1/chat/completions'
 DEFAULT_TRACE_LOG_DIR = Path(__file__).resolve().parents[3] / 'logs'
 REQUEST_TIMEOUT_S = 90.0   # per provider: one request plus its retry share this
 MAX_RETRIES = 1
+MAX_OUTPUT_TOKENS = 2000   # every role but "extract" (formalities.extract_output_tokens)
 RETRY_BACKOFF_S = 1.0
 PROBE_TIMEOUT_S = 3.0
 PROBE_TTL_S = 60
@@ -136,14 +137,24 @@ async def _probe(client, base, key, headers):
         return status
 
 
-async def _complete(client, url, headers, model, prompt, system, json_mode, budget):
+def _output_tokens(role):
+    """max_tokens of one completion; the port-extraction role reads its run rule."""
+    if role != 'extract':
+        return MAX_OUTPUT_TOKENS
+    from app.core.llm import extract_output_tokens
+    return extract_output_tokens()
+
+
+async def _complete(client, url, headers, model, prompt, system, json_mode, budget,
+                    max_tokens=None):
     messages = []
     if system:
         messages.append({'role': 'system', 'content': system})
     if json_mode:
         messages.append({'role': 'system', 'content': 'Return a single valid JSON object.'})
     messages.append({'role': 'user', 'content': prompt})
-    payload = dict(model=model, messages=messages, temperature=0, stream=False, max_tokens=2000)
+    payload = dict(model=model, messages=messages, temperature=0, stream=False,
+                   max_tokens=max_tokens or MAX_OUTPUT_TOKENS)
     if json_mode:
         payload['response_format'] = {'type': 'json_object'}
     response = await _request(client, 'POST', url, budget=budget, headers=headers, json=payload)
@@ -235,6 +246,7 @@ async def generate(prompt, system=None, *, json_mode=False, role='json', run_id=
     deadline = started + GENERATE_BUDGET_S
     reasons, result, provider = [], None, 'sample'
     requested_model = model or _setting('METERLESS_MODEL', 'MODEL_NAME', DEFAULT_MODEL)
+    out_tokens = _output_tokens(role)
     if _env('SAMPLE_MODE').lower() == 'true':
         reasons.append('SAMPLE_MODE=true')
     else:
@@ -254,7 +266,8 @@ async def generate(prompt, system=None, *, json_mode=False, role='json', run_id=
                     try:
                         result = await _complete(client, base + '/chat/completions', headers,
                                                  requested_model, prompt, system, json_mode,
-                                                 min(REQUEST_TIMEOUT_S, deadline - time.monotonic()))
+                                                 min(REQUEST_TIMEOUT_S, deadline - time.monotonic()),
+                                                 max_tokens=out_tokens)
                         provider = 'nightshift'
                     except _ProviderFailure as exc:
                         reasons.append(f'nightshift: {exc}')
@@ -281,7 +294,8 @@ async def generate(prompt, system=None, *, json_mode=False, role='json', run_id=
                                 result = await _complete(
                                     client, tf_url, {'Authorization': f'Bearer {tf_key}'},
                                     requested_model, prompt, system, json_mode,
-                                    min(REQUEST_TIMEOUT_S, deadline - time.monotonic()))
+                                    min(REQUEST_TIMEOUT_S, deadline - time.monotonic()),
+                                    max_tokens=out_tokens)
                                 tokenfactory.record(
                                     result['model'], result.get('usage'), run_id=rid)
                             provider = 'tokenfactory'
@@ -301,7 +315,8 @@ async def generate(prompt, system=None, *, json_mode=False, role='json', run_id=
                     try:
                         result = await _complete(client, NVIDIA_URL,
                             {'Authorization': f'Bearer {nvidia_key}'}, requested_model, prompt, system,
-                            json_mode, min(REQUEST_TIMEOUT_S, deadline - time.monotonic()))
+                            json_mode, min(REQUEST_TIMEOUT_S, deadline - time.monotonic()),
+                            max_tokens=out_tokens)
                         provider = 'nvidia'
                     except _ProviderFailure as exc:
                         reasons.append(f'nvidia: {exc}')

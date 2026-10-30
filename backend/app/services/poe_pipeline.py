@@ -46,7 +46,8 @@ from app.core.extract import (
 )
 from app.core.geo import classify_poe_point, geocode_port_dual, inland_exception_flags
 from app.core.llm import (
-    LLM_CONTEXT_CHARS, extract_ports, grounded_search, llm_context_chars, llm_geocode_port,
+    LLM_CONTEXT_CHARS, extract_ports, extract_ports_per_answer, grounded_search,
+    llm_context_chars, llm_geocode_port,
 )
 from app.core.rag import chunk_text, list_like_score, select_list_context, semantic_similarity
 from app.adapters import evidence_store
@@ -1223,6 +1224,45 @@ def extraction_batches(raw: str, size: int, overlap: int) -> list[str]:
     return batches
 
 
+EXTRACT_MIN_BATCH_CHARS = 300  # floor when a dense list is split for the answer cap
+_PORT_TERM_RE = re.compile(
+    r"\b(?:ports?|harbou?rs?|marinas?|docks?|wharf|wharves|quays?|piers?|anchorages?|"
+    r"terminals?|puertos?|portos?|muelles?|quais?)\b", re.I)
+_LIST_MARKER_RE = re.compile(r"^(?:[-–•*·▪●]|\(?\d{1,3}[.)]|\d{1,3}\.-|\(?[a-z][.)])\s*\S", re.I)
+_NAMED_PORT_RE = re.compile(
+    r"\b(?:Port|Puerto|Porto|Harbou?r) (?:of |de |do |du )?[A-Z][\w'’.-]+"
+    r"|\b[A-Z][\w'’.-]+(?: [A-Z][\w'’.-]+){0,2} (?:Port|Harbou?r|Marina|Dock|Wharf|Quay|Pier|Anchorage)\b")
+
+
+def estimated_port_mentions(text: str) -> int:
+    """Rough count of the ports a reader would list from ``text``: short list lines
+    (a list marker or a port word, at most 10 words) or distinct "Port of X" /
+    "X Marina" names, whichever is higher."""
+    entries = 0
+    for line in (text or "").splitlines():
+        line = line.strip()
+        if line and len(line.split()) <= 10 and (_LIST_MARKER_RE.match(line)
+                                                 or _PORT_TERM_RE.search(line)):
+            entries += 1
+    return max(entries, len(set(_NAMED_PORT_RE.findall(text or ""))))
+
+
+def fit_output_cap(batches: list[str], max_ports: int, overlap: int,
+                   min_chars: int = EXTRACT_MIN_BATCH_CHARS) -> list[str]:
+    """Split again any batch likely to list more than ``max_ports`` ports (the answer
+    would be cut at max_tokens), down to ``min_chars`` per batch."""
+    out: list[str] = []
+    for batch in batches:
+        n = estimated_port_mentions(batch)
+        if n <= max_ports or len(batch) <= min_chars:
+            out.append(batch)
+            continue
+        size = max(min_chars, len(batch) * max_ports // n)
+        parts = extraction_batches(batch, size, min(overlap, size // 8))
+        out.extend(fit_output_cap(parts, max_ports, overlap, min_chars) if len(parts) > 1 else [batch])
+    return out
+
+
 def _list_density(text: str) -> float:
     chunks = chunk_text(text, size=500)
     return sum(list_like_score(c) for c in chunks) / max(1, len(chunks))
@@ -1245,11 +1285,15 @@ async def _extract_primary(context: str, zone: dict, log, rec=None,
                            settings: dict | None = None) -> list[dict]:
     """Primary reader. Input that fits the reader window: one call on ``context``, as
     before. Raw source text longer than the window (``catalog_text``, the pipeline's
-    joined sources): one call per batch (``extraction_batches``) so no port sits past
-    the window, merged through ``core.dedup.deduplicate_list``."""
+    joined sources), or likely to list more ports than one answer holds
+    (``extract_ports_per_answer``): one call per batch (``extraction_batches``, then
+    ``fit_output_cap``) so no port sits past the window or the answer cap, merged
+    through ``core.dedup.deduplicate_list``."""
     from app.core.run_rules import get_rule
     from app.core.tokenfactory import LLMCallCapReached
-    if catalog_text is None or len(catalog_text) <= llm_context_chars.get():
+    max_ports = extract_ports_per_answer()
+    if catalog_text is None or (len(catalog_text) <= llm_context_chars.get()
+                                and estimated_port_mentions(catalog_text) <= max_ports):
         if not _take_extract_calls(1):
             raise LLMCallCapReached("formalities.extract_max_llm_calls reached")
         return await extract_ports(context, zone, settings=settings, log=log)
@@ -1257,7 +1301,11 @@ async def _extract_primary(context: str, zone: dict, log, rec=None,
     size = int(get_rule("formalities.extract_batch_chars", LLM_CONTEXT_CHARS))
     overlap = int(get_rule("formalities.extract_batch_overlap_chars", EXTRACT_BATCH_OVERLAP_CHARS))
     workers = int(get_rule("formalities.extract_batch_concurrency", EXTRACT_BATCH_CONCURRENCY))
-    batches = extraction_batches(catalog_text, size, overlap)
+    window_batches = extraction_batches(catalog_text, size, overlap)
+    batches = fit_output_cap(window_batches, max_ports, overlap)
+    if len(batches) > len(window_batches):
+        log(f"plafond de sortie (~{max_ports} ports par réponse): "
+            f"{len(window_batches)} → {len(batches)} lot(s)")
     granted = _take_extract_calls(len(batches))
     if not granted:
         raise LLMCallCapReached("formalities.extract_max_llm_calls reached")
@@ -1289,6 +1337,7 @@ async def _extract_primary(context: str, zone: dict, log, rec=None,
         + (f", {len(errors)} lot(s) en échec" if errors else ""))
     await emit(rec, "extraction_batches", batches=len(batches), sent=len(kept),
                failed=len(errors), batch_chars=size, raw_chars=len(catalog_text),
+               window_batches=len(window_batches), max_ports_per_answer=max_ports,
                ports_read=len(found), ports=len(merged))
     return merged
 

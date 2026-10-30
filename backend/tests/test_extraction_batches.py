@@ -201,3 +201,104 @@ def test_source_safety_ceiling_is_a_rule(monkeypatch):
     assert "Port Yankee" not in texts[0]
     assert len(texts[0]) == len("[SOURCE: https://planning.gov.example/Scoping-Report.pdf]\n") + 60000
     assert any("plafond de sécurité 60000" in m for m in logs)
+
+
+def _names(n: int) -> list[str]:
+    letters = "abcdefghijklmnopqrstuvwxyz"
+    return [f"Port {'ABCDEFGHIJ'[i // 26 % 10]}{letters[i % 26]}{letters[i // 26 % 26]}" for i in range(n)]
+
+
+@pytest.fixture
+def capped_reader(reader, monkeypatch):
+    """The stub reader, with its answer cut at the ports one answer can hold."""
+    async def capped(context, zone, settings=None, log=None):
+        text = llm.reader_context(context)
+        reader.append(text)
+        names = list(dict.fromkeys(NAME_RE.findall(text)))[:llm.extract_ports_per_answer()]
+        return [{"name": n, "city": None, "note": None} for n in names]
+
+    monkeypatch.setattr(poe, "extract_ports", capped)
+    return reader
+
+
+def test_default_caps_hold_about_30_ports_per_answer():
+    assert llm.extract_output_tokens() == 2000 == catalog_default("formalities.extract_output_tokens")
+    assert llm.extract_output_tokens(fallback=True) == 2500 == catalog_default(
+        "formalities.extract_output_tokens_fallback")
+    assert llm.extract_ports_per_answer() == 30
+
+
+def test_dense_list_is_split_under_the_answer_cap(capped_reader):
+    names = _names(90)
+    raw = _source("https://customs.example/ports",
+                  "Designated ports of entry:\n" + "\n".join(f"- {n}, customs and immigration" for n in names))
+    assert len(raw) < llm.LLM_CONTEXT_CHARS  # fits the window: the old path made one call
+
+    old = _core(raw)  # catalog_text=None: one call, answer cut at 30 ports
+    assert len(capped_reader) == 1 and len(old) == 30
+
+    capped_reader.clear()
+    ports = _core(raw, catalog_text=raw)
+    assert {p["name"] for p in ports} == set(names)
+    assert len(capped_reader) >= 3
+    assert all(poe.estimated_port_mentions(s) <= 30 for s in capped_reader)
+    assert all(s.startswith("[SOURCE: https://customs.example/ports]\n") for s in capped_reader)
+
+
+def test_lower_cap_makes_smaller_batches(capped_reader):
+    names = _names(40)
+    raw = _source("https://customs.example/ports", "\n".join(f"- {n}, customs and immigration" for n in names))
+    assert {p["name"] for p in _core(raw, catalog_text=raw)} == set(names)
+    calls_default = len(capped_reader)
+    assert calls_default == 2
+
+    capped_reader.clear()
+    snap = snapshot_for_run(mode="formalities", overrides={"formalities.extract_output_tokens": 1000})
+    token = bind_rules(snap)
+    try:
+        assert llm.extract_ports_per_answer() == 13
+        assert {p["name"] for p in _core(raw, catalog_text=raw)} == set(names)
+    finally:
+        reset_rules(token)
+    assert len(capped_reader) > calls_default
+
+
+def test_prose_does_not_trigger_extra_splits():
+    raw = _source("https://gov.example/law", _prose(18000) + " The port of entry is Port Alpha.")
+    assert poe.estimated_port_mentions(raw) <= 2
+    assert poe.fit_output_cap([raw], 30, 1500) == [raw]
+
+
+def test_readers_send_the_configured_caps(monkeypatch):
+    from app.core import generator, nvidia
+    seen = {}
+
+    async def fake_openrouter(prompt, system, settings, max_tokens, images=None):
+        seen["openrouter"] = max_tokens
+        return {"ports": []}
+
+    async def fake_nim(system, prompt, settings, **kwargs):
+        seen["nvidia"] = kwargs["max_tokens"]
+        return {"ports": []}, "nvidia/test-model"
+
+    monkeypatch.setattr(llm, "_json_openrouter", fake_openrouter)
+    monkeypatch.setattr(nvidia, "complete_json_nvidia_tracked", fake_nim)
+
+    async def readers():
+        await llm.extract_ports_openrouter("Port Alpha.", ZONE, settings={})
+        await nvidia.extract_ports_nvidia("Port Alpha.", ZONE, settings={})
+
+    asyncio.run(readers())
+    assert seen == {"openrouter": 2500, "nvidia": 2500}
+    assert generator._output_tokens("extract") == 2000 and generator._output_tokens("judge") == 2000
+
+    snap = snapshot_for_run(mode="formalities", overrides={"formalities.extract_output_tokens": 4000,
+                                                           "formalities.extract_output_tokens_fallback": 6000})
+    token = bind_rules(snap)
+    try:
+        asyncio.run(readers())
+        assert seen == {"openrouter": 6000, "nvidia": 6000}
+        assert generator._output_tokens("extract") == 4000
+        assert generator._output_tokens("judge") == generator.MAX_OUTPUT_TOKENS == 2000
+    finally:
+        reset_rules(token)
