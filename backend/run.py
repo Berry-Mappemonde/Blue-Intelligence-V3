@@ -4,6 +4,8 @@
   python backend/run.py --zone "Bermuda" [--run-id RUN123] [--sample-mode] [--timeout 300] [--trace PATH]
   python backend/run.py --input input_examples/01_bermuda.json [--output out.json]
   python backend/run.py --serve        # POST /run, demo page and GET /healthz on PORT (default 8000)
+  python backend/run.py --resume RUN_ID [--retry-errored]   # resume a PoE run (unified runner, P0-4)
+  python backend/run.py --export RUN_ID                     # export a finished run (data/exports/RUN_ID)
 
 It runs a single cycle of the PoE verification pipeline. For the full Blue
 Intelligence API use uvicorn app.main:app on port 8001.
@@ -13,6 +15,11 @@ and backend/.env are loaded if present (never overriding the real environment),
 Mongo defaults satisfy app.config at import (the pipeline never connects), and
 SAMPLE_MODE is switched on when Zetaris or Meterless credentials are missing.
 Trace events and the result JSON go to stdout; the readable summary and logs go to stderr.
+
+--resume and --export work on the Mongo run space (poe_runs, ...) through
+app.services.unified_runs, without the API: they need MONGO_URL / DB_NAME
+pointing at the database that holds the run. The run summary or export
+result goes to stdout as JSON. Upload stays off unless BI_OBJECT_STORAGE_UPLOAD is set.
 """
 from __future__ import annotations
 
@@ -89,12 +96,63 @@ def _print_summary(result: dict) -> None:
               f"{'remembered' if mem.get('remembered') else 'not remembered'}", file=out)
 
 
+def _default_db():
+    from app.db import db
+    return db
+
+
+async def resume_run(run_id: str, *, retry_errored: bool = False, db=None, state=None) -> dict:
+    """Resume a run through the unified runner; logs go to stderr."""
+    from app.core.tasks import TaskState
+    from app.services import unified_runs
+
+    if state is None:
+        state = TaskState(max_logs=2000)
+        state.start()
+        _log = state.log
+
+        def log(msg: str) -> None:
+            _log(msg)
+            print(msg, file=sys.stderr, flush=True)
+        state.log = log
+    try:
+        return await unified_runs.start_run(db if db is not None else _default_db(), state,
+                                            run_id=run_id, resume=True,
+                                            retry_errored=retry_errored)
+    finally:
+        state.finish()
+
+
+async def export_run(run_id: str, *, db=None, **kwargs) -> dict:
+    from app.services import unified_runs
+    return await unified_runs.export_run(db if db is not None else _default_db(), run_id, **kwargs)
+
+
+def run_command(args, db=None) -> int:
+    """--resume / --export. Result JSON on stdout, errors on stderr."""
+    import asyncio
+    try:
+        if args.resume:
+            result = asyncio.run(resume_run(args.resume, retry_errored=args.retry_errored, db=db))
+        else:
+            result = asyncio.run(export_run(args.export, db=db))
+    except (ValueError, FileExistsError) as exc:
+        LOG.error('%s', exc)
+        return 2
+    print(json.dumps(result, indent=2, ensure_ascii=False, default=str), flush=True)
+    return 1 if args.resume and result.get('errors') else 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument('--zone', help='EEZ zone name to verify')
     mode.add_argument('--input', help='JSON file: {"zone_name": str, "run_id": optional str}')
     mode.add_argument('--serve', action='store_true', help='serve POST /run, the demo page and GET /healthz')
+    mode.add_argument('--resume', metavar='RUN_ID', help='resume a PoE run; completed zones are never re-run')
+    mode.add_argument('--export', metavar='RUN_ID', help='export a finished run to data/exports/RUN_ID')
+    parser.add_argument('--retry-errored', action='store_true',
+                        help='with --resume: redo errored zones once (default: errored zones count as done)')
     parser.add_argument('--run-id', help='Run ID (generated if not provided)')
     parser.add_argument('--sample-mode', action='store_true',
                         help='Run in sample mode (offline, no API keys needed)')
@@ -105,6 +163,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument('--no-dotenv', action='store_true',
                         help='ignore .env files (simulates a fresh clone)')
     args = parser.parse_args(argv)
+    if args.retry_errored and not args.resume:
+        parser.error('--retry-errored requires --resume')
     level = os.environ.get('LOG_LEVEL', 'INFO').upper()
     logging.basicConfig(level=getattr(logging, level, logging.INFO), stream=sys.stderr,
                         format='%(levelname)s %(name)s: %(message)s')
@@ -113,6 +173,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.trace:
         os.environ['TRACE_LOG_PATH'] = args.trace
     prepare_environment(load_env_files=not args.no_dotenv)
+
+    if args.resume or args.export:
+        return run_command(args)
 
     if args.serve:
         import uvicorn

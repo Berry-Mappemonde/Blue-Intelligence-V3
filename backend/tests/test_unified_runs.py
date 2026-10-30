@@ -579,3 +579,67 @@ def test_retry_errored_requires_resume(env):
         _run(unified_runs.start_run(env["db"], TaskState(), run_id="r-new",
                                     retry_errored=True))
     assert env["db"].poe_runs.docs == []
+
+
+# ── CLI: backend/run.py --resume / --export ──────────────────────────
+
+def _cli():
+    import importlib.util
+    path = Path(__file__).resolve().parent.parent / "run.py"
+    spec = importlib.util.spec_from_file_location("bi_run_cli", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+@pytest.fixture
+def cli(env, monkeypatch):
+    mod = _cli()
+    monkeypatch.setattr(mod, "_default_db", lambda: env["db"])
+    monkeypatch.setenv("SAMPLE_MODE", "true")  # restored after the test
+    return mod
+
+
+def test_cli_resume_with_and_without_retry(env, monkeypatch, cli, capsys):
+    rid = _run_with_errors(env, monkeypatch, run_id="r-cli")
+    calls: list = []
+    monkeypatch.setattr(poe_runs.poe, "generate_zone_poe",
+                        _failing_stub(calls, attempt=2, fail={}))
+    assert cli.main(["--no-dotenv", "--resume", rid]) == 0
+    assert calls == []
+    out = json.loads(capsys.readouterr().out)
+    assert out["run_id"] == rid and out["zones_done"] == 4
+
+    assert cli.main(["--no-dotenv", "--resume", rid, "--retry-errored"]) == 0
+    assert sorted(calls) == [2, 4]
+
+
+def test_cli_resume_unknown_run_exits_2(env, cli, capsys):
+    assert cli.main(["--no-dotenv", "--resume", "r-missing"]) == 2
+    assert capsys.readouterr().out == ""
+
+
+def test_cli_export_then_refuses_overwrite(env, monkeypatch, cli, capsys):
+    rid = _finished_run(env, monkeypatch, run_id="r-cli-exp")
+    assert cli.main(["--no-dotenv", "--export", rid]) == 0
+    out = json.loads(capsys.readouterr().out)
+    assert Path(out["dir"]) == env["exports"] / rid
+    assert out["upload"] == {"uploaded": False, "reason": "disabled"}
+    assert cli.main(["--no-dotenv", "--export", rid]) == 2
+
+
+def test_cli_functions_called_directly_with_stub_db(env, monkeypatch):
+    mod = _cli()  # _default_db is never reached when a db is passed
+    monkeypatch.setattr(mod, "_default_db", lambda: pytest.fail("default db used"))
+    rid = _finished_run(env, monkeypatch, run_id="r-cli-fn")
+    summary = _run(mod.resume_run(rid, db=env["db"]))
+    assert summary["run_id"] == rid
+    out = _run(mod.export_run(rid, db=env["db"]))
+    assert Path(out["dir"]).is_dir()
+
+
+def test_cli_argument_rules(cli):
+    with pytest.raises(SystemExit):
+        cli.main(["--no-dotenv", "--zone", "Bermuda", "--retry-errored"])
+    with pytest.raises(SystemExit):
+        cli.main(["--no-dotenv", "--resume", "a", "--export", "a"])
