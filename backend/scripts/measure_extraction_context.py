@@ -1,7 +1,7 @@
 """Offline measurement: how much source text the port-extraction readers never see.
 
 For each zone it rebuilds the context the pipeline would assemble (one "[SOURCE: url]"
-block per fetched page, each capped at 60,000 chars by ``_collect_texts``), runs the real
+block per fetched page, each capped at ``formalities.source_max_chars`` by ``_collect_texts``), runs the real
 ``extraction_context`` on it and reports the branch (raw / rag / catalog), the window the
 readers send, the chars never sent, and whether each designated port's passage reaches the
 reader window and the NER window (first 20,000 chars).
@@ -40,9 +40,10 @@ rag._st_failed = True  # TF-IDF ranking: never load (or download) an embedding m
 
 from app.core.extract import extract_structured_ports  # noqa: E402
 from app.core.llm import LLM_CONTEXT_CHARS  # noqa: E402
-from app.services.poe_pipeline import extraction_context  # noqa: E402
+from app.core.run_rules import catalog_default  # noqa: E402
+from app.services.poe_pipeline import SOURCE_MAX_CHARS, extraction_context  # noqa: E402
 
-SOURCE_CAP = 60000  # poe_pipeline._collect_texts: text[:60000] per source
+SOURCE_CAP = int(catalog_default("formalities.source_max_chars", SOURCE_MAX_CHARS))  # _collect_texts
 NER_CHARS = 20000   # poe_pipeline._extract_ports_core._ner: context[:20000]
 FILLER = "General administrative information about the agency and its services. "
 
@@ -129,7 +130,7 @@ def measure_zone(mrgid: int, zone: dict) -> dict:
     passages = []
     for page, sec, abs_off in spans:
         if abs_off >= len(raw):
-            reach = "lost at collection (beyond 60k of its source)"
+            reach = f"lost at collection (beyond {SOURCE_CAP} chars of its source)"
         elif branch == "rag":
             frags = _fragments(sec["text"])
             hit = sum(1 for f in frags if f in sent_n)

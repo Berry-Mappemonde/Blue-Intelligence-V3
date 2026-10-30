@@ -1172,6 +1172,7 @@ async def extract_ports_llm(context: str, zone: dict, log, rec=None,
 EXTRACT_BATCH_OVERLAP_CHARS = 1500
 EXTRACT_BATCH_CONCURRENCY = 3
 EXTRACT_MAX_LLM_CALLS = 1000
+SOURCE_MAX_CHARS = 500_000  # per fetched source; was a hard 60,000 cut before batching
 _SOURCE_BLOCK_RE = re.compile(r"\n\n(?=\[(?:SOURCE: |SYNTHÈSE DE RECHERCHE))")
 
 
@@ -2165,6 +2166,8 @@ async def _collect_texts(official: list[dict], log, rec=None, max_fetch: int = 8
     """Step 3 — Collection: N1∥N2 cascade, anti-bot mirror, official attached PDFs
     (even if the page is already long), depth-2 if the text is thin.
     Attachments go before the rest of the SERP queue (France lesson: list + map)."""
+    from app.core.run_rules import get_rule
+    source_max = int(get_rule("formalities.source_max_chars", SOURCE_MAX_CHARS))
     texts, hashes, used_sources, excerpts = [], {}, [], {}
     queue = list(official)
     seen_urls: set[str] = set()
@@ -2225,7 +2228,12 @@ async def _collect_texts(official: list[dict], log, rec=None, max_fetch: int = 8
             and list_url_bonus(url) >= 0.45
         )
         if (text and len(text) > 200) or keep_short_pdf:
-            texts.append(f"[SOURCE: {url}]\n{(text or '')[:60000]}")
+            # Whole text: the primary reader batches long sources. Only a safety
+            # ceiling (formalities.source_max_chars) bounds a runaway document.
+            if text and len(text) > source_max:
+                log(f"source {domain_of(url)}: {len(text)} chars, coupée au plafond "
+                    f"de sécurité {source_max}")
+            texts.append(f"[SOURCE: {url}]\n{(text or '')[:source_max]}")
             excerpts[url] = (text or "")[:2500]
             used_sources.append({"url": url, "domain": c.get("domain") or domain_of(url),
                                  "md5": hashes.get(url), "collected_at": now_iso(),

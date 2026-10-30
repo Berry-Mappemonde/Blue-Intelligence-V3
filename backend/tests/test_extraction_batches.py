@@ -163,3 +163,41 @@ def test_rule_defaults_match_code_constants():
     assert catalog_default("formalities.extract_batch_overlap_chars") == poe.EXTRACT_BATCH_OVERLAP_CHARS
     assert catalog_default("formalities.extract_batch_concurrency") == poe.EXTRACT_BATCH_CONCURRENCY
     assert catalog_default("formalities.extract_max_llm_calls") == poe.EXTRACT_MAX_LLM_CALLS
+
+
+def _collect(monkeypatch, body: str, url: str = "https://planning.gov.example/Scoping-Report.pdf"):
+    async def fake_cascade(u, min_chars=200, log=None):
+        return {"text": body, "html": "", "md5": "m", "level": "N1-pymupdf", "blocked": False}
+
+    monkeypatch.setattr(poe, "extract_cascade", fake_cascade)
+    logs: list[str] = []
+    texts, _h, _used, _ex = asyncio.run(poe._collect_texts([{"url": url, "domain": "gov.example"}],
+                                                           logs.append))
+    return texts, logs
+
+
+def test_port_named_past_60k_of_a_source_is_extracted(reader, monkeypatch):
+    # Bermuda case: the designating sentence sits at offset ~71,457 of one PDF.
+    body = _prose(71457) + "\nThe designated port of entry is Port Zulu.\n" + _prose(4000)
+    texts, _logs = _collect(monkeypatch, body)
+    assert len(texts) == 1 and "Port Zulu" in texts[0]  # no longer cut at 60,000
+    raw = "\n\n".join(texts)
+    assert raw.index("Port Zulu") > 60000
+
+    context, _window, _branch = poe.extraction_context(raw, [], "ports of entry")
+    names = {p["name"] for p in _core(context, catalog_text=raw)}
+    assert "Port Zulu" in names
+    assert all(len(s) <= llm.LLM_CONTEXT_CHARS for s in reader)
+
+
+def test_source_safety_ceiling_is_a_rule(monkeypatch):
+    assert catalog_default("formalities.source_max_chars") == poe.SOURCE_MAX_CHARS > 60000
+    snap = snapshot_for_run(mode="formalities", overrides={"formalities.source_max_chars": 60000})
+    token = bind_rules(snap)
+    try:
+        texts, logs = _collect(monkeypatch, _prose(70000) + " Port Yankee.")
+    finally:
+        reset_rules(token)
+    assert "Port Yankee" not in texts[0]
+    assert len(texts[0]) == len("[SOURCE: https://planning.gov.example/Scoping-Report.pdf]\n") + 60000
+    assert any("plafond de sécurité 60000" in m for m in logs)

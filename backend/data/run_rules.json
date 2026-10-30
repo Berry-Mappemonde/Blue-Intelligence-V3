@@ -1839,6 +1839,33 @@
       "group": "budget"
     },
     {
+      "id": "formalities.source_max_chars",
+      "mode": "formalities",
+      "kind": "budget",
+      "value": 500000,
+      "numeric": "int",
+      "unit": "chars",
+      "interval": [
+        60000,
+        5000000
+      ],
+      "vary": true,
+      "principle": "Plafond de sécurité par source collectée. L'ancienne coupe dure à 60 000 chars perdait les ports nommés plus loin (Bermudes : passage désignant à l'offset 71 457). Le texte entier passe désormais à l'extraction par lots ; ce plafond ne borne qu'un document démesuré (500 000 chars ≈ 25 lots de 20 000).",
+      "cdc": "PLAN-V3.md §4 P0-3",
+      "code": [
+        "app/services/poe_pipeline.py:_collect_texts"
+      ],
+      "title": {
+        "fr": "Taille max d'une source collectée",
+        "en": "Max size of one collected source"
+      },
+      "help": {
+        "fr": "Caractères gardés par page ou PDF récupéré. Au-delà, le reste est coupé et noté dans le journal. Plus haut = plus d'appels d'extraction pour les documents longs.",
+        "en": "Characters kept per fetched page or PDF. Past it, the rest is cut and logged. Higher means more extraction calls for long documents."
+      },
+      "group": "budget"
+    },
+    {
       "id": "formalities.stale_days",
       "mode": "formalities",
       "kind": "budget",
