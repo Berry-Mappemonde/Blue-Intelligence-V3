@@ -1422,11 +1422,16 @@ async def _extract_primary(context: str, zone: dict, log, rec=None,
         tasks = {asyncio.ensure_future(read(i)): i for i in order}
         loop = asyncio.get_running_loop()
         timeout = None if stop_at is None else max(0.0, stop_at - loop.time())
-        done, pending = await asyncio.wait(list(tasks), timeout=timeout)
-        for task in pending:
-            task.cancel()
-        if pending:
-            await asyncio.gather(*pending, return_exceptions=True)
+        try:
+            done, pending = await asyncio.wait(list(tasks), timeout=timeout)
+        finally:
+            # Also when the zone is cancelled from outside (asyncio.wait leaves its
+            # tasks running): no batch keeps spending after the zone is gone.
+            left = [t for t in tasks if not t.done()]
+            for task in left:
+                task.cancel()
+            if left:
+                await asyncio.gather(*left, return_exceptions=True)
         for task in done:
             if not task.cancelled():
                 results[tasks[task]] = task.exception() or task.result()

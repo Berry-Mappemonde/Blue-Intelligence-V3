@@ -259,6 +259,41 @@ def test_deadline_keeps_the_batches_already_read(reader, monkeypatch):
     assert any("délai d'extraction atteint: 2/4" in m for m in logs)
 
 
+def test_zone_cancelled_from_outside_cancels_its_batches(reader, monkeypatch):
+    """Round 4, finding 2: cancelling the zone stops the batches in flight."""
+    started: list[str] = []
+    stopped: list[str] = []
+
+    async def hang(context, zone, settings=None, log=None):
+        started.append(context)
+        try:
+            await asyncio.sleep(30)
+        except asyncio.CancelledError:
+            stopped.append(context)
+            raise
+        return []
+
+    monkeypatch.setattr(poe, "extract_ports", hang)
+
+    async def run():
+        async def zone():
+            with poe.zone_extract_budget():
+                return await poe._extract_ports_core("x", ZONE, lambda m: None,
+                                                     catalog_text=_big_zone(3))
+
+        task = asyncio.ensure_future(zone())
+        while len(started) < 3:
+            await asyncio.sleep(0.01)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        await asyncio.sleep(0.05)  # in the same loop: nothing is left running
+        return len(stopped), [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
+
+    stopped_in_loop, left = asyncio.run(asyncio.wait_for(run(), timeout=5))
+    assert stopped_in_loop == 3 and left == []
+
+
 class _Cursor:
     def __init__(self, docs):
         self.docs = docs
