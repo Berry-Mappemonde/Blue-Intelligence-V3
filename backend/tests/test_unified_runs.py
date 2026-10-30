@@ -1289,3 +1289,70 @@ def test_api_resume_refused_while_running_elsewhere(env, api):
     res = _post_concurrently(api["app"], [("/api/runs", {"run_id": "r-api-busy", "resume": True,
                                                          "force": True})])
     assert res[0].status_code == 202 and api["started"] == ["r-api-busy"]
+
+
+# ── exports of one run by two processes ──────────────────────────────
+
+def _other_process_export(env, rid):
+    """A second process exports the same run (no shared _EXPORTING lock)."""
+    run = next(d for d in env["db"].poe_runs.docs if d["_id"] == rid)
+    ports = [d for d in env["db"].poe_run_ports.docs if d["run_id"] == rid]
+    zones = [d for d in env["db"].poe_run_zones.docs if d["run_id"] == rid]
+    return unified_runs._write_export(run, rid, env["exports"], ports, zones, None, None)
+
+
+def test_other_process_finishing_first_mid_write(env, monkeypatch):
+    """The other process exports while this one is still writing its files:
+    neither deletes the other's files and the late one gets FileExistsError."""
+    rid = _finished_run(env, monkeypatch, run_id="r-two-proc")
+    real_dump = unified_runs._dump
+    other = {}
+
+    def dump(path, doc):
+        # ports.geojson written, zones.json not yet: the other process runs
+        # start to end in between.
+        if path.name == "zones.json" and not other:
+            other["result"] = "running"
+            other["result"] = _other_process_export(env, rid)
+        return real_dump(path, doc)
+
+    monkeypatch.setattr(unified_runs, "_dump", dump)
+    with pytest.raises(FileExistsError):
+        _run(unified_runs.export_run(env["db"], rid))
+    base = env["exports"] / rid
+    assert unified_runs.verify_export(base) == other["result"][1]
+    assert sorted(p.name for p in env["exports"].iterdir()) == [rid]  # no temp left
+    assert oct(base.stat().st_mode & 0o777) == oct(0o755)
+
+
+def test_export_appearing_just_before_the_rename(env, monkeypatch):
+    """The other export lands between the exists() check and the rename:
+    the rename is refused as FileExistsError, not a raw OSError."""
+    rid = _finished_run(env, monkeypatch, run_id="r-two-rename")
+    real_os = unified_runs.os
+    other = {}
+
+    class _OsProxy:
+        def __getattr__(self, name):
+            return getattr(real_os, name)
+
+        def _move(self, real, src, dst):
+            if not other:
+                other["result"] = "running"
+                other["result"] = _other_process_export(env, rid)
+            return real(src, dst)
+
+        def rename(self, src, dst):
+            return self._move(real_os.rename, src, dst)
+
+        def replace(self, src, dst):
+            return self._move(real_os.replace, src, dst)
+
+    monkeypatch.setattr(unified_runs, "os", _OsProxy())
+    with pytest.raises(FileExistsError):
+        _run(unified_runs.export_run(env["db"], rid))
+    monkeypatch.setattr(unified_runs, "os", real_os)
+    base = env["exports"] / rid
+    assert unified_runs.verify_export(base) == other["result"][1]
+    assert sorted(p.name for p in env["exports"].iterdir()) == [rid]
+    assert "exports" not in env["db"].poe_runs.docs[0]  # the late one recorded nothing

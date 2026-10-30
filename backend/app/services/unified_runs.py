@@ -21,6 +21,7 @@ import asyncio
 import json
 import os
 import shutil
+import tempfile
 import time
 from pathlib import Path
 
@@ -41,7 +42,8 @@ EXPORT_FILES = ("ports.geojson", "zones.json", artifacts.TRACE_NAME)
 GEOPARQUET_NOTE = "not written: pyarrow / geopandas are not backend dependencies"
 # Run ids with an export in progress in this process. Checked and set with
 # no await in between, so a second concurrent export of the same run is
-# refused (409) instead of deleting the first one's .partial folder.
+# refused (409) at once. Across processes, each export attempt writes into
+# its own temp folder and the final rename refuses an existing export.
 _EXPORTING: set[str] = set()
 
 
@@ -274,12 +276,36 @@ async def _export_locked(db, run: dict, rid: str, out_root, storage_config,
 
 def _write_export(run: dict, rid: str, root: Path, ports: list, zones: list,
                   storage_config, storage_client):
-    """Write the export folder (via a .partial dir), then upload it. Blocking."""
+    """Write the export folder, then upload it. Blocking.
+
+    Each attempt writes into its own temp folder (pid + random suffix), so
+    another process exporting the same run never touches it, then renames
+    it into place. The rename fails if the export already exists: the late
+    finisher gets FileExistsError and the first export is left intact.
+    """
     out = root / rid
-    partial = root / f".{rid}.partial"
-    if partial.exists():
-        shutil.rmtree(partial)
-    partial.mkdir(parents=True)
+    root.mkdir(parents=True, exist_ok=True)
+    partial = Path(tempfile.mkdtemp(dir=root, prefix=f".{rid}.partial.{os.getpid()}."))
+    try:
+        partial.chmod(0o755)  # mkdtemp creates it 0700
+        manifest, counts = _fill_export(partial, run, rid, ports, zones)
+        if out.exists():  # another process exported meanwhile: keep its folder
+            raise FileExistsError(f"export {out} already exists")
+        try:
+            os.rename(partial, out)
+        except OSError as exc:  # ENOTEMPTY / EEXIST: it appeared after the check
+            raise FileExistsError(f"export {out} already exists") from exc
+    except BaseException:
+        shutil.rmtree(partial, ignore_errors=True)
+        raise
+    manifest_sha = artifacts.sha256_file(out / artifacts.MANIFEST_NAME)
+    upload = _safe_upload(out, rid, storage_config, storage_client)
+    return manifest, manifest_sha, counts, upload
+
+
+def _fill_export(partial: Path, run: dict, rid: str, ports: list,
+                 zones: list) -> tuple[dict, dict]:
+    """Write the export files and their manifest into `partial`."""
     fc = _feature_collection(rid, ports)
     _dump(partial / "ports.geojson", fc)
     _dump(partial / "zones.json", zones)
@@ -312,13 +338,7 @@ def _write_export(run: dict, rid: str, root: Path, ports: list, zones: list,
         extra={"export": {"formats": ["geojson"], "geoparquet": GEOPARQUET_NOTE,
                           "run_manifest_sha256": run.get("manifest_sha256")}})
     artifacts.write_json_atomic(partial / artifacts.MANIFEST_NAME, manifest)
-    if out.exists():  # another process exported meanwhile: keep its folder
-        shutil.rmtree(partial, ignore_errors=True)
-        raise FileExistsError(f"export {out} already exists")
-    os.replace(partial, out)
-    manifest_sha = artifacts.sha256_file(out / artifacts.MANIFEST_NAME)
-    upload = _safe_upload(out, rid, storage_config, storage_client)
-    return manifest, manifest_sha, counts, upload
+    return manifest, counts
 
 
 def _safe_upload(out: Path, rid: str, storage_config, storage_client) -> dict:

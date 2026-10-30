@@ -84,8 +84,14 @@ Only `done` or `cancelled` runs can be exported. Output goes to
 `backend/data/exports/<run_id>/` (`BI_EXPORT_DIR` overrides the root):
 `ports.geojson`, `zones.json`, `trace.jsonl`, `manifest.json`. An existing
 export folder is never overwritten, and a second concurrent export of the
-same run is refused (409). GeoParquet is not written (no pyarrow /
-geopandas dependency).
+same run is refused (409). Each export attempt writes into its own hidden
+temp folder (`.<run_id>.partial.<pid>.<random>`) and renames it into place;
+when two processes export the same run, the one that finishes second gets
+the "export already exists" error (409 / exit 2) and its temp folder is
+removed, and the first export is left intact. A process killed mid-export
+leaves its temp folder behind; it is never read or uploaded and can be
+deleted by hand. GeoParquet is not written (no pyarrow / geopandas
+dependency).
 
 Paths stored in Mongo (`artifacts.dir`, `exports[].dir`) and returned by the
 API are relative to the data dir (`runs/<run_id>`, `exports/<run_id>`).
