@@ -731,3 +731,78 @@ def test_manifest_write_is_atomic(env, monkeypatch):
     assert order[:2] == ["fsync", "replace"]
     assert json.loads(path.read_text())["v"] == 3
     assert oct(path.stat().st_mode & 0o777) == oct(0o644)
+
+
+# ── HTTP launch routes: one execution per run_id ─────────────────────
+
+@pytest.fixture
+def api(env, monkeypatch):
+    """The runs router on a bare FastAPI app, wired to the fake db.
+
+    resolve_launch keeps its real body (one awaited Mongo lookup);
+    start_run is stubbed so only launches are counted.
+    """
+    from fastapi import FastAPI
+    from app.routers import runs as runs_router
+
+    monkeypatch.setattr(runs_router, "_db", env["db"])
+    monkeypatch.setattr(runs_router, "RUN_STATES", {})
+    started: list = []
+    release = asyncio.Event()
+
+    async def fake_start(db, state, *, resolved=None, **kw):
+        started.append(resolved["run_id"])
+        await release.wait()
+        return {"run_id": resolved["run_id"]}
+
+    monkeypatch.setattr(runs_router.unified_runs, "start_run", fake_start)
+    plain_find_one = _Coll.find_one
+
+    async def yielding_find_one(self, q, proj=None):
+        await asyncio.sleep(0)  # a real Mongo lookup suspends the request
+        return await plain_find_one(self, q, proj)
+
+    monkeypatch.setattr(_Coll, "find_one", yielding_find_one)
+    app = FastAPI()
+    app.include_router(runs_router.router)
+    return {"app": app, "router": runs_router, "started": started, "release": release}
+
+
+def _post_concurrently(app, requests):
+    import httpx
+
+    async def go():
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://t") as c:
+            res = await asyncio.gather(*(c.post(url, json=body) for url, body in requests))
+            await asyncio.sleep(0.05)  # let the launched runner tasks start
+            return res
+    return _run(go())
+
+
+def test_concurrent_resume_starts_the_run_once(env, api):
+    env["db"].poe_runs.docs.append({"_id": "r1", "state": "running", "label": "x",
+                                    "params": {"limit": 0, "only_zones": None,
+                                               "concurrency": 1, "variant": "tinyfish"}})
+    res = _post_concurrently(api["app"], [
+        ("/api/poe/runs", {"resume_run_id": "r1"}),
+        ("/api/runs", {"run_id": "r1", "resume": True})])
+    assert sorted(r.status_code for r in res) == [202, 409]
+    assert api["started"] == ["r1"]
+
+
+def test_concurrent_launches_respect_parallel_cap(env, api):
+    cap = api["router"].MAX_PARALLEL_RUNS
+    res = _post_concurrently(api["app"], [
+        ("/api/runs", {"run_id": f"r-cap-{i}"}) for i in range(cap + 2)])
+    assert sorted(r.status_code for r in res) == [202] * cap + [409] * 2
+    assert len(api["started"]) == cap
+
+
+def test_failed_lookup_releases_the_reserved_run(env, api):
+    res = _post_concurrently(api["app"], [("/api/runs", {"run_id": "r-x", "resume": True})])
+    assert res[0].status_code == 400  # unknown run
+    assert "r-x" not in api["router"].RUN_STATES
+    env["db"].poe_runs.docs.append({"_id": "r-x", "state": "done", "params": {}})
+    res = _post_concurrently(api["app"], [("/api/runs", {"run_id": "r-x", "resume": True})])
+    assert res[0].status_code == 202 and api["started"] == ["r-x"]

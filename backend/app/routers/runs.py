@@ -158,17 +158,28 @@ async def _launch_run(*, resume: bool, run_id: str, label: str, limit: int,
         raise HTTPException(409, f"déjà {MAX_PARALLEL_RUNS} runs actifs")
     if run_id in RUN_STATES and RUN_STATES[run_id].running:
         raise HTTPException(409, f"Run {run_id} already running")
+    # Reserve the slot before the first await: the check above and this
+    # registration must not be split by the Mongo lookup, or two requests
+    # both pass the check and the run executes twice.
+    previous = RUN_STATES.get(run_id)
+    state = TaskState(max_logs=2000)
+    state.start()
+    RUN_STATES[run_id] = state
     try:
         resolved = await unified_runs.resolve_launch(
             _db, run_id=run_id, resume=resume, label=label, limit=limit,
             zones=zones, concurrency=concurrency, variant=variant,
             retry_errored=retry_errored)
-    except ValueError as e:
-        raise HTTPException(409 if isinstance(e, unified_runs.RunExists) else 400,
-                            str(e)) from e
-    state = TaskState(max_logs=2000)
-    state.start()
-    RUN_STATES[run_id] = state
+    except BaseException as e:
+        if RUN_STATES.get(run_id) is state:
+            if previous is None:
+                RUN_STATES.pop(run_id, None)
+            else:
+                RUN_STATES[run_id] = previous
+        if isinstance(e, ValueError):
+            raise HTTPException(409 if isinstance(e, unified_runs.RunExists) else 400,
+                                str(e)) from e
+        raise
 
     async def _runner():
         try:
