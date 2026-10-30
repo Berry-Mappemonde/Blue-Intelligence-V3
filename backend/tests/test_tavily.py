@@ -1,0 +1,390 @@
+"""Tavily Search / Extract — mocked httpx, no network."""
+import asyncio
+import json
+import sys
+from pathlib import Path
+
+import httpx
+import pytest
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from app.core import tavily as tv  # noqa: E402
+
+_KEY = "tvly-test-not-a-secret"
+
+
+class _Resp:
+    def __init__(self, status, payload=None):
+        self.status_code = status
+        self._payload = {} if payload is None else payload
+        self.content = json.dumps(self._payload).encode()
+
+    def json(self):
+        return self._payload
+
+
+class _FakeClient:
+    posts: list = []
+    queue: list = []
+    default = None
+
+    def __init__(self, *a, **k):
+        pass
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *a):
+        return False
+
+    async def post(self, url, **kwargs):
+        _FakeClient.posts.append({
+            "url": url,
+            "json": kwargs.get("json") or {},
+            "headers": dict(kwargs.get("headers") or {}),
+        })
+        if _FakeClient.queue:
+            return _FakeClient.queue.pop(0)
+        if _FakeClient.default is not None:
+            return _FakeClient.default
+        raise AssertionError("unexpected Tavily HTTP")
+
+
+class _BoomClient:
+    def __init__(self, *a, **k):
+        pass
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *a):
+        return False
+
+    async def post(self, *a, **k):
+        raise httpx.ConnectTimeout("timed out")
+
+
+def _run(coro):
+    return asyncio.run(coro)
+
+
+@pytest.fixture(autouse=True)
+def _isolate(monkeypatch, tmp_path):
+    monkeypatch.setenv("TAVILY_CACHE_DIR", str(tmp_path))
+    monkeypatch.delenv("TAVILY_API_KEY", raising=False)
+    monkeypatch.setattr(tv, "RETRY_SLEEP_S", 0)
+    monkeypatch.setattr(tv.httpx, "AsyncClient", _FakeClient)
+    tv.CREDITS["search"] = 0
+    tv.CREDITS["extract"] = 0
+    _FakeClient.posts = []
+    _FakeClient.queue = []
+    _FakeClient.default = None
+    yield
+
+
+def _use_key(monkeypatch):
+    monkeypatch.setenv("TAVILY_API_KEY", _KEY)
+
+
+class TestCostsAndKey:
+    def test_credit_table(self):
+        assert tv.search_credit_cost("basic") == 1
+        assert tv.search_credit_cost("fast") == 1
+        assert tv.search_credit_cost("ultra-fast") == 1
+        assert tv.search_credit_cost("advanced") == 2
+        assert tv.extract_credit_cost(0) == 0
+        assert tv.extract_credit_cost(1) == 1
+        assert tv.extract_credit_cost(5) == 1
+        assert tv.extract_credit_cost(6) == 2
+        assert tv.extract_credit_cost(20) == 4
+
+    def test_key_absent(self):
+        assert tv.tavily_api_key() == ""
+
+    def test_default_cache_dir(self, monkeypatch):
+        monkeypatch.delenv("TAVILY_CACHE_DIR", raising=False)
+        assert tv.cache_dir().as_posix().endswith("backend/data/cache/tavily")
+
+    def test_cache_id_ignores_api_key(self):
+        body = {"query": "ports", "max_results": 5, "search_depth": "basic"}
+        plain = tv.request_cache_id("search", body)
+        leaked = tv.request_cache_id("search", {**body, "api_key": _KEY})
+        assert plain == leaked
+        assert len(plain) == 64
+
+
+class TestSearch:
+    def test_noop_without_key(self, tmp_path):
+        assert _run(tv.tavily_search("ports of entry")) == []
+        assert _FakeClient.posts == []
+        assert tv.CREDITS["search"] == 0
+        assert list(tmp_path.glob("*.json")) == []
+
+    def test_maps_results_and_keeps_url(self, monkeypatch):
+        _use_key(monkeypatch)
+        _FakeClient.default = _Resp(200, {
+            "results": [
+                {"title": "Douane", "url": "https://www.douane.gouv.fr/ports",
+                 "content": "liste des ports", "score": 0.9},
+                {"title": "no url", "content": "x"},
+                {"title": "bad", "url": "not-a-url"},
+            ],
+            "api_key": _KEY,
+        })
+        hits = _run(tv.tavily_search("ports", max_results=5, include_domains=["gouv.fr"]))
+        assert len(hits) == 1
+        assert hits[0]["url"] == "https://www.douane.gouv.fr/ports"
+        assert hits[0]["engine"] == "tavily"
+        assert hits[0]["domain"] == "douane.gouv.fr"
+        assert hits[0]["snippet"] == "liste des ports"
+        assert hits[0]["score"] == 0.9
+        assert tv.CREDITS["search"] == 1
+        post = _FakeClient.posts[0]
+        assert post["url"] == tv.SEARCH_URL
+        assert post["headers"]["Authorization"] == f"Bearer {_KEY}"
+        assert "api_key" not in post["json"]
+        assert post["json"]["search_depth"] == "basic"
+        assert post["json"]["max_results"] == 5
+        cached = list(Path(tv.cache_dir()).glob("*.json"))
+        assert len(cached) == 1
+        blob = cached[0].read_text(encoding="utf-8")
+        assert _KEY not in blob
+        assert cached[0].stem == tv.request_cache_id("search", post["json"])
+
+    def test_advanced_costs_two(self, monkeypatch):
+        _use_key(monkeypatch)
+        _FakeClient.default = _Resp(200, {"results": [
+            {"url": "https://example.org/a", "title": "A", "content": "a"},
+        ]})
+        hits = _run(tv.tavily_search("q", search_depth="advanced"))
+        assert hits[0]["url"] == "https://example.org/a"
+        assert tv.CREDITS["search"] == 2
+        assert _FakeClient.posts[0]["json"]["search_depth"] == "advanced"
+
+    def test_cache_hit_is_free(self, monkeypatch):
+        _use_key(monkeypatch)
+        _FakeClient.default = _Resp(200, {"results": [
+            {"url": "https://example.org/a", "title": "A", "content": "a"},
+        ]})
+        assert _run(tv.tavily_search("ports", max_results=5))
+        assert _run(tv.tavily_search("ports", max_results=5))
+        assert len(_FakeClient.posts) == 1
+        assert tv.CREDITS["search"] == 1
+
+    def test_401_is_empty_and_not_cached(self, monkeypatch, tmp_path):
+        _use_key(monkeypatch)
+        _FakeClient.queue = [_Resp(401, {"error": "unauthorized"})]
+        assert _run(tv.tavily_search("ports")) == []
+        assert tv.CREDITS["search"] == 0
+        assert list(tmp_path.glob("*.json")) == []
+
+    def test_429_retries_once(self, monkeypatch):
+        _use_key(monkeypatch)
+        _FakeClient.queue = [
+            _Resp(429, {}),
+            _Resp(200, {"results": [
+                {"url": "https://sis.gov.eg/yacht", "title": "Yacht", "content": "marina"},
+            ]}),
+        ]
+        hits = _run(tv.tavily_search("Egypt"))
+        assert hits[0]["url"] == "https://sis.gov.eg/yacht"
+        assert len(_FakeClient.posts) == 2
+        assert tv.CREDITS["search"] == 1
+
+    def test_timeout_returns_empty(self, monkeypatch):
+        _use_key(monkeypatch)
+        monkeypatch.setattr(tv.httpx, "AsyncClient", _BoomClient)
+        assert _run(tv.tavily_search("ports")) == []
+        assert tv.CREDITS["search"] == 0
+
+
+class TestExtract:
+    def test_noop_without_key_or_urls(self, monkeypatch):
+        assert _run(tv.tavily_extract(["https://example.org/a"])) == []
+        assert _FakeClient.posts == []
+        _use_key(monkeypatch)
+        assert _run(tv.tavily_extract([])) == []
+        assert _run(tv.tavily_extract(["not-a-url"])) == []
+        assert _FakeClient.posts == []
+        assert tv.CREDITS["extract"] == 0
+
+    def test_keeps_source_url_and_bills_per_five(self, monkeypatch):
+        _use_key(monkeypatch)
+        urls = [f"https://example.org/p{i}" for i in range(6)]
+        _FakeClient.default = _Resp(200, {"results": [
+            {"url": u, "raw_content": f"texte {u}"} for u in urls
+        ]})
+        rows = _run(tv.tavily_extract(urls + ["ftp://skip", urls[0]]))
+        assert [r["url"] for r in rows] == urls
+        assert all(r["raw_content"].startswith("texte ") for r in rows)
+        assert tv.CREDITS["extract"] == 2
+        assert _FakeClient.posts[0]["url"] == tv.EXTRACT_URL
+        assert _FakeClient.posts[0]["json"]["urls"] == urls
+        assert "api_key" not in _FakeClient.posts[0]["json"]
+        assert _FakeClient.posts[0]["headers"]["Authorization"] == f"Bearer {_KEY}"
+
+    def test_extract_cache_hit_is_free(self, monkeypatch):
+        _use_key(monkeypatch)
+        _FakeClient.default = _Resp(200, {"results": [
+            {"url": "https://example.org/a", "raw_content": "x" * 20},
+        ]})
+        assert _run(tv.tavily_extract(["https://example.org/a"]))
+        assert _run(tv.tavily_extract(["https://example.org/a"]))
+        assert len(_FakeClient.posts) == 1
+        assert tv.CREDITS["extract"] == 1
+
+
+class TestCascade:
+    def test_search_named_uses_tavily_before_ddg(self, monkeypatch):
+        _use_key(monkeypatch)
+        from app.core import search as named
+        _FakeClient.default = _Resp(200, {"results": [{
+            "url": "https://douane.gouv.fr/ports",
+            "title": "Liste",
+            "content": "ports d'entrée",
+        }]})
+
+        async def boom_ddg(*a, **k):
+            raise AssertionError("DDG must not run when Tavily returned hits")
+
+        monkeypatch.setattr(named, "duckduckgo_html_search", boom_ddg)
+        hits = _run(named.search_named("ports of entry", key=""))
+        assert [h["url"] for h in hits] == ["https://douane.gouv.fr/ports"]
+        assert hits[0]["engine"] == "tavily"
+
+    def test_search_named_alongside_tinyfish(self, monkeypatch):
+        _use_key(monkeypatch)
+        from app.core import search as named
+        _FakeClient.default = _Resp(200, {"results": [{
+            "url": "https://douane.gouv.fr/b",
+            "title": "B",
+            "content": "b",
+        }]})
+
+        async def fake_pages(*a, **k):
+            return [{"url": "https://douane.gouv.fr/a", "title": "A", "engine": "tinyfish"}]
+
+        async def boom_ddg(*a, **k):
+            raise AssertionError("DDG")
+
+        monkeypatch.setattr(named, "tf_search_pages", fake_pages)
+        monkeypatch.setattr(named, "duckduckgo_html_search", boom_ddg)
+        hits = _run(named.search_named("ports", key="tf-test"))
+        assert [h["url"] for h in hits] == [
+            "https://douane.gouv.fr/a", "https://douane.gouv.fr/b"]
+        assert hits[0]["engine"] == "tinyfish"
+        assert hits[1]["engine"] == "tavily"
+
+    def test_swarm_discover_keeps_tavily_url(self, monkeypatch):
+        _use_key(monkeypatch)
+        monkeypatch.delenv("TINYFISH_API_KEY", raising=False)
+        monkeypatch.delenv("SERPER_API_KEY", raising=False)
+        from app.services.swarm_pipeline import Swarm
+        _FakeClient.default = _Resp(200, {"results": [{
+            "url": "https://example.org/projects/coral-restore",
+            "title": "Coral",
+            "content": "reef",
+        }]})
+        sw = Swarm(None)
+        sw.settings = {}
+        seed = {"name": "Example Ocean", "url": "https://example.org/projects/"}
+        urls, n_tf, n_sp = _run(sw._search_discover(seed, 6))
+        assert urls == ["https://example.org/projects/coral-restore"]
+        assert n_tf == 0 and n_sp == 0
+        assert sw._last_tavily_n == 1
+        assert _FakeClient.posts[0]["url"] == tv.SEARCH_URL
+        assert _FakeClient.posts[0]["json"]["include_domains"] == ["example.org"]
+        assert "api_key" not in _FakeClient.posts[0]["json"]
+
+    def test_swarm_without_key_does_not_call(self):
+        from app.services.swarm_pipeline import Swarm
+        sw = Swarm(None)
+        sw.settings = {}
+        seed = {"name": "Example Ocean", "url": "https://example.org/projects/"}
+        urls, n_tf, n_sp = _run(sw._search_discover(seed, 6))
+        assert urls == []
+        assert (n_tf, n_sp, sw._last_tavily_n) == (0, 0, 0)
+        assert _FakeClient.posts == []
+
+    def test_find_sources_merges_tavily_url(self, monkeypatch):
+        _use_key(monkeypatch)
+        from app.services import poe_pipeline as poe
+        page = "https://www.douane.gouv.fr/demarche/ports-entree"
+        _FakeClient.default = _Resp(200, {"results": [{
+            "url": page, "title": "Ports", "content": "liste officielle",
+        }]})
+
+        async def empty(*a, **k):
+            return []
+
+        async def no_grounded(*a, **k):
+            raise AssertionError("grounded search must not run once Tavily has a source")
+
+        monkeypatch.setattr(poe, "search_searxng", empty)
+        monkeypatch.setattr(poe, "_tf_search_safe", empty)
+        monkeypatch.setattr(poe, "_serper_search_safe", empty)
+        monkeypatch.setattr(poe, "search_grounded", no_grounded)
+        monkeypatch.setattr(poe, "search_hint_queries", lambda *a, **k: [])
+        monkeypatch.setattr(poe, "save_exceptions", lambda exc: None)
+        zone = {
+            "name": "France", "geoname": "France", "iso2": "FR",
+            "sov_iso2": "FR", "sovereign": "France",
+        }
+        official, strict, _syn = _run(poe._find_sources(
+            zone, poe.build_whitelist("FR", "FR"), {}, lambda m: None, tf_key=""))
+        matched = [c for c in official if c.get("url") == page]
+        assert matched
+        engine = matched[0].get("engine")
+        assert engine == "tavily" or "tavily" in (engine or [])
+        assert strict is True
+        assert _FakeClient.posts
+        assert all(p["url"] == tv.SEARCH_URL for p in _FakeClient.posts)
+        assert all(p["headers"]["Authorization"] == f"Bearer {_KEY}" for p in _FakeClient.posts)
+
+    def test_extract_cascade_keeps_source_url(self, monkeypatch):
+        _use_key(monkeypatch)
+        monkeypatch.delenv("TINYFISH_API_KEY", raising=False)
+        from app.core import extract as ext
+        page_url = "https://www.douane.gouv.fr/demarche/ports-entree"
+        text = "Official list of ports of entry for pleasure craft. " * 12
+        _FakeClient.default = _Resp(200, {"results": [{
+            "url": page_url, "raw_content": text,
+        }]})
+
+        async def boom_fetch(url, timeout=25):
+            raise RuntimeError("offline")
+
+        async def no_mirror(*a, **k):
+            return None
+
+        monkeypatch.setattr(ext, "fetch_raw", boom_fetch)
+        monkeypatch.setattr(ext, "_jina_mirror_text", no_mirror)
+        monkeypatch.setattr(ext, "_wayback_mirror_text", no_mirror)
+        monkeypatch.setattr(ext, "_jorf_reader_text", no_mirror)
+        page = _run(ext.extract_cascade(page_url, allow_render=False))
+        assert page["url"] == page_url
+        assert page["final_url"] == page_url
+        assert page["level"] == "N3-mirror-tavily"
+        assert "ports of entry" in page["text"]
+        assert _FakeClient.posts[0]["url"] == tv.EXTRACT_URL
+        assert page_url in _FakeClient.posts[0]["json"]["urls"]
+        assert tv.CREDITS["extract"] == 1
+
+    def test_mirror_skips_tavily_without_key(self, monkeypatch):
+        from app.core import extract as ext
+        called = []
+
+        async def boom_extract(*a, **k):
+            called.append(1)
+            raise AssertionError("extract must not run without TAVILY_API_KEY")
+
+        async def no_mirror(*a, **k):
+            return None
+
+        monkeypatch.setattr(tv, "tavily_extract", boom_extract)
+        monkeypatch.setattr(ext, "_jina_mirror_text", no_mirror)
+        monkeypatch.setattr(ext, "_wayback_mirror_text", no_mirror)
+        monkeypatch.setattr(ext, "_tinyfish_mirror_text", no_mirror)
+        assert _run(ext.fetch_mirror_text("https://www.douane.gouv.fr/x")) is None
+        assert called == []

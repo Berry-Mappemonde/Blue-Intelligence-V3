@@ -1999,11 +1999,30 @@ async def _wayback_mirror_text(url: str, log) -> str | None:
     return None
 
 
+async def _tavily_mirror_text(url: str, log) -> str | None:
+    """Tavily Extract when free mirrors failed. No key → None. Source URL stays upstream."""
+    from app.core.tavily import tavily_api_key, tavily_extract
+    if not tavily_api_key():
+        return None
+    try:
+        rows = await tavily_extract([url], log=log)
+    except Exception as e:
+        log(f"miroir Tavily: échec ({type(e).__name__})")
+        return None
+    for row in rows or []:
+        text = (row or {}).get("raw_content") or ""
+        if (row or {}).get("url") and len(text) >= 200 and not looks_blocked(text):
+            log(f"miroir Tavily: {len(text)} chars")
+            return text
+    return None
+
+
 async def fetch_mirror_text(url: str, log=None, skip_tinyfish: bool = False
                             ) -> tuple[str, str] | None:
     """Generic mirror when the official page is behind a challenge.
-    Jina ∥ TinyFish Fetch (if key), then Wayback. The original URL stays
-    the source; the mirror is only a reader.
+    Jina ∥ TinyFish Fetch (if key), then Wayback, then Tavily Extract
+    if TAVILY_API_KEY is set. The original URL stays the source; the
+    mirror is only a reader.
 
     skip_tinyfish: Fetch was already tried upstream (prefer_fetch) — do not
     pay for it a second time.
@@ -2036,6 +2055,9 @@ async def fetch_mirror_text(url: str, log=None, skip_tinyfish: bool = False
         jorf = await _jorf_reader_text(url, log)
         if jorf:
             return jorf, "N3-mirror-jorf"
+    tv = await _tavily_mirror_text(url, log)
+    if tv:
+        return tv, "N3-mirror-tavily"
     return None
 
 

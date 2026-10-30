@@ -48,6 +48,7 @@ def _run(coro):
 def _no_paid_env(monkeypatch):
     monkeypatch.delenv("TINYFISH_API_KEY", raising=False)
     monkeypatch.delenv("SERPER_API_KEY", raising=False)
+    monkeypatch.delenv("TAVILY_API_KEY", raising=False)
 
 
 def _swarm(settings=None):
