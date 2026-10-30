@@ -17,6 +17,7 @@ Object Storage only when BI_OBJECT_STORAGE_UPLOAD is set (object_storage).
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import shutil
@@ -200,13 +201,31 @@ async def export_run(db, run_id: str, *, out_root: Path | None = None,
     out = root / rid
     if out.exists():
         raise FileExistsError(f"export {out} already exists")
+
+    ports = await db.poe_run_ports.find({"run_id": rid}).to_list(None)
+    zones = await db.poe_run_zones.find({"run_id": rid}).to_list(None)
+    # File writes, hashing and the upload are blocking: they run in a worker
+    # thread so live runs on the event loop are not stalled.
+    manifest, manifest_sha, counts, upload = await asyncio.to_thread(
+        _write_export, run, rid, root, ports, zones, storage_config, storage_client)
+    entry = {"dir": str(out), "manifest_sha256": manifest_sha,
+             "written_at": manifest["written_at"],
+             "uploaded": bool(upload.get("uploaded"))}
+    if upload.get("error"):
+        entry["upload_error"] = upload["error"]
+    await db.poe_runs.update_one({"_id": rid}, {"$push": {"exports": entry}})
+    return {"run_id": rid, "dir": str(out), "manifest_sha256": manifest_sha,
+            "files": manifest["files"], "counts": counts, "upload": upload}
+
+
+def _write_export(run: dict, rid: str, root: Path, ports: list, zones: list,
+                  storage_config, storage_client):
+    """Write the export folder (via a .partial dir), then upload it. Blocking."""
+    out = root / rid
     partial = root / f".{rid}.partial"
     if partial.exists():
         shutil.rmtree(partial)
     partial.mkdir(parents=True)
-
-    ports = await db.poe_run_ports.find({"run_id": rid}).to_list(None)
-    zones = await db.poe_run_zones.find({"run_id": rid}).to_list(None)
     fc = _feature_collection(rid, ports)
     _dump(partial / "ports.geojson", fc)
     _dump(partial / "zones.json", zones)
@@ -241,16 +260,8 @@ async def export_run(db, run_id: str, *, out_root: Path | None = None,
     artifacts.write_json_atomic(partial / artifacts.MANIFEST_NAME, manifest)
     os.replace(partial, out)
     manifest_sha = artifacts.sha256_file(out / artifacts.MANIFEST_NAME)
-
     upload = _safe_upload(out, rid, storage_config, storage_client)
-    entry = {"dir": str(out), "manifest_sha256": manifest_sha,
-             "written_at": manifest["written_at"],
-             "uploaded": bool(upload.get("uploaded"))}
-    if upload.get("error"):
-        entry["upload_error"] = upload["error"]
-    await db.poe_runs.update_one({"_id": rid}, {"$push": {"exports": entry}})
-    return {"run_id": rid, "dir": str(out), "manifest_sha256": manifest_sha,
-            "files": manifest["files"], "counts": counts, "upload": upload}
+    return manifest, manifest_sha, counts, upload
 
 
 def _safe_upload(out: Path, rid: str, storage_config, storage_client) -> dict:
@@ -295,13 +306,13 @@ async def upload_existing_export(db, run_id: str, *, out_root: Path | None = Non
     against the manifest hash recorded on the run when there is one."""
     rid = artifacts.safe_run_id(run_id)
     out = (Path(out_root) if out_root else export_root()) / rid
-    manifest_sha = verify_export(out)
+    manifest_sha = await asyncio.to_thread(verify_export, out)
     run = await db.poe_runs.find_one({"_id": rid}) or {}
     recorded = {e.get("manifest_sha256") for e in run.get("exports") or []
                 if isinstance(e, dict)} - {None}
     if recorded and manifest_sha not in recorded:
         raise ExportIncomplete(f"export {rid}: manifest differs from the one recorded on the run")
-    upload = _safe_upload(out, rid, storage_config, storage_client)
+    upload = await asyncio.to_thread(_safe_upload, out, rid, storage_config, storage_client)
     if run:
         entry = {"manifest_sha256": manifest_sha, "at": artifacts.now_iso(),
                  "uploaded": bool(upload.get("uploaded"))}

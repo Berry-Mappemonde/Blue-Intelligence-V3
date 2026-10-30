@@ -989,3 +989,50 @@ def test_cli_upload_existing_export(env, monkeypatch, cli, capsys):
     assert stub.calls[-1][0] == "manifest.json"
     (env["exports"] / rid / "ports.geojson").write_text("{}\n")
     assert cli.main(["--no-dotenv", "--upload", rid]) == 2
+
+
+# ── export and upload never block the event loop ─────────────────────
+
+class _ThreadClient(_StubClient):
+    def __init__(self):
+        super().__init__()
+        self.threads = set()
+
+    def put_file(self, path, bucket, key):
+        import threading
+        self.threads.add(threading.get_ident())
+        super().put_file(path, bucket, key)
+
+
+def test_export_and_upload_io_runs_off_the_event_loop(env, monkeypatch):
+    import threading
+    _enable_upload(monkeypatch)
+    rid = _finished_run(env, monkeypatch, run_id="r-thread")
+    seen = {"dump": set(), "sha": set()}
+    real_dump, real_sha = unified_runs._dump, artifacts.sha256_file
+
+    def dump(path, doc):
+        seen["dump"].add(threading.get_ident())
+        return real_dump(path, doc)
+
+    def sha(path):
+        seen["sha"].add(threading.get_ident())
+        return real_sha(path)
+
+    monkeypatch.setattr(unified_runs, "_dump", dump)
+    monkeypatch.setattr(artifacts, "sha256_file", sha)
+
+    async def go(fn, **kw):
+        loop_thread = threading.get_ident()
+        client = _ThreadClient()
+        await fn(env["db"], rid, storage_client=client, **kw)
+        return loop_thread, client
+
+    loop_thread, client = _run(go(unified_runs.export_run))
+    assert client.calls and loop_thread not in client.threads
+    assert seen["dump"] and loop_thread not in seen["dump"]
+    assert seen["sha"] and loop_thread not in seen["sha"]
+    seen["sha"].clear()
+    loop_thread, client = _run(go(unified_runs.upload_existing_export))
+    assert client.calls and loop_thread not in client.threads
+    assert seen["sha"] and loop_thread not in seen["sha"]
