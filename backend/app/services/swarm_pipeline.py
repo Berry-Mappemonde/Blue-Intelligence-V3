@@ -50,6 +50,7 @@ from app.services.project_listing import (
     needs_listing_hop, pick_listing_url,
 )
 from app.core.serper import serper_api_key, serper_search
+from app.core.tavily import tavily_api_key, tavily_search
 from app.core.events import HeartbeatWatch
 from app.services.run_journal import (
     AGENT_LIVE_TAIL,
@@ -838,20 +839,16 @@ class Swarm:
         retry = official_site_retry_query(name)
         self.agent_log(aid, f"Search: {query}")
         try:
-            tf_hits, sp_hits = await asyncio.gather(
-                self._tf_search_discover(query, search_seed, log=log_fn),
-                self._serper_discover(query, log=log_fn),
-            )
-            hits = list(tf_hits or []) + list(sp_hits or [])
+            tf_hits, sp_hits, tv_hits = await self._search_trio(
+                query, search_seed, log=log_fn)
+            hits = tf_hits + sp_hits + tv_hits
             site = official_site_from_hits(hits, funder_name=name)
             if not site and retry:
                 self.agent_log(aid, f"Search retry: {retry}")
                 self.log(f"[{name}] Search: official site 0 — retry acronyme")
-                tf2, sp2 = await asyncio.gather(
-                    self._tf_search_discover(retry, search_seed, log=log_fn),
-                    self._serper_discover(retry, log=log_fn),
-                )
-                hits = list(tf2 or []) + list(sp2 or []) + hits
+                tf2, sp2, tv2 = await self._search_trio(
+                    retry, search_seed, log=log_fn)
+                hits = tf2 + sp2 + tv2 + hits
                 site = official_site_from_hits(hits, funder_name=name)
             if site:
                 self.set_agent(aid, status="SUCCESS")
@@ -930,13 +927,15 @@ class Swarm:
                 self.set_agent(aid, engine="Listing Search TF∥Serper")
                 log_fn = lambda m: self.agent_log(aid, m)
                 try:
-                    searched, n_tf, n_sp = await self._search_listing(seed, log=log_fn)
+                    searched, n_tf, n_sp, *more = await self._search_listing(seed, log=log_fn)
+                    n_tv = more[0] if more else 0
                 except Exception as e:
-                    searched, n_tf, n_sp = [], 0, 0
+                    searched, n_tf, n_sp, n_tv = [], 0, 0, 0
                     self.agent_log(aid, f"Listing Search échec: {type(e).__name__}: {str(e)[:80]}")
                 found = pick_listing_url(searched)
+                tv = f" + Tavily {n_tv}" if n_tv else ""
                 line = (
-                    f"Listing Search: TinyFish {n_tf} + Serper {n_sp} → "
+                    f"Listing Search: TinyFish {n_tf} + Serper {n_sp}{tv} → "
                     f"{len(searched)} candidats hygiène "
                     f"(serper {self._serper_queries})"
                 )
@@ -1110,7 +1109,7 @@ class Swarm:
         urls = []
         used_engine = "Crawler"
         crawl_err = fetch_err = search_err = tf_err = ""
-        n_tf = n_sp = 0
+        n_tf = n_sp = n_tv = 0
         try:
             self.set_agent(aid, status="RUNNING")
             self.agent_log(aid, "N1: crawler httpx (motifs URL_PATTERNS fiches)")
@@ -1142,15 +1141,17 @@ class Swarm:
                 self.set_agent(aid, engine="Search TF∥Serper")
                 log_fn = lambda m: self.agent_log(aid, m)
                 try:
-                    urls, n_tf, n_sp = await self._search_discover(
+                    urls, n_tf, n_sp, *more = await self._search_discover(
                         seed, max_urls, log=log_fn,
                         retry_query=fiche_search_retry_query(seed))
+                    n_tv = more[0] if more else 0
                 except Exception as e:
                     search_err = f"{type(e).__name__}: {str(e)[:80]}"
                     self.agent_log(aid, f"Search échec: {search_err}")
-                    urls, n_tf, n_sp = [], 0, 0
+                    urls, n_tf, n_sp, n_tv = [], 0, 0, 0
+                tv = f" + Tavily {n_tv}" if n_tv else ""
                 line = (
-                    f"Search: TinyFish {n_tf} + Serper {n_sp} → {len(urls)} "
+                    f"Search: TinyFish {n_tf} + Serper {n_sp}{tv} → {len(urls)} "
                     f"after filter (serper {self._serper_queries})"
                 )
                 self.agent_log(aid, line)
@@ -1523,33 +1524,60 @@ class Swarm:
             self._serper_queries += 1
             return await serper_search(query, key, log=log or (lambda m: None))
 
+    async def _tavily_discover(self, query: str, log=None, include_domains=None) -> list:
+        if not tavily_api_key() or not (query or "").strip():
+            return []
+        try:
+            return await tavily_search(
+                query, include_domains=include_domains,
+                log=log or (lambda m: None))
+        except Exception as e:
+            (log or (lambda m: None))(f"Tavily: échec ({type(e).__name__})")
+            return []
+
+    async def _search_trio(self, query, seed, log=None, purpose=None):
+        """TinyFish ∥ Serper ∥ Tavily. Tavily is a no-op without TAVILY_API_KEY.
+
+        Tavily is limited to the seed's domain only for fiche discovery on the
+        seed site (PROJECTS_DISCOVERY_PURPOSE). Listing and official-site
+        searches are not: those pages can sit on a funder or ministry domain,
+        as with TinyFish and Serper."""
+        domain = ""
+        if isinstance(seed, dict) and purpose == PROJECTS_DISCOVERY_PURPOSE:
+            domain = domain_of(seed.get("url") or "")
+        include = [domain] if domain else None
+        tf_hits, sp_hits, tv_hits = await asyncio.gather(
+            self._tf_search_discover(query, seed, log=log, purpose=purpose),
+            self._serper_discover(query, log=log),
+            self._tavily_discover(query, log=log, include_domains=include),
+        )
+        return list(tf_hits or []), list(sp_hits or []), list(tv_hits or [])
+
     async def _search_with_filter(self, seed, query, max_urls, *,
                                   filter_fn, purpose, log=None,
                                   retry_query=None):
-        """One TF ∥ Serper shot, then retry only if hits were filtered down to 0."""
-        tf_hits, sp_hits = await asyncio.gather(
-            self._tf_search_discover(query, seed, log=log, purpose=purpose),
-            self._serper_discover(query, log=log),
-        )
-        n_tf, n_sp = len(tf_hits or []), len(sp_hits or [])
-        combined = list(tf_hits or []) + list(sp_hits or [])
+        """One TF ∥ Serper ∥ Tavily shot, then retry only if hits were filtered down to 0.
+
+        Returns (urls, n_tinyfish, n_serper, n_tavily). The counts travel with the
+        result, not on the Swarm: seeds run concurrently on the same instance."""
+        tf_hits, sp_hits, tv_hits = await self._search_trio(
+            query, seed, log=log, purpose=purpose)
+        n_tf, n_sp, n_tv = len(tf_hits), len(sp_hits), len(tv_hits)
+        combined = tf_hits + sp_hits + tv_hits
         urls = filter_fn(combined, seed, max_urls)
         raw = [_hit_url(h) for h in combined if _hit_url(h).startswith("http")]
         if urls or not raw or not retry_query:
-            return urls, n_tf, n_sp
+            return urls, n_tf, n_sp, n_tv
         if log:
             log(f"Search: {len(raw)} hits → 0 after filter — retry")
         self.log(f"[{seed.get('name')}] Search: {len(raw)} hits → 0 after filter — retry")
-        tf2, sp_hits2 = await asyncio.gather(
-            self._tf_search_discover(retry_query, seed, log=log, purpose=purpose),
-            self._serper_discover(retry_query, log=log),
-        )
-        n_tf += len(tf2 or [])
-        n_sp += len(sp_hits2 or [])
-        urls = filter_fn(
-            list(tf2 or []) + list(sp_hits2 or []), seed, max_urls,
-            exclude_urls=raw)
-        return urls, n_tf, n_sp
+        tf2, sp2, tv2 = await self._search_trio(
+            retry_query, seed, log=log, purpose=purpose)
+        n_tf += len(tf2)
+        n_sp += len(sp2)
+        n_tv += len(tv2)
+        urls = filter_fn(tf2 + sp2 + tv2, seed, max_urls, exclude_urls=raw)
+        return urls, n_tf, n_sp, n_tv
 
     async def _search_listing(self, seed, log=None):
         return await self._search_with_filter(
@@ -1559,7 +1587,7 @@ class Swarm:
             retry_query=listing_search_retry_query(seed))
 
     async def _search_discover(self, seed, max_urls, log=None, retry_query=None):
-        """TinyFish Search ∥ Serper, filtered card union. Never 2 EN/FR shots."""
+        """TinyFish Search ∥ Serper ∥ Tavily, filtered card union. Never 2 EN/FR shots."""
         return await self._search_with_filter(
             seed, project_search_query(seed), max_urls,
             filter_fn=filter_discover_urls,
@@ -1571,18 +1599,12 @@ class Swarm:
         seed = {"name": name, "url": ""}
         query = official_site_query(name)
         retry = official_site_retry_query(name)
-        tf_hits, sp_hits = await asyncio.gather(
-            self._tf_search_discover(query, seed, log=log),
-            self._serper_discover(query, log=log),
-        )
-        hits = list(tf_hits or []) + list(sp_hits or [])
+        tf_hits, sp_hits, tv_hits = await self._search_trio(query, seed, log=log)
+        hits = tf_hits + sp_hits + tv_hits
         site = official_site_from_hits(hits, funder_name=name)
         if not site and retry:
-            tf2, sp2 = await asyncio.gather(
-                self._tf_search_discover(retry, seed, log=log),
-                self._serper_discover(retry, log=log),
-            )
-            hits = list(tf2 or []) + list(sp2 or []) + hits
+            tf2, sp2, tv2 = await self._search_trio(retry, seed, log=log)
+            hits = tf2 + sp2 + tv2 + hits
             site = official_site_from_hits(hits, funder_name=name)
         self.log(
             f"Follow the Money: Search official site '{name}' → "

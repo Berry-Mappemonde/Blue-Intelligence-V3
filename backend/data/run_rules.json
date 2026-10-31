@@ -468,6 +468,60 @@
       "group": "budget"
     },
     {
+      "id": "tavily.cache_ttl_days",
+      "mode": "shared",
+      "kind": "budget",
+      "value": 7,
+      "numeric": "int",
+      "unit": "days",
+      "interval": [
+        0,
+        90
+      ],
+      "vary": true,
+      "principle": "Une réponse Tavily en cache n'est rejouée que pendant 7 jours : assez pour qu'une reprise ou un second run de la semaine ne repaie pas, assez court pour qu'un run complet suivant relise le web. Les réponses vides et les URL en échec ne sont jamais mises en cache. 0 = cache ignoré.",
+      "cdc": "PLAN-V3.md §4.1 · §7",
+      "code": [
+        "app/core/tavily.py:cache_ttl_days"
+      ],
+      "title": {
+        "fr": "Durée de vie du cache Tavily",
+        "en": "Tavily cache lifetime"
+      },
+      "help": {
+        "fr": "Au-delà, une requête Tavily repart à l'API. 0 = pas de cache. Les réponses vides ne sont jamais gardées.",
+        "en": "Past this age a Tavily request goes back to the API. 0 = no cache. Empty answers are never kept."
+      },
+      "group": "budget"
+    },
+    {
+      "id": "tavily.max_credits",
+      "mode": "shared",
+      "kind": "budget",
+      "value": 1000,
+      "numeric": "int",
+      "unit": "credits",
+      "interval": [
+        0,
+        100000
+      ],
+      "vary": true,
+      "principle": "Plafond de crédits Tavily pour tout un run, compté sur la même clé de run que le budget USD Token Factory. Recherche basic = 1 crédit, advanced = 2, Extract = 1 par 5 URL lues. Les crédits sont réservés avant l'appel et rendus s'il échoue ; un appel qui dépasserait le plafond n'est pas envoyé (résultat vide, compté dans calls_capped). Un hit de cache est gratuit. 0 = aucun appel payant. Choix opérateur, consigné avec le run.",
+      "cdc": "PLAN-V3.md §7",
+      "code": [
+        "app/core/tavily.py:reserve_credits"
+      ],
+      "title": {
+        "fr": "Crédits Tavily max par run",
+        "en": "Max Tavily credits per run"
+      },
+      "help": {
+        "fr": "Au-delà, les appels Tavily du run ne partent plus ; le cache reste lu. 0 = Tavily payant éteint.",
+        "en": "Past this, the run sends no more Tavily calls; the cache is still read. 0 = paid Tavily off."
+      },
+      "group": "budget"
+    },
+    {
       "id": "projects.no_hq_as_site",
       "mode": "projects",
       "kind": "loi",
