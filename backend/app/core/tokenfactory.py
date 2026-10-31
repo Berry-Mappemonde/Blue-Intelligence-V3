@@ -72,12 +72,19 @@ _THINK_END = "</think>"
 
 _current: ContextVar[str | None] = ContextVar("tf_run_id", default=None)
 _LEDGER: dict[str, list[dict]] = {}
+_CALLS: dict[str, int] = {}  # LLM calls reserved per run (take_calls), any provider
+_CALLS_HELD: dict[str, int] = {}  # calls set aside for zones in progress, not used yet
+_ZONES_LEFT: dict[str, int] = {}  # zones of the run that have not taken their share yet
 _ledger_guard = threading.Lock()
 _locks: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
 
 
 class TokenFactoryBudgetExceeded(RuntimeError):
     """TF_RUN_BUDGET_USD reached for this run; the call was not sent."""
+
+
+class LLMCallCapReached(RuntimeError):
+    """The run's cap on LLM calls is used up; the call was not sent."""
 
 
 def get_key() -> str:
@@ -307,8 +314,109 @@ def reset_ledger(run_id: str | None = None) -> None:
     with _ledger_guard:
         if run_id is None:
             _LEDGER.clear()
+            _CALLS.clear()
+            _CALLS_HELD.clear()
+            _ZONES_LEFT.clear()
         else:
             _LEDGER.pop(run_id, None)
+            _CALLS.pop(run_id, None)
+            _CALLS_HELD.pop(run_id, None)
+            _ZONES_LEFT.pop(run_id, None)
+
+
+def take_calls(wanted: int, cap: int, run_id: str | None = None) -> int:
+    """Reserve up to ``wanted`` LLM calls against the run's ``cap``; return how many were granted.
+
+    Counts calls whatever the provider, on the same per-run key as the USD ledger. One
+    call is one provider step started: a primary-reader batch, each fallback step of
+    ``llm.extract_ports`` (NIM, OpenRouter, Claude), the second reader, the Claude last
+    resort. Retries inside one step are not counted separately.
+    """
+    rid = ledger_key(run_id)
+    with _ledger_guard:
+        used = _CALLS.get(rid, 0)
+        granted = max(0, min(int(wanted), int(cap) - used))
+        _CALLS[rid] = used + granted
+    return granted
+
+
+def calls_taken(run_id: str | None = None) -> int:
+    with _ledger_guard:
+        return _CALLS.get(ledger_key(run_id), 0)
+
+
+def restore_calls(n: int, run_id: str | None = None) -> None:
+    """Resume after a restart: the run's calls already taken, from the run document."""
+    rid = ledger_key(run_id)
+    with _ledger_guard:
+        _CALLS[rid] = max(_CALLS.get(rid, 0), int(n or 0))
+
+
+def restore_spend(cost: dict | None, run_id: str | None = None) -> None:
+    """Resume after a restart: the run's ledger rows from its stored cost summary
+    (``summary()``), so the USD budget and the summary cover the whole run. Does nothing
+    if this process already holds rows for the run."""
+    cost = cost if isinstance(cost, dict) else {}
+    rows = [{"model": e.get("model"), "in": int(e.get("tokens_in") or 0),
+             "out": int(e.get("tokens_out") or 0), "usd": float(e.get("usd") or 0.0)}
+            for e in cost.get("entries") or () if isinstance(e, dict)]
+    if not rows and float(cost.get("usd_estimated") or 0.0) > 0:
+        rows = [{"model": "restored", "in": int(cost.get("tokens_in") or 0),
+                 "out": int(cost.get("tokens_out") or 0),
+                 "usd": float(cost["usd_estimated"])}]
+    rid = ledger_key(run_id)
+    with _ledger_guard:
+        if rows and not _LEDGER.get(rid):
+            _LEDGER[rid] = rows
+
+
+def plan_zone_calls(zones: int, run_id: str | None = None) -> None:
+    """Number of zones still to run; each takes a fair share of the cap (``reserve_zone_calls``)."""
+    with _ledger_guard:
+        _ZONES_LEFT[ledger_key(run_id)] = max(0, int(zones))
+
+
+def reserve_zone_calls(cap: int, floor: int, run_id: str | None = None) -> int:
+    """Set aside one zone's share of the run cap: free calls / zones left, at least
+    ``floor``, never more than what is free. Free = cap - used - held by other zones."""
+    rid = ledger_key(run_id)
+    with _ledger_guard:
+        free = max(0, int(cap) - _CALLS.get(rid, 0) - _CALLS_HELD.get(rid, 0))
+        left = max(1, _ZONES_LEFT.get(rid, 1))
+        share = min(free, max(int(floor), free // left))
+        _CALLS_HELD[rid] = _CALLS_HELD.get(rid, 0) + share
+        if rid in _ZONES_LEFT:
+            _ZONES_LEFT[rid] = max(0, _ZONES_LEFT[rid] - 1)
+    return share
+
+
+def use_zone_calls(n: int, run_id: str | None = None) -> None:
+    """Move ``n`` calls of a zone's share from held to used."""
+    rid = ledger_key(run_id)
+    with _ledger_guard:
+        _CALLS[rid] = _CALLS.get(rid, 0) + int(n)
+        _CALLS_HELD[rid] = max(0, _CALLS_HELD.get(rid, 0) - int(n))
+
+
+def return_zone_calls(n: int, run_id: str | None = None) -> None:
+    """Move ``n`` used calls of a zone's share back to held (calls never started)."""
+    rid = ledger_key(run_id)
+    with _ledger_guard:
+        n = min(int(n), _CALLS.get(rid, 0))
+        _CALLS[rid] = _CALLS.get(rid, 0) - n
+        _CALLS_HELD[rid] = _CALLS_HELD.get(rid, 0) + n
+
+
+def close_zone_calls(unused: int | None, run_id: str | None = None) -> None:
+    """Zone finished: give back its unused share. ``None``: it never took a share, so it
+    leaves the zones still to run."""
+    rid = ledger_key(run_id)
+    with _ledger_guard:
+        if unused is None:
+            if rid in _ZONES_LEFT:
+                _ZONES_LEFT[rid] = max(0, _ZONES_LEFT[rid] - 1)
+            return
+        _CALLS_HELD[rid] = max(0, _CALLS_HELD.get(rid, 0) - int(unused))
 
 
 def spent_usd(run_id: str | None = None) -> float:
@@ -368,6 +476,9 @@ def summary(run_id: str | None = None) -> dict:
         "provider": "tokenfactory",
         "host": EU_HOST,
         "calls": len(rows),
+        # Calls counted against formalities.extract_max_llm_calls (any provider), not
+        # only the Token Factory requests in "calls".
+        "calls_taken": calls_taken(rid),
         "tokens_in": tokens_in,
         "tokens_out": tokens_out,
         "usd_estimated": spent,
@@ -382,7 +493,9 @@ def public_cost(run_id: str, persisted: dict | None = None) -> dict:
     """Live accumulator, or the cost stored on the run document if this process has none."""
     live = summary(run_id)
     if live["calls"] == 0 and isinstance(persisted, dict) and int(persisted.get("calls") or 0) > 0:
-        return dict(persisted)
+        out = dict(persisted)
+        out["calls_taken"] = max(int(persisted.get("calls_taken") or 0), live["calls_taken"])
+        return out
     return live
 
 

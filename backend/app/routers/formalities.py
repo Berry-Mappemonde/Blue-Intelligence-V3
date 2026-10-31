@@ -111,6 +111,7 @@ async def _auto_refresh_cycle():
         GEN_LOCKS.add(mrgid)
         prev_gen = z.get("generated_at")
         try:
+            poe.set_zone_deadline(360)
             doc = await asyncio.wait_for(
                 poe.generate_zone_poe(_db, mrgid,
                                       logger=lambda m, n=z.get("name"): _auto_log(f"[{n}] {m}"),

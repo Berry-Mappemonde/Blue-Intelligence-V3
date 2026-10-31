@@ -315,6 +315,18 @@ async def execute_run(db, state, run_id: str, label: str = "",
             f"(concurrency={concurrency}, timeout {timeout_s}s/zone, "
             f"rules={rules.get('hash')} profile={rules.get('profile')})")
 
+        from app.core.tokenfactory import (calls_taken, plan_zone_calls, restore_calls,
+                                           restore_spend, summary as cost_summary)
+        if resume:  # the call count and the USD ledger live in memory: a restart would hand
+            # out a fresh cap and budget, and the summary would only cover this session
+            stored = [c for c in (existing.get("tokenfactory_cost"),
+                                  (existing.get("summary") or {}).get("tokenfactory"))
+                      if isinstance(c, dict)]
+            restore_calls(existing.get("calls_taken") or max(
+                [int(c.get("calls_taken") or 0) for c in stored], default=0), run_id)
+            if stored:
+                restore_spend(max(stored, key=lambda c: int(c.get("calls") or 0)), run_id)
+        plan_zone_calls(len(todo), run_id)  # each zone gets a fair share of the call cap
         sem = asyncio.Semaphore(max(1, concurrency))
         counter = {"done": len(done_mrgids), "errors": 0}
         t0 = time.time()
@@ -327,6 +339,8 @@ async def execute_run(db, state, run_id: str, label: str = "",
                     return
                 await _artifact(artifacts.append_trace, run_id, "unit_start",
                                 unit=mrgid, zone=name, retry=mrgid in retry_mrgids)
+                # Batch reading stops before the timeout and keeps the batches already read.
+                deadline_token = poe.set_zone_deadline(timeout_s)
                 try:
                     doc = await asyncio.wait_for(
                         poe.generate_zone_poe(
@@ -358,10 +372,13 @@ async def execute_run(db, state, run_id: str, label: str = "",
                         upsert=True)
                     state.results.append({"mrgid": mrgid, "name": name, "error": str(e)[:120]})
                 finally:
+                    poe.zone_deadline.reset(deadline_token)
                     counter["done"] += 1
                     state.progress = counter["done"]
                     await db.poe_runs.update_one({"_id": run_id}, {"$set": {
                         "zones_done": counter["done"], "last_zone": name,
+                        "calls_taken": calls_taken(run_id),
+                        "tokenfactory_cost": cost_summary(run_id),
                     }})
 
         await asyncio.gather(*(_one(z) for z in todo))
@@ -372,6 +389,8 @@ async def execute_run(db, state, run_id: str, label: str = "",
             s = z.get("status") or "erreur"
             by_status[s] = by_status.get(s, 0) + 1
         ports_total = await db.poe_run_ports.count_documents({"run_id": run_id})
+        zones_partial = await db.poe_run_zones.count_documents(
+            {"run_id": run_id, "extraction_partial": True})
         catalog_skipped = 0
         try:
             catalog_skipped = await db.poe_run_events.count_documents({
@@ -386,6 +405,7 @@ async def execute_run(db, state, run_id: str, label: str = "",
             "zones_done": counter["done"],
             "by_status": by_status,
             "ports_total": ports_total,
+            "zones_partial": zones_partial,
             "errors": counter["errors"],
             "cancelled": cancelled,
             "duration_s": round(time.time() - t0, 1),
