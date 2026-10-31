@@ -723,3 +723,42 @@ class TestOfficialExtractFirst:
         page = _run(ext.extract_cascade(self.PAGE, allow_render=False, official=True))
         assert page["level"] == "failed"
         assert _FakeClient.posts == []
+
+
+class TestSearchNamedConcurrency:
+    """Review PR #8 finding 4: Tavily and TinyFish run concurrently in search_named."""
+
+    def test_tavily_and_tinyfish_overlap(self, monkeypatch):
+        _use_key(monkeypatch)
+        from app.core import search as named
+        order = []
+
+        async def slow_tavily(q, **k):
+            order.append("tv-start")
+            await asyncio.sleep(0.05)
+            order.append("tv-end")
+            return [{"url": "https://douane.gouv.fr/b", "title": "B", "engine": "tavily"}]
+
+        async def slow_tf(*a, **k):
+            order.append("tf-start")
+            await asyncio.sleep(0.05)
+            order.append("tf-end")
+            return [{"url": "https://douane.gouv.fr/a", "title": "A", "engine": "tinyfish"}]
+
+        async def boom_ddg(*a, **k):
+            raise AssertionError("DDG")
+
+        monkeypatch.setattr(named, "tavily_search", slow_tavily)
+        monkeypatch.setattr(named, "tf_search_pages", slow_tf)
+        monkeypatch.setattr(named, "duckduckgo_html_search", boom_ddg)
+        hits = _run(named.search_named("ports", key="tf-test"))
+        # both engines started before either finished
+        assert set(order[:2]) == {"tv-start", "tf-start"}
+        assert [h["url"] for h in hits] == [
+            "https://douane.gouv.fr/a", "https://douane.gouv.fr/b"]
+
+    def test_docstring_matches_code(self):
+        from app.core import search as named
+        doc = (named.__doc__ or "") + (named.search_named.__doc__ or "")
+        assert "concurrently" in doc
+        assert "before DuckDuckGo" not in doc
