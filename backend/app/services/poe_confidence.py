@@ -215,9 +215,7 @@ def apply_score(port: dict, scored: dict) -> dict:
         port["gold"] = scored["gold"]
     if "data_gap" in scored:
         port["data_gap"] = scored["data_gap"]
-    # C0–C4 beside the 0–100 score. Absent env vars do not change this.
-    from app.services.v3_certify import attach_confidence_level
-    return attach_confidence_level(port)
+    return port
 
 
 def zone_confidence_avg(ports: list[dict]) -> int | None:

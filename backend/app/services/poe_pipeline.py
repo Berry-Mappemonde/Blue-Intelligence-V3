@@ -56,6 +56,7 @@ from app.adapters import evidence_store
 from app.adapters.zetaris import ZetarisClient
 from app.agents import registry_check
 from app.services.poe_confidence import apply_score, listing_role, score_port, zone_confidence_avg
+from app.services.v3_certify import attach_confidence_level
 from app.services.poe_zone_label import (
     keep_extracted_in_zone, search_polygon_name, serp_place_name,
     zone_qualifier, zone_search_location,
@@ -2781,6 +2782,7 @@ async def _extract_and_geocode(zone: dict, context: str, used_sources: list[dict
         doc["memories_recalled"] = len(recalled)
         apply_score(doc, score_port(doc, official_source=port_official,
                                     listing_ports=listing_ports))
+        attach_confidence_level(doc, official_source=port_official)
         docs.append(doc)
         agree_note = ""
         if geo.get("agree") is True:
@@ -2886,6 +2888,8 @@ async def _persist_zone(db, zone: dict, docs: list[dict], status: str,
                     apply_score(d, score_port(
                         {**d, "osm_confidence": match["osm_confidence"]},
                         official_source=any(s.get("official") for s in used_sources)))
+                    attach_confidence_level(
+                        d, official_source=any(s.get("official") for s in used_sources))
                     updates["confidence"] = d.get("confidence")
                     updates["confidence_parts"] = d.get("confidence_parts")
                     updates["confidence_reasons"] = d.get("confidence_reasons")
@@ -3116,6 +3120,7 @@ async def generate_zone_poe(db, mrgid: int, logger=None, force: bool = False,
                         apply_score(d, score_port(
                             d, official_source=False,
                             listing_ports=None))
+                        attach_confidence_level(d, official_source=False)
 
         # Official evidence records from the fetched text (never model output), stored for
         # the run pipeline and /api/poe/verify, which read ports from Zetaris.

@@ -20,8 +20,10 @@ from app.pipeline.run_pipeline import _port_out  # noqa: E402
 from app.services.poe_confidence import apply_score, score_port  # noqa: E402
 from app.services.poe_pipeline import ports_to_geojson  # noqa: E402
 from app.services.v3_certify import (  # noqa: E402
+    LEVELS,
     assess_level,
     assess_port,
+    attach_confidence_level,
     confidence_level,
     is_official,
     level,
@@ -221,34 +223,32 @@ def test_catalogue_survives_a_bad_judge_excerpt():
     assert level_from_v2(port, pages={GOV: "official catalogue text"}) == "C3"
 
 
-def test_apply_score_sets_level_without_changing_numeric_score():
+def test_apply_score_leaves_the_level_to_its_callers():
+    """poe_confidence (V2 score) is untouched: callers attach the C-level."""
+    import inspect
+
+    from app.services import poe_confidence, poe_pipeline
+
+    assert "v3_certify" not in inspect.getsource(poe_confidence)
     port = {
         "name": "Papeete",
         "extraction_engine": "catalog",
-        "extraction_agreement": True,
-        "claude_agreement": True,
-        "validated": True,
-        "spatial_kind": "in_eez",
-        "geocode_agree": True,
-        "lat": -17.5,
-        "lon": -149.5,
         "note": "catalogue officiel",
         "source_urls": ["https://douane.gouv.fr/x"],
-        "osm_confidence": 0.9,
     }
     scored = score_port(port, official_source=True)
-    apply_score(port, scored)
+    out = apply_score(port, scored)
+    assert out is port
+    assert "confidence_level" not in port
     assert port["confidence"] == scored["confidence"]
-    assert port["confidence_parts"] == scored["parts"]
-    assert port["confidence_level"] == "C3"
 
-    llm = _v2(geocode_agree=True, claude_agreement=True, lat=14.5, lon=-61.0,
-              spatial_kind="in_eez", validated=True)
-    scored_llm = score_port(llm, official_source=True)
-    apply_score(llm, scored_llm)
-    assert llm["confidence"] == scored_llm["confidence"]
-    assert llm["confidence_level"] == "C1"
-    assert llm["confidence"] > 40
+    before = dict(port)
+    attach_confidence_level(port, official_source=True)
+    assert port["confidence_level"] in LEVELS
+    assert {k: port[k] for k in before} == before
+
+    src = inspect.getsource(poe_pipeline)
+    assert src.count("attach_confidence_level(") >= 2
 
 
 def test_geojson_and_run_output_include_confidence_level():
