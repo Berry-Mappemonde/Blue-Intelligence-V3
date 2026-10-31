@@ -22,6 +22,7 @@ from app.core.events import RunRecorder, RUNS_DIR  # noqa: E402
 @pytest.fixture(autouse=True)
 def _keep_unit_tests_off_nvidia(monkeypatch):
     monkeypatch.setenv("LLM_PROVIDER", "openrouter")
+    monkeypatch.delenv("TAVILY_API_KEY", raising=False)
 from app.core.extract import dual_parse_html, looks_blocked, serp_filter  # noqa: E402
 from app.services import poe_pipeline as poe  # noqa: E402
 from app.services.poe_diff import diff_ports  # noqa: E402

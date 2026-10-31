@@ -16,6 +16,11 @@ def _run(coro):
     return asyncio.run(coro)
 
 
+@pytest.fixture(autouse=True)
+def _no_tavily_key(monkeypatch):
+    monkeypatch.delenv("TAVILY_API_KEY", raising=False)
+
+
 class _FakeResp:
     def __init__(self, content: bytes, content_type="text/html",
                  disposition="", url="https://example.gov/x", status_code=200):

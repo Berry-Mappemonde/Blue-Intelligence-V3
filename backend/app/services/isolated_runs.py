@@ -301,6 +301,8 @@ async def finalize_run(db, dataset: str, run_id: str, *, cancelled: bool = False
     }
     from app.core.tokenfactory import attach
     attach(summary, run_id)
+    from app.core.tavily import attach as tavily_attach
+    tavily_attach(summary, run_id)
     state = "cancelled" if cancelled else ("failed" if error else "done")
     meta = coll(db, spec.meta_coll)
     existing = None

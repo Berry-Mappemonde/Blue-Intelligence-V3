@@ -3,14 +3,16 @@ poe.py — Sovereign pipeline [EEZ / Country] -> [pleasure-craft Ports of Entry]
 
 Architecture:
   1. EEZ delimitation      : VLIZ Marine Regions WFS (World EEZ v12, ~285 zones), shapely-simplified.
-  2. Targeted search       : SearXNG ∥ TinyFish Search (free) -> net
+  2. Targeted search       : SearXNG ∥ TinyFish Search (free) ∥ Serper ∥ Tavily
+                             (Tavily Search only when TAVILY_API_KEY is set) -> net
                              include_domains if disagreement / 0 official ->
                              grounded search (OpenRouter :online) as last resort
                              + round 2 "lessons" (indirect official document).
   3. Automatic whitelist   : ISO 3166-1 alpha-2 x PSL-validated state patterns (tldextract)
                              + auto-enriched exceptions.json + SERP regex filter (extract_core).
   4. Collection & parsing  : hybrid extract_core cascade — N1 httpx+trafilatura/PyMuPDF ->
-                             N2 Readability/BS4 -> N3 TinyFish (1 call max/zone, last resort).
+                             N2 Readability/BS4 -> N3 TinyFish (1 call max/zone, last resort)
+                             then Tavily Extract if TAVILY_API_KEY and the text is still missing.
                              Selective depth=2 on internal regulatory links.
   5. Structured extraction : llm_core (OpenRouter, strict JSON)
                              + local RAG (rag_core) on long contexts.
@@ -817,6 +819,14 @@ def build_whitelist(iso2: str | None, sov_iso2: str | None, exceptions: dict | N
             for dom in (exc.get(bucket) or {}).get(up, []):
                 out.add(dom.lower())
     return sorted(out)
+
+
+def bind_official_reader(whitelist: list[str]):
+    """Official URLs of the zone (whitelist) are read with Tavily Extract first
+    (PLAN-V3 §4.1, C1). Returns the ContextVar token to reset."""
+    from app.core.extract import official_url_fn
+    wl = list(whitelist or [])
+    return official_url_fn.set((lambda u: url_allowed(u, wl)) if wl else None)
 
 
 def url_allowed(url: str, whitelist: list[str]) -> bool:
@@ -1967,6 +1977,52 @@ async def _tf_search_safe(query: str, key: str, log, *, location=None, language=
         return []
 
 
+def _tavily_key() -> str:
+    try:
+        from app.core.tavily import tavily_api_key
+        return tavily_api_key()
+    except Exception:
+        return ""
+
+
+async def _merge_scoped(candidates: list[dict], scoped: list[dict], *, rec, protect,
+                        whitelist: list[str], log) -> tuple[list[dict], list[dict]]:
+    """Merge a scoped (include_domains) search into the candidates: serp filter,
+    ML rank, then re-select the official ones. Same for TinyFish and Tavily."""
+    candidates = _merge_candidates(candidates, scoped)
+    audit_s = audit_serp_filter(list(candidates), protect_fn=protect)
+    candidates = serp_filter(candidates, protect_fn=protect)
+    dropped_s = [a["url"] for a in audit_s if not a["kept"]]
+    if dropped_s:
+        await emit(rec, "serp_filter", kept=len(candidates), dropped=dropped_s,
+                   scoped=True, audit=audit_s)
+    scores_s: list = []
+    candidates = rank_candidates_ml(candidates, log, scores_out=scores_s,
+                                    whitelist=whitelist)
+    if scores_s:
+        await emit(rec, "serp_rank", scores=scores_s, scoped=True)
+    official = [c for c in candidates if url_allowed(c["url"], whitelist)]
+    return candidates, official
+
+
+async def _tavily_search_safe(query: str, log, *, include_domains=None,
+                              search_depth: str = "basic",
+                              max_results: int = 10) -> list[dict]:
+    """Tavily Search beside SearXNG / TinyFish / Serper. No key → []."""
+    if not query or not _tavily_key():
+        return []
+    from app.core.tavily import tavily_search
+    from app.services.poe_seeds import SEARCH_EXCLUDE_DOMAINS
+    try:
+        return await tavily_search(
+            query, search_depth=search_depth, max_results=max_results,
+            include_domains=include_domains,
+            exclude_domains=SEARCH_EXCLUDE_DOMAINS, log=log)
+    except Exception as e:
+        log(f"Tavily: échec ({type(e).__name__})")
+        return []
+
+
 def site_list_pdf_query(domain: str, zone: dict) -> str:
     """`site:` query once the state domain is known."""
     iso = polygon_iso2(zone)
@@ -2090,6 +2146,7 @@ async def _find_sources(zone: dict, whitelist: list[str], exceptions: dict, log,
     tinyfish = SearXNG ∥ TinyFish + include_domains net.
     The if iso of the 11 polygons stay on hints / site: / localized_query.
     Serper (short phrase + TLD) runs in parallel with round 1.
+    Tavily Search runs in parallel when TAVILY_API_KEY is set.
     :online last. Never touches poe_ports."""
     name = search_polygon_name(zone)
     place = serp_place_name(zone) or name
@@ -2097,6 +2154,7 @@ async def _find_sources(zone: dict, whitelist: list[str], exceptions: dict, log,
     use_tf = variant == "tinyfish"
     key = (await _resolve_tf_key(tf_key)) if use_tf else ""
     serper_key = await _resolve_serper_key()
+    tavily_key = _tavily_key()
     iso = zone_search_location(zone)
     lang = zone_search_lang(zone)
 
@@ -2104,7 +2162,7 @@ async def _find_sources(zone: dict, whitelist: list[str], exceptions: dict, log,
                 f"decree legislation {place}")
     loc_q = localized_query(zone)
 
-    searx_groups, tf_groups, serper_groups = [], [], []
+    searx_groups, tf_groups, serper_groups, tavily_groups = [], [], [], []
 
     def _add_serper_jobs(jobs: list, labels: list) -> None:
         # The shots are always scheduled. `_serper_search_safe` returns []
@@ -2115,10 +2173,30 @@ async def _find_sources(zone: dict, whitelist: list[str], exceptions: dict, log,
             jobs.append(_serper_search_safe(q, serper_key, log, gl=iso, hl=qlang))
             labels.append(("serper", qlang, q))
 
+    def _add_tavily_jobs(jobs: list, labels: list, pairs: list[tuple[str, str]]) -> None:
+        if not tavily_key:
+            return
+        for qlang, q in pairs:
+            if not (q or "").strip():
+                continue
+            jobs.append(_tavily_search_safe(q, log))
+            labels.append(("tavily", qlang, q))
+
+    def _bucket_search(engine: str, res) -> None:
+        if engine == "tinyfish":
+            tf_groups.append(res or [])
+        elif engine == "serper":
+            serper_groups.append(res or [])
+        elif engine == "tavily":
+            tavily_groups.append(res or [])
+        else:
+            searx_groups.append(res or [])
+
     if variant == "v1":
         jobs = [search_searxng(query_en, log)]
         labels = [("searxng", "en", query_en)]
         _add_serper_jobs(jobs, labels)
+        _add_tavily_jobs(jobs, labels, [("en", query_en)])
         results = await asyncio.gather(*jobs)
         res_en: list = []
         for res, (engine, qlang, query) in zip(results, labels):
@@ -2126,11 +2204,9 @@ async def _find_sources(zone: dict, whitelist: list[str], exceptions: dict, log,
             await emit(rec, "search", engine=engine, lang=qlang, query=query,
                        n=len(res or []), results=res or [], variant=variant,
                        round=rnd)
-            if engine == "serper":
-                serper_groups.append(res or [])
-            else:
+            if engine == "searxng":
                 res_en = res or []
-                searx_groups.append(res_en)
+            _bucket_search(engine, res)
         if not res_en and loc_q:
             log(f"v1: SearXNG EN vide — bascule localisée ({lang}): {loc_q[:80]}")
             res_loc = await search_searxng(loc_q, log)
@@ -2138,6 +2214,12 @@ async def _find_sources(zone: dict, whitelist: list[str], exceptions: dict, log,
                        n=len(res_loc or []), results=res_loc or [], variant=variant,
                        round="classic")
             searx_groups.append(res_loc or [])
+            if tavily_key:
+                tv_loc = await _tavily_search_safe(loc_q, log)
+                await emit(rec, "search", engine="tavily", lang=lang, query=loc_q,
+                           n=len(tv_loc or []), results=tv_loc or [], variant=variant,
+                           round="classic")
+                tavily_groups.append(tv_loc or [])
     else:
         jobs = [search_searxng(query_en, log)]
         labels = [("searxng", "en", query_en)]
@@ -2152,6 +2234,10 @@ async def _find_sources(zone: dict, whitelist: list[str], exceptions: dict, log,
                 jobs.append(_tf_search_safe(loc_q, key, log, location=iso, language=lang))
                 labels.append(("tinyfish", lang, loc_q))
         _add_serper_jobs(jobs, labels)
+        tv_pairs = [("en", query_en)]
+        if loc_q:
+            tv_pairs.append((lang or "en", loc_q))
+        _add_tavily_jobs(jobs, labels, tv_pairs)
 
         results = await asyncio.gather(*jobs)
         for res, (engine, qlang, query) in zip(results, labels):
@@ -2159,12 +2245,7 @@ async def _find_sources(zone: dict, whitelist: list[str], exceptions: dict, log,
             await emit(rec, "search", engine=engine, lang=qlang, query=query,
                        n=len(res or []), results=res or [], variant=variant,
                        round=rnd)
-            if engine == "tinyfish":
-                tf_groups.append(res or [])
-            elif engine == "serper":
-                serper_groups.append(res or [])
-            else:
-                searx_groups.append(res or [])
+            _bucket_search(engine, res)
 
     searx_set = _merge_candidates(*searx_groups)
     tf_set = _merge_candidates(*tf_groups)
@@ -2175,10 +2256,14 @@ async def _find_sources(zone: dict, whitelist: list[str], exceptions: dict, log,
             f"(n_searx={compare['n_a']} n_tf={compare['n_b']})")
 
     serper_set = _merge_candidates(*serper_groups)
-    candidates = _merge_candidates(searx_set, tf_set, serper_set)
+    tavily_set = _merge_candidates(*tavily_groups)
+    candidates = _merge_candidates(searx_set, tf_set, serper_set, tavily_set)
     if candidates:
-        log(f"union des recherches: {compare['n_a']} SearXNG + {compare['n_b']} TinyFish "
-            f"+ {len(serper_set)} Serper → {len(candidates)} candidats")
+        msg = (f"union des recherches: {compare['n_a']} SearXNG + {compare['n_b']} TinyFish "
+               f"+ {len(serper_set)} Serper")
+        if tavily_key or tavily_set:
+            msg += f" + {len(tavily_set)} Tavily"
+        log(msg + f" → {len(candidates)} candidats")
 
     hints = search_hint_queries(zone, exceptions)
     if hints:
@@ -2217,22 +2302,20 @@ async def _find_sources(zone: dict, whitelist: list[str], exceptions: dict, log,
                    n=len(scoped), results=scoped, scoped=True, round="classic")
         if scoped:
             log(f"TinyFish Search scoped: {len(scoped)} résultat(s) include_domains")
-            candidates = _merge_candidates(candidates, scoped)
-            before_s = list(candidates)
-            audit_s = audit_serp_filter(before_s, protect_fn=protect)
-            candidates = serp_filter(candidates, protect_fn=protect)
-            dropped_s = [a["url"] for a in audit_s if not a["kept"]]
-            if dropped_s:
-                await emit(rec, "serp_filter", kept=len(candidates), dropped=dropped_s,
-                           scoped=True, audit=audit_s)
-            scores_s: list = []
-            candidates = rank_candidates_ml(candidates, log, scores_out=scores_s,
-                                            whitelist=whitelist)
-            if scores_s:
-                await emit(rec, "serp_rank", scores=scores_s, scoped=True)
-            official = [c for c in candidates if url_allowed(c["url"], whitelist)]
+            candidates, official = await _merge_scoped(
+                candidates, scoped, rec=rec, protect=protect, whitelist=whitelist, log=log)
     elif key and not whitelist and (not official or compare.get("discordant")):
         log("TinyFish scoped sauté : whitelist vide pour cette ZEE")
+
+    if tavily_key and whitelist and (not official or compare.get("discordant")):
+        scoped_tv = await _tavily_search_safe(
+            query_en, log, include_domains=whitelist[:8])
+        await emit(rec, "search", engine="tavily", lang="en", query=query_en,
+                   n=len(scoped_tv), results=scoped_tv, scoped=True, round="classic")
+        if scoped_tv:
+            log(f"Tavily Search scoped: {len(scoped_tv)} résultat(s) include_domains")
+            candidates, official = await _merge_scoped(
+                candidates, scoped_tv, rec=rec, protect=protect, whitelist=whitelist, log=log)
 
     seeded_preview = seed_url_candidates(zone, exceptions) + landing_url_candidates(zone)
     if needs_lessons_round(official + seeded_preview):
@@ -2244,6 +2327,9 @@ async def _find_sources(zone: dict, whitelist: list[str], exceptions: dict, log,
             lesson_jobs.append(_tf_search_safe(
                 q2, key, log, location=iso, language="en"))
             lesson_labels.append(("tinyfish", "en", q2))
+        if tavily_key:
+            lesson_jobs.append(_tavily_search_safe(q2, log))
+            lesson_labels.append(("tavily", lang or "en", q2))
         lesson_parts = await asyncio.gather(*lesson_jobs)
         extra_groups = []
         for res, (engine, qlang, query) in zip(lesson_parts, lesson_labels):
@@ -2259,6 +2345,13 @@ async def _find_sources(zone: dict, whitelist: list[str], exceptions: dict, log,
                        n=len(scoped2 or []), results=scoped2 or [],
                        scoped=True, variant=variant, round="lessons")
             extra_groups.append(scoped2 or [])
+        if tavily_key and whitelist:
+            scoped_tv2 = await _tavily_search_safe(
+                q2, log, include_domains=whitelist[:8])
+            await emit(rec, "search", engine="tavily", lang="en", query=q2,
+                       n=len(scoped_tv2 or []), results=scoped_tv2 or [],
+                       scoped=True, variant=variant, round="lessons")
+            extra_groups.append(scoped_tv2 or [])
         extra = _merge_candidates(*extra_groups)
         known_urls = {_normalize_url(c.get("url")) for c in candidates}
         extra = serp_filter(
@@ -2992,6 +3085,7 @@ async def generate_zone_poe(db, mrgid: int, logger=None, force: bool = False,
     variant = normalize_variant(getattr(run, "variant", None) if run is not None else "tinyfish")
     from app.core.extract import allow_tinyfish_fetch
     _tf_token = allow_tinyfish_fetch.set(variant == "tinyfish")
+    _official_token = bind_official_reader(whitelist)
     _ctx_token = llm_context_chars.set(LLM_CONTEXT_CHARS)
     _budget = ExitStack()
     _budget.enter_context(zone_extract_budget())
@@ -3139,6 +3233,8 @@ async def generate_zone_poe(db, mrgid: int, logger=None, force: bool = False,
         _budget.close()
         llm_context_chars.reset(_ctx_token)
         allow_tinyfish_fetch.reset(_tf_token)
+        from app.core.extract import official_url_fn
+        official_url_fn.reset(_official_token)
 
 
 # ---------------------------------------------------------------------------
