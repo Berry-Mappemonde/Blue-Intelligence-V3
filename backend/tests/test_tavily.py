@@ -793,3 +793,31 @@ class TestSwarmTavilyCounts:
         (_, _, _, n_a), (_, _, _, n_b) = _run(go())
         assert (n_a, n_b) == (3, 1)
         assert not hasattr(sw, "_last_tavily_n")
+
+
+class TestSwarmTavilyScope:
+    """Review PR #8 finding 6: include_domains only for fiche discovery."""
+
+    def test_listing_search_is_not_limited_to_seed_domain(self, monkeypatch):
+        from app.services.swarm_pipeline import Swarm
+        sw = Swarm(None)
+        sw.settings = {}
+        seen = []
+
+        async def empty(*a, **k):
+            return []
+
+        async def fake_tavily(query, log=None, include_domains=None):
+            seen.append(include_domains)
+            return []
+
+        monkeypatch.setattr(sw, "_tf_search_discover", empty)
+        monkeypatch.setattr(sw, "_serper_discover", empty)
+        monkeypatch.setattr(sw, "_tavily_discover", fake_tavily)
+        seed = {"name": "Example Ocean", "url": "https://example.org/projects/"}
+        _run(sw._search_listing(seed))
+        listing = list(seen)
+        seen.clear()
+        _run(sw._search_discover(seed, 6))
+        assert listing and all(inc is None for inc in listing)
+        assert seen and all(inc == ["example.org"] for inc in seen)

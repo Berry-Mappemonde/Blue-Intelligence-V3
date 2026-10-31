@@ -1536,9 +1536,14 @@ class Swarm:
             return []
 
     async def _search_trio(self, query, seed, log=None, purpose=None):
-        """TinyFish ∥ Serper ∥ Tavily. Tavily is a no-op without TAVILY_API_KEY."""
+        """TinyFish ∥ Serper ∥ Tavily. Tavily is a no-op without TAVILY_API_KEY.
+
+        Tavily is limited to the seed's domain only for fiche discovery on the
+        seed site (PROJECTS_DISCOVERY_PURPOSE). Listing and official-site
+        searches are not: those pages can sit on a funder or ministry domain,
+        as with TinyFish and Serper."""
         domain = ""
-        if isinstance(seed, dict):
+        if isinstance(seed, dict) and purpose == PROJECTS_DISCOVERY_PURPOSE:
             domain = domain_of(seed.get("url") or "")
         include = [domain] if domain else None
         tf_hits, sp_hits, tv_hits = await asyncio.gather(
