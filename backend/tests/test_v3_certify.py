@@ -1,18 +1,13 @@
-"""Échelle C0–C4, citation vérifiée, manifeste de run immuable.
+"""Échelle C0–C4 et citation vérifiée (bibliothèque, sans système de run propre).
 
-Aucun réseau : pas d'appel HTTP. Les variables d'environnement nouvelles
-sont optionnelles.
+Aucun réseau : pas d'appel HTTP.
 """
 from __future__ import annotations
 
-import hashlib
-import json
-import re
 import sys
 from copy import deepcopy
 from pathlib import Path
 
-import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -29,14 +24,6 @@ from app.services.v3_certify import (  # noqa: E402
     level,
     level_from_v2,
     verified_quote,
-)
-from app.services.v3_run_manifest import (  # noqa: E402
-    code_fingerprint,
-    default_runs_dir,
-    from_geojson,
-    new_run_id,
-    rules_fingerprint,
-    write_run,
 )
 
 GOV = "https://www.martinique.gouv.fr/x"
@@ -281,95 +268,16 @@ def test_geojson_and_run_output_include_confidence_level():
     assert out["confidence_level"] == "C1"
 
 
-def test_levels_work_when_new_env_is_absent(monkeypatch):
-    monkeypatch.delenv("V3_RUNS_DIR", raising=False)
+def test_levels_work_without_env():
     assert level_from_v2({"name": "X"}) == "C0"
-    path = default_runs_dir()
-    assert path.parts[-3:] == ("data", "v3", "runs")
 
 
-def test_runs_dir_env_is_optional(monkeypatch, tmp_path):
-    monkeypatch.setenv("V3_RUNS_DIR", str(tmp_path / "custom-runs"))
-    assert default_runs_dir() == tmp_path / "custom-runs"
-    monkeypatch.setenv("V3_RUNS_DIR", "  ")
-    assert default_runs_dir().parts[-3:] == ("data", "v3", "runs")
+def test_unified_run_is_the_only_run_mechanism():
+    """No file-run store beside unified_runs / run_artifacts (PR #14)."""
+    import importlib.util
 
+    from app.services import run_artifacts
 
-def test_code_fingerprint_tracks_python_only(tmp_path, monkeypatch):
-    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-secret-value")
-    (tmp_path / "a.py").write_text("a = 1\n")
-    (tmp_path / ".env").write_text("OPENROUTER_API_KEY=sk-or-secret-value\n")
-    (tmp_path / "note.txt").write_text("sk-or-secret-value\n")
-    first = code_fingerprint(tmp_path)
-    assert re.fullmatch(r"[0-9a-f]{12}", first)
-    assert "secret" not in first
-    (tmp_path / "a.py").write_text("a = 2\n")
-    assert code_fingerprint(tmp_path) != first
-    (tmp_path / "a.py").write_text("a = 1\n")
-    (tmp_path / "note.txt").write_text("other\n")
-    assert code_fingerprint(tmp_path) == first
-
-
-def test_default_code_fingerprint_is_stable():
-    assert re.fullmatch(r"[0-9a-f]{12}", code_fingerprint())
-    assert code_fingerprint() == code_fingerprint()
-
-
-def test_run_id_mixes_timestamp_code_and_rules(tmp_path):
-    (tmp_path / "a.py").write_text("a = 1\n")
-    rid = new_run_id(tmp_path, now=0)
-    assert rid.startswith("19700101T000000-c")
-    assert re.fullmatch(r"\d{8}T\d{6}-c[0-9a-f]{12}-r[0-9a-f]{8}", rid)
-    assert f"-c{code_fingerprint(tmp_path)}-r{rules_fingerprint()}" == rid[rid.index("-c"):]
-    other_rules = new_run_id(tmp_path, rules={"levels": "C0-C4 v2"}, now=0)
-    assert other_rules.split("-r")[0] == rid.split("-r")[0]
-    assert other_rules != rid
-    (tmp_path / "a.py").write_text("a = 2\n")
-    other_code = new_run_id(tmp_path, now=0)
-    assert other_code.split("-r")[1] == rid.split("-r")[1]
-    assert other_code != rid
-
-
-def test_manifest_hashes_every_artifact_and_refuses_overwrite(tmp_path, monkeypatch):
-    monkeypatch.setenv("NVIDIA_API_KEY", "nvapi-secret-value")
-    runs = tmp_path / "runs"
-    entities = [
-        {"name": "Pointe-à-Pitre", "lat": 16.24, "lon": -61.53,
-         "layer": "marina", "level": "C1"},
-        {"name": "Sans point", "lat": None, "lon": None, "layer": "marina", "level": "C0"},
-    ]
-    note = "café\n"
-    _, manifest = write_run(
-        runs, "r1", {"note.txt": note}, entities=entities, meta={"kind": "test"})
-    dest = runs / "r1"
-    assert {p.name for p in dest.iterdir()} == {
-        "entities.geojson", "note.txt", "manifest.json",
-    }
-    assert set(manifest["sha256"]) == {"entities.geojson", "note.txt"}
-    for name, digest in manifest["sha256"].items():
-        assert hashlib.sha256((dest / name).read_bytes()).hexdigest() == digest
-    assert manifest["sha256"]["note.txt"] == hashlib.sha256(note.encode()).hexdigest()
-    loaded = json.loads((dest / "manifest.json").read_text(encoding="utf-8"))
-    assert loaded["sha256"] == manifest["sha256"]
-    assert loaded["run_id"] == "r1"
-    assert loaded["rules"]["levels"] == "C0-C4 v1"
-    assert loaded["counts"]["marina"] == {"C1": 1, "C0": 1}
-    assert loaded["entities"] == 2
-    assert loaded["kind"] == "test"
-    assert "nvapi-secret-value" not in json.dumps(loaded)
-    back = from_geojson(dest / "entities.geojson")
-    assert back[0]["name"] == "Pointe-à-Pitre"
-    assert back[0]["lat"] == 16.24 and back[0]["lon"] == -61.53
-    assert back[1]["lat"] is None and back[1]["lon"] is None
-
-    with pytest.raises(FileExistsError, match="immutable"):
-        write_run(runs, "r1", {"note.txt": "changed"})
-    assert (dest / "note.txt").read_text(encoding="utf-8") == note
-
-    (runs / "empty").mkdir()
-    with pytest.raises(FileExistsError, match="immutable"):
-        write_run(runs, "empty", {"a.txt": "x"})
-    with pytest.raises(ValueError):
-        write_run(runs, "../x", {"a.txt": "x"})
-    with pytest.raises(ValueError):
-        write_run(runs, "r9", {"manifest.json": "{}"})
+    assert importlib.util.find_spec("app.services.v3_run_manifest") is None
+    assert run_artifacts.LEVEL_FIELD == "confidence_level"
+    assert run_artifacts.SCORE_FIELD == "confidence"
