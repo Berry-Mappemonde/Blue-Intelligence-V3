@@ -258,6 +258,9 @@ async def open_run(
         await rec.event("run_start", dataset=dataset, kind=kind,
                         label=doc["label"], **{spec.wrote_flag: False})
 
+    from app.services.run_artifacts import record_open
+    await record_open(rid, dataset, (existing or {}).get("params") or params,
+                      resumed=bool(existing))
     token = bind_run(rid)
     return {
         "run_id": rid,
@@ -296,6 +299,8 @@ async def finalize_run(db, dataset: str, run_id: str, *, cancelled: bool = False
         "cancelled": cancelled,
         **(extra or {}),
     }
+    from app.core.tokenfactory import attach
+    attach(summary, run_id)
     state = "cancelled" if cancelled else ("failed" if error else "done")
     meta = coll(db, spec.meta_coll)
     existing = None
@@ -312,6 +317,10 @@ async def finalize_run(db, dataset: str, run_id: str, *, cancelled: bool = False
         spec.wrote_flag: True if wrote_live else False,
     }})
     await rec.event("run_done", **summary)
+    from app.services.run_artifacts import record_close
+    await record_close(run_id, dataset, (existing or {}).get("params"), state=state,
+                       counts={"items": n, "extra_items": extra_n},
+                       cost=summary.get("tokenfactory"))
 
 
 async def write_item(db, dataset: str, run_id: str, doc: dict, *,

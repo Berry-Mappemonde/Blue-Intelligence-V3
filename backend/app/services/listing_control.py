@@ -142,6 +142,8 @@ def compare_to_listing(run_ports: list[dict], listing_ports: list[dict],
 
     listing_only = []
     seen_lo: set[tuple] = set()
+    uk_app_entry_not_a_gap = 0
+    from app.services.poe_rules import is_uk_app_entry
     for lp in listing_ports:
         if lp.get("role") != "poe":
             continue
@@ -152,6 +154,10 @@ def compare_to_listing(run_ports: list[dict], listing_ports: list[dict],
         if key in matched_listing or key in seen_lo:
             continue
         seen_lo.add(key)
+        # UK: no designated list. A listing name the run did not repeat is not a hole.
+        if is_uk_app_entry(lp):
+            uk_app_entry_not_a_gap += 1
+            continue
         listing_only.append({
             "mrgid": ids[0] if ids else None,
             "zone_name": lp.get("zone_name"),
@@ -162,6 +168,10 @@ def compare_to_listing(run_ports: list[dict], listing_ports: list[dict],
     listing_poe_n = len(listing_poe_keys) if scope is not None else sum(
         1 for p in listing_ports if p.get("role") == "poe")
     run_n = len(run_ports)
+    # UK misses are not holes: drop them from the coverage denominator too.
+    coverage_denom = listing_poe_n - uk_app_entry_not_a_gap
+    if coverage_denom < 0:
+        coverage_denom = 0
     summary = {
         "run_ports": run_n,
         "listing_poe": listing_poe_n,
@@ -170,7 +180,8 @@ def compare_to_listing(run_ports: list[dict], listing_ports: list[dict],
         "run_only": len(run_only),
         "listing_only": len(listing_only),
         "ambiguous": len(ambiguous),
-        "coverage": round(len(confident) / listing_poe_n, 4) if listing_poe_n else None,
+        "uk_app_entry_not_a_gap": uk_app_entry_not_a_gap,
+        "coverage": round(len(confident) / coverage_denom, 4) if coverage_denom else None,
         "noise": round((len(contradiction) + len(run_only)) / run_n, 4) if run_n else None,
         "restricted_to_run_zones": restrict_to_run_zones,
     }

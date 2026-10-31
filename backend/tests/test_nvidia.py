@@ -33,6 +33,8 @@ LEGACY_CHAINS = {
 
 @pytest.fixture(autouse=True)
 def legacy_chains(monkeypatch):
+    for name in ("NEBIUS_API_KEY", "TF_RUN_BUDGET_USD", "TF_PRICES_JSON", "BI_TF_BASE"):
+        monkeypatch.delenv(name, raising=False)
     monkeypatch.setattr(nvidia, "CHAINS", LEGACY_CHAINS)
     # No network: Nightshift (the first hop of llm.ask_json) reports no model answered.
     from unittest.mock import AsyncMock

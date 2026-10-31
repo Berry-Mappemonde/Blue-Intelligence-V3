@@ -30,6 +30,8 @@ import re
 import threading
 import time
 import uuid
+from contextlib import ExitStack, contextmanager
+from contextvars import ContextVar
 
 import httpx
 import pycountry
@@ -48,9 +50,10 @@ from app.core.extract import (
 )
 from app.core.geo import classify_poe_point, geocode_port_dual, inland_exception_flags
 from app.core.llm import (
-    LLM_CONTEXT_CHARS, extract_ports, grounded_search, llm_context_chars, llm_geocode_port,
+    LLM_CONTEXT_CHARS, extract_call_gate, extract_ports, extract_ports_per_answer,
+    grounded_search, llm_context_chars, llm_geocode_port,
 )
-from app.core.rag import select_list_context, semantic_similarity
+from app.core.rag import chunk_text, list_like_score, select_list_context, semantic_similarity
 from app.adapters import evidence_store
 from app.adapters.zetaris import ZetarisClient
 from app.agents import registry_check
@@ -398,6 +401,11 @@ def qualify_unclos(zone: dict) -> dict | None:
         return {"code": "overlapping_claim", "basis": "UNCLOS art. 74/83"}
     if "joint" in pol:
         return {"code": "joint_regime", "basis": "UNCLOS art. 74(3)/83(3)"}
+    # UK: every port is a PoE via the official app. No designated list, and
+    # that absence is not the sovereign_entry "no PoE" bucket.
+    from app.services.poe_rules import is_uk_app_entry, uk_app_entry_qualification
+    if is_uk_app_entry(zone):
+        return uk_app_entry_qualification()
     if UNINHABITED_RE.search(name):
         return {"code": "uninhabited", "basis": "UNCLOS art. 2 & 25"}
     return {"code": "sovereign_entry", "basis": "UNCLOS art. 17-19"}
@@ -1145,7 +1153,7 @@ def _pipeline_run_id(rec, zone: dict) -> str:
 async def extract_ports_llm(context: str, zone: dict, log, rec=None,
                             catalog_text: str | None = None,
                             settings: dict | None = None) -> list[dict]:
-    """Extract once (see ``_extract_ports_core``), then cross-reference Zetaris."""
+    """Extract (see ``_extract_ports_core``; long raw text in batches), then cross-reference Zetaris."""
     ports = await _extract_ports_core(context, zone, log, rec=rec,
                                       catalog_text=catalog_text, settings=settings)
     run_id = _pipeline_run_id(rec, zone)
@@ -1166,9 +1174,333 @@ async def extract_ports_llm(context: str, zone: dict, log, rec=None,
     return ports
 
 
+EXTRACT_BATCH_OVERLAP_CHARS = 1500
+EXTRACT_BATCH_CONCURRENCY = 3
+EXTRACT_MAX_LLM_CALLS = 1000
+SOURCE_MAX_CHARS = 120_000  # per fetched source; was a hard 60,000 cut before batching
+_SOURCE_BLOCK_RE = re.compile(r"\n\n(?=\[(?:SOURCE: |SYNTHÈSE DE RECHERCHE))")
+
+
+def _split_block(block: str, size: int, overlap: int) -> list[str]:
+    """Cut one oversized source into pieces of at most ``size`` chars that overlap by
+    ``overlap``; each piece keeps the block's "[SOURCE: url]" header line."""
+    header = ""
+    if block.startswith("["):
+        first, nl, rest = block.partition("\n")
+        if nl and len(first) < size // 4:
+            header, block = first + "\n", rest
+    room = max(1, size - len(header))
+    overlap = max(0, min(overlap, room // 2))
+    pieces, start = [], 0
+    while start < len(block):
+        end = min(start + room, len(block))
+        if end < len(block):
+            # End on a line break (else a space) in the last quarter: never cut a name.
+            cut = block.rfind("\n", start + room * 3 // 4, end)
+            if cut == -1:
+                cut = block.rfind(" ", start + room * 3 // 4, end)
+            if cut > start:
+                end = cut
+        pieces.append(header + block[start:end])
+        if end >= len(block):
+            break
+        start = max(end - overlap, start + 1)
+    return pieces
+
+
+def extraction_batches(raw: str, size: int, overlap: int) -> list[str]:
+    """Split the joined source text into reader batches of at most ``size`` chars.
+
+    Whole "[SOURCE: url]" blocks (and the search synthesis) are packed together in order;
+    a block longer than ``size`` is cut into overlapping pieces (``_split_block``).
+    """
+    pieces: list[str] = []
+    for block in _SOURCE_BLOCK_RE.split(raw or ""):
+        if not block.strip():
+            continue
+        pieces.extend([block] if len(block) <= size else _split_block(block, size, overlap))
+    batches: list[str] = []
+    for piece in pieces:
+        if batches and len(batches[-1]) + 2 + len(piece) <= size:
+            batches[-1] = f"{batches[-1]}\n\n{piece}"
+        else:
+            batches.append(piece)
+    return batches
+
+
+EXTRACT_MIN_BATCH_CHARS = 300  # floor when a dense list is split for the answer cap
+_PORT_TERM_RE = re.compile(
+    r"\b(?:ports?|harbou?rs?|marinas?|docks?|wharf|wharves|quays?|piers?|anchorages?|"
+    r"terminals?|puertos?|portos?|muelles?|quais?)\b", re.I)
+_LIST_MARKER_RE = re.compile(r"^(?:[-–•*·▪●]|\(?\d{1,3}[.)]|\d{1,3}\.-|\(?[a-z][.)])\s*\S", re.I)
+_NAMED_PORT_RE = re.compile(
+    r"\b(?:Port|Puerto|Porto|Harbou?r) (?:of |de |do |du )?[A-Z][\w'’.-]+"
+    r"|\b[A-Z][\w'’.-]+(?: [A-Z][\w'’.-]+){0,2} (?:Port|Harbou?r|Marina|Dock|Wharf|Quay|Pier|Anchorage)\b")
+
+
+def estimated_port_mentions(text: str) -> int:
+    """Rough count of the ports a reader would list from ``text``: short list lines
+    (a list marker or a port word, at most 10 words) or distinct "Port of X" /
+    "X Marina" names, whichever is higher."""
+    entries = 0
+    for line in (text or "").splitlines():
+        line = line.strip()
+        if line and len(line.split()) <= 10 and (_LIST_MARKER_RE.match(line)
+                                                 or _PORT_TERM_RE.search(line)):
+            entries += 1
+    return max(entries, len(set(_NAMED_PORT_RE.findall(text or ""))))
+
+
+def fit_output_cap(batches: list[str], max_ports: int, overlap: int,
+                   min_chars: int = EXTRACT_MIN_BATCH_CHARS) -> list[str]:
+    """Split again any batch likely to list more than ``max_ports`` ports (the answer
+    would be cut at max_tokens), down to ``min_chars`` per batch."""
+    out: list[str] = []
+    for batch in batches:
+        n = estimated_port_mentions(batch)
+        if n <= max_ports or len(batch) <= min_chars:
+            out.append(batch)
+            continue
+        size = max(min_chars, len(batch) * max_ports // n)
+        parts = extraction_batches(batch, size, min(overlap, size // 8))
+        out.extend(fit_output_cap(parts, max_ports, overlap, min_chars) if len(parts) > 1 else [batch])
+    return out
+
+
+def _list_density(text: str) -> float:
+    chunks = chunk_text(text, size=500)
+    return sum(list_like_score(c) for c in chunks) / max(1, len(chunks))
+
+
+EXTRACT_MIN_ZONE_CALLS = 6  # floor of one zone's share of the run cap
+# One zone's extraction budget and what it could not read (see extraction_gaps).
+_zone_extract: ContextVar[dict | None] = ContextVar("zone_extract", default=None)
+
+
+@contextmanager
+def zone_extract_budget():
+    """Zone scope of the call cap. The zone takes its share of the run cap on its first
+    call and gives back the unused part on exit; nested scopes reuse the outer one."""
+    outer = _zone_extract.get()
+    if outer is not None:
+        yield outer
+        return
+    state = {"allowance": None, "used": 0, "run_id": None, "capped": False}
+    token = _zone_extract.set(state)
+    gate_token = extract_call_gate.set(lambda: _take_extract_calls(1) > 0)
+    try:
+        yield state
+    finally:
+        extract_call_gate.reset(gate_token)
+        _zone_extract.reset(token)
+        from app.core import tokenfactory
+        if state["run_id"] is not None:
+            tokenfactory.close_zone_calls(state["allowance"] - state["used"], state["run_id"])
+        elif state["allowance"] is None and tokenfactory.current_run_id() is not None:
+            tokenfactory.close_zone_calls(None, tokenfactory.current_run_id())
+
+
+def extraction_gaps() -> dict:
+    """What the current zone's extraction left out; empty when it read everything."""
+    state = _zone_extract.get() or {}
+    return {k: state[k] for k in ("capped", "deadline_hit", "unread_batches", "failed_batches")
+            if state.get(k)}
+
+
+EXTRACT_DEADLINE_RESERVE_S = 300  # zone time kept for geocoding and writing after extraction
+# (loop.time() at which the zone is cut, zone timeout in s), set by the caller of
+# generate_zone_poe that wraps it in asyncio.wait_for.
+zone_deadline: ContextVar[tuple[float, float] | None] = ContextVar("zone_deadline", default=None)
+
+
+def set_zone_deadline(timeout_s: float):
+    """Call just before ``asyncio.wait_for(generate_zone_poe(...), timeout_s)``."""
+    return zone_deadline.set((asyncio.get_running_loop().time() + timeout_s, float(timeout_s)))
+
+
+def _extract_stop_time() -> float | None:
+    """loop.time() at which batch reading stops and keeps what finished: the zone deadline
+    minus ``formalities.extract_deadline_reserve_s`` (at most a third of the zone timeout).
+    If that time has already passed, half of the time left before the hard timeout."""
+    from app.core.run_rules import get_rule
+    bound = zone_deadline.get()
+    if bound is None:
+        return None
+    deadline, total = bound
+    reserve = min(float(get_rule("formalities.extract_deadline_reserve_s",
+                                 EXTRACT_DEADLINE_RESERVE_S)), total / 3)
+    now = asyncio.get_running_loop().time()
+    return max(deadline - reserve, now + max(0.0, deadline - now) / 2)
+
+
+def _take_extract_calls(wanted: int) -> int:
+    """Calls granted under ``formalities.extract_max_llm_calls``. In a run, each zone gets
+    a fair share (free calls / zones left, at least ``formalities.extract_min_zone_calls``)
+    on the Token Factory ledger key; without a run, the cap holds for this zone alone.
+    A refused call marks the zone ``capped``."""
+    from app.core import tokenfactory
+    from app.core.run_rules import get_rule
+    state = _zone_extract.get()
+    if state is None:
+        with zone_extract_budget():
+            return _take_extract_calls(wanted)
+    if state["allowance"] is None:
+        cap = int(get_rule("formalities.extract_max_llm_calls", EXTRACT_MAX_LLM_CALLS))
+        run_id = tokenfactory.current_run_id()
+        if run_id is None:
+            state["allowance"] = cap
+        else:
+            floor = int(get_rule("formalities.extract_min_zone_calls", EXTRACT_MIN_ZONE_CALLS))
+            state["allowance"] = tokenfactory.reserve_zone_calls(cap, floor, run_id)
+            state["run_id"] = run_id
+    granted = max(0, min(int(wanted), state["allowance"] - state["used"]))
+    if granted and state["run_id"] is not None:
+        tokenfactory.use_zone_calls(granted, state["run_id"])
+    state["used"] += granted
+    if granted < wanted:
+        state["capped"] = True
+    return granted
+
+
+def _return_extract_calls(n: int) -> None:
+    """Give back ``n`` calls taken by ``_take_extract_calls`` that were never started;
+    the zone returns them to the run when it closes."""
+    from app.core import tokenfactory
+    state = _zone_extract.get()
+    n = min(int(n), (state or {}).get("used", 0))
+    if n <= 0:
+        return
+    state["used"] -= n
+    if state["run_id"] is not None:
+        tokenfactory.return_zone_calls(n, state["run_id"])
+
+
+async def _extract_primary(context: str, zone: dict, log, rec=None,
+                           catalog_text: str | None = None,
+                           settings: dict | None = None) -> list[dict]:
+    """Primary reader. Input that fits the reader window: one call on ``context``, as
+    before. Raw source text longer than the window (``catalog_text``, the pipeline's
+    joined sources), or likely to list more ports than one answer holds
+    (``extract_ports_per_answer``): one call per batch (``extraction_batches``, then
+    ``fit_output_cap``) so no port sits past the window or the answer cap, merged
+    through ``core.dedup.deduplicate_list``."""
+    from app.core.run_rules import get_rule
+    from app.core.tokenfactory import LLMCallCapReached
+    max_ports = extract_ports_per_answer()
+    if catalog_text is None or (len(catalog_text) <= llm_context_chars.get()
+                                and estimated_port_mentions(catalog_text) <= max_ports):
+        if not _take_extract_calls(1):
+            raise LLMCallCapReached("formalities.extract_max_llm_calls reached")
+        return await extract_ports(context, zone, settings=settings, log=log)
+
+    size = int(get_rule("formalities.extract_batch_chars", LLM_CONTEXT_CHARS))
+    overlap = int(get_rule("formalities.extract_batch_overlap_chars", EXTRACT_BATCH_OVERLAP_CHARS))
+    workers = int(get_rule("formalities.extract_batch_concurrency", EXTRACT_BATCH_CONCURRENCY))
+    window_batches = extraction_batches(catalog_text, size, overlap)
+    batches = fit_output_cap(window_batches, max_ports, overlap)
+    if len(batches) > len(window_batches):
+        log(f"plafond de sortie (~{max_ports} ports par réponse): "
+            f"{len(window_batches)} → {len(batches)} lot(s)")
+    state = _zone_extract.get() or {}
+    granted = _take_extract_calls(len(batches))
+    if not granted:
+        state["unread_batches"] = state.get("unread_batches", 0) + len(batches)
+        raise LLMCallCapReached("formalities.extract_max_llm_calls reached")
+    kept = list(range(len(batches)))
+    if granted < len(batches) or len(batches) > workers:
+        # The most list-like batches go first: they survive the cap and the deadline.
+        ranked = sorted(kept, key=lambda i: _list_density(batches[i]), reverse=True)
+    else:
+        ranked = kept
+    if granted < len(batches):
+        ranked = ranked[:granted]
+        kept = sorted(ranked)
+        state["unread_batches"] = state.get("unread_batches", 0) + len(batches) - granted
+        log(f"plafond d'appels LLM: {granted}/{len(batches)} lot(s) envoyés, "
+            f"{sum(len(b) for i, b in enumerate(batches) if i not in kept)} chars non lus")
+    sem = asyncio.Semaphore(max(1, workers))
+    started: set[int] = set()
+
+    async def read(i: int) -> list[dict]:
+        async with sem:
+            started.add(i)
+            token = llm_context_chars.set(size)
+            try:
+                return await extract_ports(batches[i], zone, settings=settings, log=log)
+            finally:
+                llm_context_chars.reset(token)
+
+    results: dict[int, list | BaseException] = {}
+    stop_at = _extract_stop_time()
+
+    async def read_all(order: list[int]) -> list[int]:
+        """Read ``order``; at the extraction deadline cancel what is left and keep what
+        finished. Returns the batches that were not read."""
+        tasks = {asyncio.ensure_future(read(i)): i for i in order}
+        loop = asyncio.get_running_loop()
+        timeout = None if stop_at is None else max(0.0, stop_at - loop.time())
+        try:
+            done, pending = await asyncio.wait(list(tasks), timeout=timeout)
+        finally:
+            # Also when the zone is cancelled from outside (asyncio.wait leaves its
+            # tasks running): no batch keeps spending after the zone is gone.
+            left = [t for t in tasks if not t.done()]
+            for task in left:
+                task.cancel()
+            if left:
+                await asyncio.gather(*left, return_exceptions=True)
+            # A batch cut before it started sent nothing: its call goes back to the cap.
+            _return_extract_calls(sum(tasks[t] not in started for t in left))
+        for task in done:
+            if not task.cancelled():
+                results[tasks[task]] = task.exception() or task.result()
+        return sorted(tasks[t] for t in pending)
+
+    unread = await read_all(ranked)
+    if unread:
+        state["deadline_hit"] = True
+        state["unread_batches"] = state.get("unread_batches", 0) + len(unread)
+        log(f"délai d'extraction atteint: {len(unread)}/{len(kept)} lot(s) non lus, "
+            f"{len(kept) - len(unread)} lot(s) terminés gardés")
+    # A failed batch is read once more (it takes a call from the zone's share); one that
+    # still fails leaves the zone partial, never complete.
+    failed = [i for i in kept if isinstance(results.get(i), BaseException)
+              and not isinstance(results[i], LLMCallCapReached)]
+    retried = failed[:_take_extract_calls(len(failed))] if failed and not unread else []
+    if retried:
+        log(f"{len(retried)} lot(s) en échec relancé(s) une fois")
+        late = await read_all(retried)
+        if late:
+            state["deadline_hit"] = True
+    found = [p for i in kept if isinstance(results.get(i), list) for p in results[i]]
+    errors = [results[i] for i in kept if isinstance(results.get(i), BaseException)]
+    if errors:
+        state["failed_batches"] = state.get("failed_batches", 0) + len(errors)
+    if not any(isinstance(r, list) for r in results.values()):
+        raise errors[0] if errors else asyncio.TimeoutError("extraction deadline reached")
+    merged = deduplicate_list(found, title_key="name")
+    log(f"extraction par lots: {len(kept)}/{len(batches)} lot(s) de ≤{size} chars sur "
+        f"{len(catalog_text)} chars, {len(found)} port(s) lus → {len(merged)} après dédup"
+        + (f", {len(errors)} lot(s) en échec" if errors else ""))
+    await emit(rec, "extraction_batches", batches=len(batches), sent=len(kept),
+               failed=len(errors), retried=len(retried), unread=len(unread), batch_chars=size,
+               raw_chars=len(catalog_text),
+               window_batches=len(window_batches), max_ports_per_answer=max_ports,
+               ports_read=len(found), ports=len(merged))
+    return merged
+
+
 async def _extract_ports_core(context: str, zone: dict, log, rec=None,
                               catalog_text: str | None = None,
                               settings: dict | None = None) -> list[dict]:
+    with zone_extract_budget():
+        return await _extract_ports_compared(context, zone, log, rec=rec,
+                                             catalog_text=catalog_text, settings=settings)
+
+
+async def _extract_ports_compared(context: str, zone: dict, log, rec=None,
+                                  catalog_text: str | None = None,
+                                  settings: dict | None = None) -> list[dict]:
     """LLM and local NER run IN PARALLEL on the same context and their
     lists are compared port by port (no longer a simple fallback):
       - port seen by both → extraction_agreement=True (confidence signal);
@@ -1181,7 +1513,7 @@ async def _extract_ports_core(context: str, zone: dict, log, rec=None,
     Claude only steps in after both NIM/OR readers fail.
     """
     raw_catalog = catalog_text if catalog_text is not None else context
-    catalog = extract_structured_ports(raw_catalog)
+    catalog = await asyncio.to_thread(extract_structured_ports, raw_catalog)
     if catalog_is_sufficient(catalog, raw_catalog):
         kept = catalog_ports_to_keep(catalog)
         if kept:
@@ -1202,7 +1534,8 @@ async def _extract_ports_core(context: str, zone: dict, log, rec=None,
 
     async def _primary():
         try:
-            return await extract_ports(context, zone, settings=settings, log=log), None
+            return await _extract_primary(context, zone, log, rec=rec,
+                                          catalog_text=catalog_text, settings=settings), None
         except Exception as e:
             return None, e
 
@@ -1214,6 +1547,10 @@ async def _extract_ports_core(context: str, zone: dict, log, rec=None,
                 if not choice:
                     return None
                 model, engine = choice
+                if not _take_extract_calls(1):
+                    if log:
+                        log("second lecteur: plafond d'appels LLM atteint, non lancé")
+                    return None
                 ports = await nvidia.extract_ports_nvidia(
                     context, zone, settings=settings, log=log,
                     model=model, engine=engine, fallback=False)
@@ -1250,7 +1587,16 @@ async def _extract_ports_core(context: str, zone: dict, log, rec=None,
         claude_names = []  # already the primary list
     if llm_ports is None:
         from app.core import claude
-        if claude.claude_enabled(settings) and claude.budget_allows_call(settings):
+        from app.core.tokenfactory import LLMCallCapReached
+        if isinstance(llm_err, LLMCallCapReached):
+            # The zone's share of the cap is used up: no uncounted reader behind it.
+            log("plafond d'appels LLM atteint — Claude (dernier recours) sauté, zone marquée plafonnée")
+        elif not (claude.claude_enabled(settings) and claude.budget_allows_call(settings)):
+            pass
+        elif not _take_extract_calls(1):
+            log("plafond d'appels LLM atteint — Claude (dernier recours) non lancé")
+            llm_err = LLMCallCapReached("formalities.extract_max_llm_calls reached")
+        else:
             try:
                 llm_ports = await claude.extract_ports_claude(
                     context, zone, settings=settings, log=log)
@@ -2125,6 +2471,8 @@ async def _collect_texts(official: list[dict], log, rec=None, max_fetch: int = 8
     """Step 3 — Collection: N1∥N2 cascade, anti-bot mirror, official attached PDFs
     (even if the page is already long), depth-2 if the text is thin.
     Attachments go before the rest of the SERP queue (France lesson: list + map)."""
+    from app.core.run_rules import get_rule
+    source_max = int(get_rule("formalities.source_max_chars", SOURCE_MAX_CHARS))
     texts, hashes, used_sources, excerpts = [], {}, [], {}
     queue = list(official)
     seen_urls: set[str] = set()
@@ -2185,7 +2533,12 @@ async def _collect_texts(official: list[dict], log, rec=None, max_fetch: int = 8
             and list_url_bonus(url) >= 0.45
         )
         if (text and len(text) > 200) or keep_short_pdf:
-            texts.append(f"[SOURCE: {url}]\n{(text or '')[:60000]}")
+            # Whole text: the primary reader batches long sources. Only a safety
+            # ceiling (formalities.source_max_chars) bounds a runaway document.
+            if text and len(text) > source_max:
+                log(f"source {domain_of(url)}: {len(text)} chars, coupée au plafond "
+                    f"de sécurité {source_max}")
+            texts.append(f"[SOURCE: {url}]\n{(text or '')[:source_max]}")
             excerpts[url] = (text or "")[:2500]
             used_sources.append({"url": url, "domain": c.get("domain") or domain_of(url),
                                  "md5": hashes.get(url), "collected_at": now_iso(),
@@ -2560,6 +2913,7 @@ async def _persist_zone_run(db, zone: dict, docs: list[dict], status: str,
     in the same run replaces its ports."""
     mrgid = int(zone["mrgid"])
     docs = deduplicate_list(docs, title_key="name") if docs else []
+    gaps = extraction_gaps()
     ports_coll = db[run.ports_coll]
     await ports_coll.delete_many({"run_id": run.run_id, "mrgid": mrgid})
     if docs:
@@ -2581,13 +2935,16 @@ async def _persist_zone_run(db, zone: dict, docs: list[dict], status: str,
         "pipeline_variant": getattr(run, "variant", None),
         "sources_official": bool(any(s.get("official") for s in used_sources)),
         "confidence_avg": zone_confidence_avg(docs),
+        # Partial, not complete: the call cap (or a batch failure, the deadline) left text unread.
+        "extraction_partial": bool(gaps),
+        "extraction_gaps": gaps or None,
     }
     await db[run.zones_coll].update_one(
         {"run_id": run.run_id, "mrgid": mrgid}, {"$set": zone_doc}, upsert=True)
     await emit(rec, "persist", inserted=len(docs), status=zone_doc["status"],
-               run_id=run.run_id)
+               run_id=run.run_id, extraction_gaps=gaps or None)
     log(f"terminé (run {run.run_id[:8]}): {len(docs)} PoE écrits dans l'espace du run, "
-        f"statut {zone_doc['status']}")
+        f"statut {zone_doc['status']}" + (f", extraction partielle {gaps}" if gaps else ""))
     return zone_doc
 
 
@@ -2637,6 +2994,8 @@ async def _persist_zone(db, zone: dict, docs: list[dict], status: str,
             "last_error": None,
             "sources_official": bool(any(s.get("official") for s in used_sources)),
             "confidence_avg": zone_confidence_avg(docs),
+            "extraction_partial": bool(extraction_gaps()),
+            "extraction_gaps": extraction_gaps() or None,
         }, "$unset": {"unclos": ""}})
         log(f"terminé: {inserted} nouveau(x) PoE, {merged} fusionné(s) — total zone {poe_count}, statut {status}")
     elif zone.get("poe_count", 0) > 0:
@@ -2664,9 +3023,9 @@ async def _store_evidence(db, zone: dict, docs: list[dict], raw: str,
                           used_sources: list[dict], log, rec=None) -> int:
     """Build evidence records from the collected official text and store them; never fails."""
     try:
-        records = evidence_store.build_records(
+        records = await asyncio.to_thread(lambda: evidence_store.build_records(
             zone.get("mrgid"), [d.get("name") for d in docs or []],
-            evidence_store.documents_from_context(raw, used_sources))
+            evidence_store.documents_from_context(raw, used_sources)))
         stored = await evidence_store.store(db, records)
     except Exception as e:  # noqa: BLE001 — evidence is optional, generation must finish
         log(f"evidence: non stockée ({type(e).__name__}: {str(e)[:100]})")
@@ -2723,6 +3082,8 @@ async def generate_zone_poe(db, mrgid: int, logger=None, force: bool = False,
     from app.core.extract import allow_tinyfish_fetch
     _tf_token = allow_tinyfish_fetch.set(variant == "tinyfish")
     _ctx_token = llm_context_chars.set(LLM_CONTEXT_CHARS)
+    _budget = ExitStack()
+    _budget.enter_context(zone_extract_budget())
     log(f"=== {name} (mrgid {mrgid}) — variant={variant} whitelist: {', '.join(whitelist[:8]) or 'vide'}")
     await emit(rec, "zone_start", iso2=zone.get("iso2"), sov_iso2=zone.get("sov_iso2"),
                sovereign=zone.get("sovereign"), pol_type=zone.get("pol_type"),
@@ -2792,7 +3153,9 @@ async def generate_zone_poe(db, mrgid: int, logger=None, force: bool = False,
         # reads the raw official text (else Alofi / SCT list tail vanish).
         raw = "\n\n".join(context_parts)
         raw_chars = len(raw)
-        raw_catalog = extract_structured_ports(raw)
+        # Whole-text parsing and RAG ranking run in a worker thread: with sources up to
+        # formalities.source_max_chars they would block the other zones and the API.
+        raw_catalog = await asyncio.to_thread(extract_structured_ports, raw)
         if raw_catalog:
             remembered = remember_seed_urls(zone, urls_with_catalog(texts), exceptions)
             if remembered:
@@ -2800,7 +3163,7 @@ async def generate_zone_poe(db, mrgid: int, logger=None, force: bool = False,
                 await emit(rec, "seed_remembered", iso2=zone.get("iso2"), urls=remembered)
         rag_q = (f"official designated ports of entry customs gazette decree "
                  f"puertos habilitados puertos de entrada port of entry {name}")
-        context, window, branch = extraction_context(raw, raw_catalog, rag_q)
+        context, window, branch = await asyncio.to_thread(extraction_context, raw, raw_catalog, rag_q)
         llm_context_chars.set(window)
         sent_chars = min(len(context), window)
         if branch == "catalog":
@@ -2862,6 +3225,7 @@ async def generate_zone_poe(db, mrgid: int, logger=None, force: bool = False,
                    duration_s=round(time.time() - t0, 1))
         raise
     finally:
+        _budget.close()
         llm_context_chars.reset(_ctx_token)
         allow_tinyfish_fetch.reset(_tf_token)
 

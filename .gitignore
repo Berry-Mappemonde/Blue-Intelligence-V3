@@ -27,6 +27,7 @@ backend/data/cached_pdfs/
 # Cache JSON Tavily (sha256 de la requête, jamais commité)
 backend/data/cache/tavily/
 backend/data/runs/
+backend/data/exports/
 backend/data/claude_usage.json
 backend/data/claude_usage.lock
 .env*

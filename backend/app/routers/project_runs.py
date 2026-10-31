@@ -110,7 +110,14 @@ async def project_run_status(run_id: str):
     doc = await db.project_runs.find_one({"_id": run_id})
     if not doc:
         raise HTTPException(404, f"Run {run_id} unknown")
-    out = {"run": doc, "wrote_projects": False, "live": swarm.status() if swarm.run_id == run_id else None}
+    from app.core.tokenfactory import public_cost
+    persisted = (doc.get("summary") or {}).get("tokenfactory") if isinstance(doc.get("summary"), dict) else None
+    out = {
+        "run": doc,
+        "wrote_projects": False,
+        "live": swarm.status() if swarm.run_id == run_id else None,
+        "tokenfactory": public_cost(run_id, persisted),
+    }
     st = RUN_STATES.get(run_id)
     if st is not None and st.running:
         out["task"] = st.status()
