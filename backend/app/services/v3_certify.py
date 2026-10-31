@@ -1,8 +1,9 @@
 """Certification levels C0..C4.
 
 Same ladder as the V3 prototype (`certify.level`): a level never rests on an
-LLM-only point above C1. C1 needs an official extracted source, C2 a
-non-LLM corroboration or an explicit judge "supported", C3 two geocoders
+LLM-only point above C1. C1 needs an extracted source on a whitelisted
+State host, C2 a non-LLM corroboration or a NemotronJudge "poe" verdict
+with a verified excerpt (a "not_poe" verdict caps the level at C1), C3 two geocoders
 within 500 m, at sea or at the quay, C4 a human confirmation on top of C3.
 
 `confidence_level` applies that ladder after a verified-quote check: the
@@ -224,58 +225,52 @@ def _non_llm_corroboration(port: dict) -> bool:
     return False
 
 
-def _judge_excerpt(port: dict) -> str:
-    judge = port.get("judge")
-    if isinstance(judge, dict):
-        return str(judge.get("quoted_excerpt") or judge.get("quote") or "").strip()
-    return ""
+JUDGE_SUPPORTED = "supported"
+JUDGE_CONTRADICTED = "contradicted"
 
 
-def _judge_claimed(port: dict) -> bool:
-    judge = port.get("judge")
-    if judge == "supported":
-        return True
-    if isinstance(judge, dict):
-        verdict = judge.get("verdict") or judge.get("judge")
-        return verdict == "supported"
-    return False
+def judge_outcome(port: dict) -> str | None:
+    """Read the NemotronJudge result (`agents.poe_judge`) on a port.
 
+    port.judge = {verdict: poe | not_poe | unclear, reason, quoted_excerpt,
+    excerpt_verified, disagrees}. `excerpt_verified` is computed by
+    poe_judge against the official evidence text, not by the model.
 
-def _judge_pages(port: dict, pages: Mapping[str, str] | None) -> list[str]:
-    texts: list[str] = []
-    if isinstance(port.get("page_text"), str):
-        texts.append(port["page_text"])
-    if pages:
-        texts.extend(text or "" for text in pages.values())
-    registry = port.get("registry") if isinstance(port.get("registry"), dict) else {}
-    for item in registry.get("official_evidence") or []:
-        if isinstance(item, dict):
-            snippet = item.get("snippet") or item.get("text") or ""
-            if snippet:
-                texts.append(snippet)
-    return texts
-
-
-def _explicit_judge_supported(port: dict, *, honor_quotes: bool,
-                              pages: Mapping[str, str] | None) -> bool:
-    """Prototype judge gate. An advisory verdict other than "supported" does not lift.
-
-    When the judge attached a quote, the quote has to be in a fetched page.
-    `excerpt_verified` on the judge dict is not trusted by itself.
+    "poe" with a verified, non-empty excerpt -> supported (lifts to C2).
+    "not_poe" -> contradicted (caps the level at C1). Anything else,
+    including "poe" without a verified excerpt and "unclear" -> None.
     """
-    if not _judge_claimed(port):
-        return False
-    excerpt = _judge_excerpt(port)
-    if not honor_quotes or not excerpt:
-        return True
-    return any(verified_quote(excerpt, text) for text in _judge_pages(port, pages))
+    judge = port.get("judge")
+    if not isinstance(judge, dict):
+        return None
+    verdict = str(judge.get("verdict") or "").strip().lower()
+    if verdict == "not_poe":
+        return JUDGE_CONTRADICTED
+    excerpt = judge.get("quoted_excerpt")
+    if (verdict == "poe" and judge.get("excerpt_verified") is True
+            and isinstance(excerpt, str) and excerpt.strip()):
+        return JUDGE_SUPPORTED
+    return None
 
 
-def _lifts_above_c1(port: dict, *, honor_quotes: bool,
-                    pages: Mapping[str, str] | None) -> bool:
+def _lifts_above_c1(port: dict) -> bool:
     if _non_llm_corroboration(port):
         return True
-    return _explicit_judge_supported(port, honor_quotes=honor_quotes, pages=pages)
+    return judge_outcome(port) == JUDGE_SUPPORTED
+
+
+def _cap(result: dict, port: dict) -> dict:
+    """A "not_poe" verdict contradicts the evidence: the level goes down to C1."""
+    if judge_outcome(port) != JUDGE_CONTRADICTED:
+        return result
+    lvl = result["confidence_level"]
+    if _RANK[lvl] <= _RANK["C1"]:
+        return result
+    out = dict(result)
+    out["confidence_level"] = "C1"
+    out.setdefault("downgraded_from", lvl)
+    out["judge_contradicted"] = True
+    return out
 
 
 def _geo_from_v2(port: dict) -> dict:
@@ -303,14 +298,13 @@ def _geo_from_v2(port: dict) -> dict:
             "agreement_km": km, "spatial_kind": port.get("spatial_kind")}
 
 
-def _from_v2(port: dict, whitelist: Sequence[str] | None, *, honor_quotes: bool,
-             pages: Mapping[str, str] | None) -> dict:
+def _from_v2(port: dict, whitelist: Sequence[str] | None) -> dict:
     """Shape a scored V2 port as a certify entity. Does not mutate `port`."""
     reasons = _reasons(port)
     urls = _urls(port)
     synthesis = bool(port.get("from_synthesis")) or "synthèse web sans page" in reasons
     extracted = bool(urls) and not synthesis
-    lift = _lifts_above_c1(port, honor_quotes=honor_quotes, pages=pages)
+    lift = _lifts_above_c1(port)
     quote = port.get("quote") if isinstance(port.get("quote"), str) else ""
     page = port.get("page_text") if isinstance(port.get("page_text"), str) else ""
     evidence = []
@@ -341,11 +335,11 @@ def assess_port(port: dict, *, whitelist: Sequence[str] | None = None,
     if not isinstance(port, dict):
         return {"confidence_level": "C0"}
     if isinstance(port.get("evidence"), list):
-        return assess_level(port, pages, whitelist=whitelist)
-    before = level(_from_v2(port, whitelist, honor_quotes=False, pages=pages))
-    checked = _with_verified_quotes(
-        _from_v2(port, whitelist, honor_quotes=True, pages=pages), pages)
-    return _pack(before, level(checked), checked)
+        return _cap(assess_level(port, pages, whitelist=whitelist), port)
+    entity = _from_v2(port, whitelist)
+    before = level(entity)
+    checked = _with_verified_quotes(entity, pages)
+    return _cap(_pack(before, level(checked), checked), port)
 
 
 def level_from_v2(port: dict, *, whitelist: Sequence[str] | None = None,
@@ -354,8 +348,8 @@ def level_from_v2(port: dict, *, whitelist: Sequence[str] | None = None,
 
     A whitelisted (State) host is required for C1+. An LLM-only reading (single extractor,
     or two LLM readers) never goes above C1. Catalogue, LLM∩NER, or a judge
-    verdict of "supported" can. A judge quote that is not in the fetched page
-    does not count. `human == "confirmed"` lifts only C3 to C4.
+    "poe" with excerpt_verified can; a judge "not_poe" caps at C1.
+    `human == "confirmed"` lifts only C3 to C4.
     """
     return assess_port(port, whitelist=whitelist, pages=pages)["confidence_level"]
 
@@ -369,6 +363,10 @@ def attach_confidence_level(port: dict, *, whitelist: Sequence[str] | None = Non
         port["confidence_level"] = "C0"
         return port
     port["confidence_level"] = assessed["confidence_level"]
+    if assessed.get("judge_contradicted"):
+        port["judge_contradicted"] = True
+    else:
+        port.pop("judge_contradicted", None)
     if assessed.get("downgraded_from"):
         port["confidence_downgraded_from"] = assessed["downgraded_from"]
     else:

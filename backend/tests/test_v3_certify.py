@@ -55,6 +55,19 @@ GEO_OK_ENTITY = {"agree": True, "independent_sources": 2, "agreement_km": 0.3,
                  "spatial_kind": "in_eez"}
 
 
+EXCERPT = "Fort-de-France is designated as a port of entry for yachts"
+EVIDENCE_TEXT = [{"url": GOV, "text": "Arrêté: " + EXCERPT + " arriving from abroad."}]
+
+
+def _judged(verdict, excerpt=EXCERPT):
+    """port.judge exactly as agents.poe_judge.parse_judgments builds it."""
+    from app.agents import poe_judge
+
+    parsed = {"ports": [{"name": "Marina du Marin", "verdict": verdict,
+                         "reason": "listed in the decree", "quoted_excerpt": excerpt}]}
+    return next(iter(poe_judge.parse_judgments(parsed, EVIDENCE_TEXT).values()))
+
+
 def _v2(**overrides):
     port = {
         "name": "Marina du Marin",
@@ -111,7 +124,7 @@ def test_llm_only_never_above_c1_even_with_geo_and_human():
         confidence_reasons=["source d'État", "deux lecteurs LLM"],
     )
     assert level_from_v2(port) == "C1"
-    judged = _v2(judge="supported", **GEO_OK, human="confirmed")
+    judged = _v2(judge=_judged("poe"), **GEO_OK, human="confirmed")
     assert level_from_v2(judged) == "C4"
 
 
@@ -139,42 +152,60 @@ def test_v2_official_from_whitelist_and_catalogue_ladder():
                              **GEO_OK, human="confirmed")) == "C0"
 
 
-def test_advisory_judge_does_not_lift_and_unverified_quote_downgrades():
-    url = GOV
+def test_judge_outcome_reads_the_real_poe_judge_shape():
+    poe = _judged("poe")
+    assert set(poe) == {"verdict", "reason", "quoted_excerpt", "excerpt_verified"}
+    assert poe["excerpt_verified"] is True
+    assert v3_certify.judge_outcome({"judge": poe}) == "supported"
+    assert v3_certify.judge_outcome({"judge": _judged("not_poe")}) == "contradicted"
+    assert v3_certify.judge_outcome({"judge": _judged("unclear")}) is None
+    unverified = _judged("poe", excerpt="Fort-de-France is a nice place to anchor at night")
+    assert unverified["excerpt_verified"] is False
+    assert v3_certify.judge_outcome({"judge": unverified}) is None
+    # The prototype string verdict is not what the judge emits.
+    assert v3_certify.judge_outcome({"judge": "supported"}) is None
+    assert v3_certify.judge_outcome({"judge": {"verdict": "supported",
+                                               "quoted_excerpt": EXCERPT,
+                                               "excerpt_verified": True}}) is None
+
+
+def test_judge_poe_with_verified_excerpt_lifts_to_c2():
     base = _v2()
-    advisory = {
-        **base,
-        "judge": {
-            "verdict": "poe",
-            "quoted_excerpt": "port of entry",
-            "excerpt_verified": True,
-        },
-    }
-    assert level_from_v2(advisory, pages={url: "port of entry"}) == "C1"
+    assert level_from_v2(base) == "C1"
+    assert level_from_v2({**base, "judge": _judged("poe")}) == "C2"
+    assert level_from_v2({**base, "judge": _judged("unclear")}) == "C1"
+    unverified = _judged("poe", excerpt="Fort-de-France is a nice place to anchor at night")
+    assert level_from_v2({**base, "judge": unverified}) == "C1"
+    # A verified judge does not lift a non-official point.
+    off = _v2(source_urls=["https://navily.com/x"], judge=_judged("poe"))
+    assert level_from_v2(off) == "C0"
 
-    supported = {
-        **base,
-        "judge": {
-            "verdict": "supported",
-            "quoted_excerpt": "Port of entry at Fort-de-France",
-            "excerpt_verified": False,
-        },
-    }
-    pages = {url: "notice: port of entry at fort-de-france for yachts"}
-    assert level_from_v2(supported, pages=pages) == "C2"
-    missing = assess_port(supported, pages={url: "unrelated page"})
-    assert missing["confidence_level"] == "C1"
-    assert missing["downgraded_from"] == "C2"
 
-    lying = {
-        **base,
-        "judge": {
-            "verdict": "supported",
-            "quoted_excerpt": "not in the page",
-            "excerpt_verified": True,
-        },
+def test_judge_not_poe_caps_at_c1():
+    catalogue = _v2(extraction_engine="catalog", note="catalogue officiel", **GEO_OK)
+    assert level_from_v2(catalogue) == "C3"
+    contradicted = {**catalogue, "judge": _judged("not_poe"), "human": "confirmed"}
+    assert level_from_v2(contradicted) == "C1"
+    out = assess_port(contradicted)
+    assert out["downgraded_from"] == "C4"
+    assert out["judge_contradicted"] is True
+    port = dict(contradicted)
+    attach_confidence_level(port)
+    assert port["confidence_level"] == "C1"
+    assert port["confidence_downgraded_from"] == "C4"
+    assert port["judge_contradicted"] is True
+    # Never lifts: a C0 point stays C0.
+    assert level_from_v2(_v2(source_urls=["https://navily.com/x"],
+                             judge=_judged("not_poe"))) == "C0"
+    # Prototype entity shape carrying the judge dict is capped the same way.
+    entity = {
+        "name": "Marina du Marin",
+        "evidence": [{"url": GOV, "extracted": True, "judge": "supported"}],
+        "geo": dict(GEO_OK_ENTITY),
+        "judge": _judged("not_poe"),
     }
-    assert level_from_v2(lying, pages={url: "official list"}) == "C1"
+    assert confidence_level(entity) == "C3"  # the bare ladder ignores port.judge
+    assert assess_port(entity)["confidence_level"] == "C1"
 
 
 def test_verified_quote_normalizes_whitespace_and_case_only():
@@ -235,12 +266,9 @@ def test_catalogue_survives_a_bad_judge_excerpt():
         extraction_engine="catalog",
         confidence_reasons=["source d'État", "catalogue officiel"],
         **GEO_OK,
-        judge={
-            "verdict": "supported",
-            "quoted_excerpt": "not on the page",
-            "excerpt_verified": True,
-        },
+        judge=_judged("poe", excerpt="this sentence is not on the page at all"),
     )
+    assert port["judge"]["excerpt_verified"] is False
     assert level_from_v2(port, pages={GOV: "official catalogue text"}) == "C3"
 
 
