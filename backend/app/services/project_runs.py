@@ -101,6 +101,10 @@ async def open_run(db, *, mode: str, label: str = "", settings: dict | None = No
         upsert=True,
     )
     await rec.event("run_start", mode=mode, label=doc["label"], wrote_projects=False)
+    from app.services.run_artifacts import record_open
+    await record_open(rid, "projects", params)
+    from app.core.tokenfactory import bind_run
+    bind_run(rid)
     return {"run_id": rid, "recorder": rec, "wrote_projects": False}
 
 
@@ -161,6 +165,8 @@ async def finalize_run(db, run_id: str, *, cancelled: bool = False, error: str |
         "cancelled": cancelled,
         **(extra or {}),
     }
+    from app.core.tokenfactory import attach
+    attach(summary, run_id)
     state = "cancelled" if cancelled else ("failed" if error else "done")
     await db.project_runs.update_one({"_id": run_id}, {"$set": {
         "state": state,
@@ -171,6 +177,10 @@ async def finalize_run(db, run_id: str, *, cancelled: bool = False, error: str |
         "wrote_projects": False,
     }})
     await rec.event("run_done", **summary)
+    from app.services.run_artifacts import record_close
+    await record_close(run_id, "projects", doc.get("params"), state=state,
+                       counts={"sites_in_run": n_sites, **counters},
+                       cost=summary.get("tokenfactory"))
 
 
 async def diff_run_vs_v1(db, run_id: str) -> dict:

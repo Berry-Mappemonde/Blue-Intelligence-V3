@@ -19,7 +19,8 @@ def isolated_environment(monkeypatch, tmp_path, request):
     monkeypatch.setenv('TRACE_STDOUT', '1')
     if request.node.name != 'test_live_nightshift_nemotron':
         for name in ('SAMPLE_MODE', 'METERLESS_MODEL', 'MODEL_NAME', 'MODEL_BASE_URL', 'MODEL_API_KEY',
-                     'NEMOTRON_MODEL', 'LLM_PROVIDER'):
+                     'NEMOTRON_MODEL', 'LLM_PROVIDER', 'NEBIUS_API_KEY', 'TF_RUN_BUDGET_USD',
+                     'TF_PRICES_JSON', 'BI_TF_BASE'):
             monkeypatch.delenv(name, raising=False)
         monkeypatch.setenv('METERLESS_BASE_URL', generator.DEFAULT_BASE_URL)
         monkeypatch.setenv('METERLESS_RUNTIME_TOKEN', 'nightshift-test-secret')

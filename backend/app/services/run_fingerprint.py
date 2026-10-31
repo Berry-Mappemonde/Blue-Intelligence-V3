@@ -46,6 +46,10 @@ def _key_configured(*candidates: str) -> bool:
     return any(bool((c or "").strip()) for c in candidates)
 
 
+def sample_mode_enabled() -> bool:
+    return (os.environ.get("SAMPLE_MODE") or "").strip().lower() == "true"
+
+
 def build_code_fingerprint(settings: dict | None = None,
                            zone_timeout_s: int | None = None) -> dict:
     """Snapshot of the code and flags (not secrets) at run time."""
@@ -55,7 +59,7 @@ def build_code_fingerprint(settings: dict | None = None,
     sha, dirty = git_state()
     timeout = 900 if zone_timeout_s is None else zone_timeout_s
 
-    from app.core import nvidia
+    from app.core import nvidia, tokenfactory
 
     env_or = os.environ.get("OPENROUTER_API_KEY") or ""
     env_nv = os.environ.get("NVIDIA_API_KEY") or ""
@@ -76,6 +80,11 @@ def build_code_fingerprint(settings: dict | None = None,
         "nvidia_model": nvidia.primary_model() if nvidia.nvidia_enabled(s) else None,
         "nvidia_judge_chain": list(nvidia.models_for("judge")) if nvidia.nvidia_enabled(s) else None,
         "nvidia_page_chain": list(nvidia.models_for("page")) if nvidia.nvidia_enabled(s) else None,
+        "tokenfactory_configured": bool(tokenfactory.get_key()),
+        "tokenfactory_enabled": tokenfactory.active(s),
+        "tokenfactory_budget_usd": tokenfactory.budget_usd(),
+        "tokenfactory_judge_model": tokenfactory.routed_model("judge", settings=s),
+        "tokenfactory_page_model": tokenfactory.routed_model("page", settings=s),
         "openrouter_configured": _key_configured(
             s.get("openrouter_api_key"), env_or),
         "tinyfish_configured": _key_configured(
@@ -84,6 +93,9 @@ def build_code_fingerprint(settings: dict | None = None,
             s.get("serper_api_key"), env_serper),
         "searxng_url": env_searx,
         "catalog_skip": True,
+        # SAMPLE_MODE swaps Zetaris, evidence and the judge for fixtures; a
+        # resume must run in the same mode (unified_runs.check_resume_mode).
+        "sample_mode": sample_mode_enabled(),
         "zone_timeout_s": timeout,
         "features": {
             "p0_pdf_isolated": _module_has("app.core.pdf_worker", "extract_pdf_file"),
@@ -115,6 +127,8 @@ def build_code_fingerprint(settings: dict | None = None,
                 "app.services.wpi_ports", "load_wpi_ports"),
             "nvidia_adapter": _module_has(
                 "app.core.nvidia", "complete_json_nvidia"),
+            "tokenfactory_adapter": _module_has(
+                "app.core.tokenfactory", "complete_json"),
         },
     }
 

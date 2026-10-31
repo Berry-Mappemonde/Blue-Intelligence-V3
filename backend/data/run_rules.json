@@ -1730,6 +1730,253 @@
       "group": "budget"
     },
     {
+      "id": "formalities.extract_batch_chars",
+      "mode": "formalities",
+      "kind": "budget",
+      "value": 20000,
+      "numeric": "int",
+      "unit": "chars",
+      "interval": [
+        8000,
+        40000
+      ],
+      "vary": true,
+      "principle": "Quand le texte brut des sources dépasse la fenêtre du lecteur, l'extraction se fait par lots de sources entières (une source trop longue est coupée en morceaux qui se chevauchent). 20 000 = la fenêtre historique (LLM_CONTEXT_CHARS). À mesurer sur de vraies ZEE : plus grand = moins d'appels mais la réponse plafonne vers 30-40 ports (max_tokens).",
+      "cdc": "PLAN-V3.md §4 P0-3",
+      "code": [
+        "app/services/poe_pipeline.py:_extract_primary"
+      ],
+      "title": {
+        "fr": "Taille d'un lot d'extraction",
+        "en": "Size of one extraction batch"
+      },
+      "help": {
+        "fr": "Caractères de texte source envoyés par appel quand une ZEE est découpée en lots. Plus grand = moins d'appels, mais une réponse tronquée perd des ports.",
+        "en": "Source characters sent per call when an EEZ is split into batches. Larger means fewer calls, but a truncated answer loses ports."
+      },
+      "group": "reading"
+    },
+    {
+      "id": "formalities.extract_batch_overlap_chars",
+      "mode": "formalities",
+      "kind": "budget",
+      "value": 1500,
+      "numeric": "int",
+      "unit": "chars",
+      "interval": [
+        0,
+        4000
+      ],
+      "vary": true,
+      "principle": "Une source coupée en morceaux répète la fin du morceau précédent, pour qu'un port à cheval sur la coupure soit lu en entier. Les doublons repassent par la dédup (core.dedup).",
+      "cdc": "PLAN-V3.md §4 P0-3",
+      "code": [
+        "app/services/poe_pipeline.py:_extract_primary"
+      ],
+      "title": {
+        "fr": "Chevauchement entre deux morceaux d'une source",
+        "en": "Overlap between two pieces of one source"
+      },
+      "help": {
+        "fr": "Caractères répétés entre deux morceaux d'une source longue, pour ne pas couper un nom de port. Les doublons sont fusionnés.",
+        "en": "Characters repeated between two pieces of a long source so a port name is never cut. Duplicates are merged."
+      },
+      "group": "reading"
+    },
+    {
+      "id": "formalities.extract_batch_concurrency",
+      "mode": "formalities",
+      "kind": "budget",
+      "value": 3,
+      "numeric": "int",
+      "unit": "workers",
+      "interval": [
+        1,
+        8
+      ],
+      "vary": true,
+      "principle": "Lots d'une même ZEE lus en parallèle. 3 garde une ZEE découpée sous formalities.zone_timeout_s sans saturer le fournisseur.",
+      "cdc": "PLAN-V3.md §4 P0-3",
+      "code": [
+        "app/services/poe_pipeline.py:_extract_primary"
+      ],
+      "title": {
+        "fr": "Lots lus en parallèle",
+        "en": "Batches read in parallel"
+      },
+      "help": {
+        "fr": "Nombre de lots d'une ZEE envoyés en même temps. Plus haut = plus rapide, mais plus de risques de limite de débit.",
+        "en": "How many batches of one EEZ are sent at once. Higher is faster but risks rate limits."
+      },
+      "group": "budget"
+    },
+    {
+      "id": "formalities.extract_max_llm_calls",
+      "mode": "formalities",
+      "kind": "budget",
+      "value": 1000,
+      "numeric": "int",
+      "unit": "calls",
+      "interval": [
+        1,
+        20000
+      ],
+      "vary": true,
+      "principle": "Plafond d'appels d'extraction par run, compté comme le budget USD Token Factory (même clé de run). Chaque ZEE reçoit une part équitable (appels libres / ZEE restantes, au moins formalities.extract_min_zone_calls) : une grosse ZEE en tête d'ordre alphabétique ne vide plus le plafond des suivantes. Part épuisée : les lots restants ne partent pas (les plus riches en listes d'abord), aucun lecteur de repli non compté (second lecteur, Claude) n'est lancé, et la ZEE est marquée extraction_partial (capped). Sans run, le plafond vaut pour une ZEE. Un appel = une étape de fournisseur lancée : un lot du lecteur principal (Nightshift, avec le repli Token Factory / NIM interne au générateur), puis chaque repli de llm.extract_ports (NIM, OpenRouter, Claude), le second lecteur, Claude en dernier recours. Les relances internes à une étape ne comptent pas à part.",
+      "cdc": "PLAN-V3.md §4 P0-3",
+      "code": [
+        "app/services/poe_pipeline.py:_extract_primary",
+        "app/core/tokenfactory.py:take_calls"
+      ],
+      "title": {
+        "fr": "Appels d'extraction max par run",
+        "en": "Max extraction calls per run"
+      },
+      "help": {
+        "fr": "Nombre maximal d'appels d'extraction pour tout un run, partagé équitablement entre les ZEE. Part atteinte : les lots restants sont sautés, la ZEE est marquée partielle.",
+        "en": "Maximum extraction calls for a whole run, shared fairly between EEZs. Once a zone's share is used, its remaining batches are skipped and the zone is marked partial."
+      },
+      "group": "budget"
+    },
+    {
+      "id": "formalities.extract_min_zone_calls",
+      "mode": "formalities",
+      "kind": "budget",
+      "value": 6,
+      "numeric": "int",
+      "unit": "calls",
+      "interval": [
+        1,
+        200
+      ],
+      "vary": true,
+      "principle": "Plancher de la part d'une ZEE dans formalities.extract_max_llm_calls. Part = appels libres / ZEE restantes, jamais moins que ce plancher tant qu'il reste des appels libres. 6 = une source longue de 120 000 chars (7 lots) presque entière, ou une ZEE ordinaire (1 appel + second lecteur) avec marge pour les replis.",
+      "cdc": "PLAN-V3.md §4 P0-3",
+      "code": [
+        "app/services/poe_pipeline.py:_take_extract_calls",
+        "app/core/tokenfactory.py:reserve_zone_calls"
+      ],
+      "title": {
+        "fr": "Part minimale d'appels par ZEE",
+        "en": "Minimum call share per EEZ"
+      },
+      "help": {
+        "fr": "Appels d'extraction garantis à chaque ZEE tant que le plafond du run n'est pas épuisé.",
+        "en": "Extraction calls each EEZ is guaranteed while the run cap is not used up."
+      },
+      "group": "budget"
+    },
+    {
+      "id": "formalities.extract_deadline_reserve_s",
+      "mode": "formalities",
+      "kind": "budget",
+      "value": 300,
+      "numeric": "int",
+      "unit": "s",
+      "interval": [
+        0,
+        900
+      ],
+      "vary": true,
+      "principle": "Temps de la ZEE gardé après l'extraction par lots (géocodage double, validation, écriture). La lecture des lots s'arrête à formalities.zone_timeout_s moins cette réserve (au plus un tiers du délai) et garde les lots déjà lus, au lieu que le délai de la ZEE jette tout. ZEE coupée : extraction_partial (deadline_hit).",
+      "cdc": "PLAN-V3.md §4 P0-3",
+      "code": [
+        "app/services/poe_pipeline.py:_extract_stop_time"
+      ],
+      "title": {
+        "fr": "Réserve de temps après l'extraction",
+        "en": "Time kept after extraction"
+      },
+      "help": {
+        "fr": "Secondes de la ZEE gardées pour le géocodage et l'écriture. Les lots non lus avant sont sautés, ceux déjà lus sont gardés.",
+        "en": "Seconds of the EEZ budget kept for geocoding and writing. Batches not read by then are skipped; batches already read are kept."
+      },
+      "group": "budget"
+    },
+    {
+      "id": "formalities.extract_output_tokens",
+      "mode": "formalities",
+      "kind": "budget",
+      "value": 2000,
+      "numeric": "int",
+      "unit": "tokens",
+      "interval": [
+        1000,
+        16000
+      ],
+      "vary": true,
+      "principle": "max_tokens de la réponse du lecteur principal (Nemotron via Nightshift / Token Factory, rôle extract). Un port coûte ~60 tokens : 2 000 ≈ 30 ports par réponse, tokens de raisonnement compris. Les lots d'extraction sont resserrés pour ne pas dépasser ce nombre (min des deux plafonds).",
+      "cdc": "PLAN-V3.md §4 P0-3",
+      "code": [
+        "app/core/generator.py:_output_tokens",
+        "app/services/poe_pipeline.py:fit_output_cap"
+      ],
+      "title": {
+        "fr": "Réponse max d'une extraction (Nightshift)",
+        "en": "Max answer of one extraction (Nightshift)"
+      },
+      "help": {
+        "fr": "Taille maximale de la réponse du lecteur principal. Plus bas = des lots plus petits (plus d'appels) pour ne pas tronquer une longue liste.",
+        "en": "Largest answer the primary reader may return. Lower means smaller batches (more calls) so a long list is not cut off."
+      },
+      "group": "budget"
+    },
+    {
+      "id": "formalities.extract_output_tokens_fallback",
+      "mode": "formalities",
+      "kind": "budget",
+      "value": 2500,
+      "numeric": "int",
+      "unit": "tokens",
+      "interval": [
+        1000,
+        16000
+      ],
+      "vary": true,
+      "principle": "max_tokens des lecteurs de repli NVIDIA NIM et OpenRouter (valeur historique 2 500). Le découpage des lots suit le plus petit des deux plafonds.",
+      "cdc": "PLAN-V3.md §4 P0-3",
+      "code": [
+        "app/core/nvidia.py:extract_ports_nvidia",
+        "app/core/llm.py:extract_ports_openrouter"
+      ],
+      "title": {
+        "fr": "Réponse max d'une extraction (NIM / OpenRouter)",
+        "en": "Max answer of one extraction (NIM / OpenRouter)"
+      },
+      "help": {
+        "fr": "Taille maximale de la réponse des lecteurs de repli NVIDIA NIM et OpenRouter.",
+        "en": "Largest answer the NVIDIA NIM and OpenRouter fallback readers may return."
+      },
+      "group": "budget"
+    },
+    {
+      "id": "formalities.source_max_chars",
+      "mode": "formalities",
+      "kind": "budget",
+      "value": 120000,
+      "numeric": "int",
+      "unit": "chars",
+      "interval": [
+        60000,
+        5000000
+      ],
+      "vary": true,
+      "principle": "Plafond par source collectée. L'ancienne coupe dure à 60 000 chars perdait les ports nommés plus loin (Bermudes : passage désignant à l'offset 71 457, gardé). Calcul : un lot de 20 000 chars avec 1 500 de chevauchement avance de 18 500 ; un appel ≤ 90 s (REQUEST_TIMEOUT_S) ; 3 lots en parallèle ; ZEE 900 s − 300 s de réserve (formalities.extract_deadline_reserve_s) − ~120 s de recherche et collecte (estimé) ≈ 480 s d'extraction = 5 tours = 15 lots. 120 000 chars = 7 lots = 3 tours = 270 s ; deux sources pleines = 14 lots = 5 tours = 450 s. 500 000 chars = 27 lots = 9 tours = 810 s pour une seule source : hors délai. Au-delà de 15 lots, le délai d'extraction garde les lots terminés et marque la ZEE partielle.",
+      "cdc": "PLAN-V3.md §4 P0-3",
+      "code": [
+        "app/services/poe_pipeline.py:_collect_texts"
+      ],
+      "title": {
+        "fr": "Taille max d'une source collectée",
+        "en": "Max size of one collected source"
+      },
+      "help": {
+        "fr": "Caractères gardés par page ou PDF récupéré. Au-delà, le reste est coupé et noté dans le journal. Plus haut = plus d'appels d'extraction pour les documents longs.",
+        "en": "Characters kept per fetched page or PDF. Past it, the rest is cut and logged. Higher means more extraction calls for long documents."
+      },
+      "group": "budget"
+    },
+    {
       "id": "formalities.stale_days",
       "mode": "formalities",
       "kind": "budget",

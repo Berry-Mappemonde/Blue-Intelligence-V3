@@ -20,6 +20,7 @@ from app.core.dedup import normalize_name
 from app.services.poe_pipeline import domain_of, list_url_bonus, zone_to_item
 from app.services.poe_zone_label import attach_zone_labels
 from app.services.poe_seeds import SEARCH_EXCLUDE_DOMAINS, url_is_excluded_search
+from app.services.poe_rules import counts_as_data_gap, entry_mode, source_is_gold
 from app.services.review_gold import is_test_run
 from app.services.territory_ref import curated_td_urls, td_url_fits_polygon
 
@@ -283,28 +284,38 @@ def assemble_zone_fiche(zone: dict, ports: list[dict], *,
     td_list = _rank_sources(list(td_map.values()))
     td_total = len(td_list)
     url_td = _best_one(td_list)
+    td_keys = {_url_key(rec["url"]) for rec in td_list if rec.get("url")}
+    bu_keys = {_url_key(rec["url"]) for rec in bu_seen.values() if rec.get("url")}
+
+    def _with_gold(rec: dict) -> dict:
+        url = rec.get("url") or ""
+        key = _url_key(url) if url else ""
+        # Noonsite never reaches this map (url_is_community). source_is_gold
+        # is the law anyway: a noonsite.com URL cannot become Gold.
+        if not source_is_gold(
+            url,
+            seen_by_top_down=key in td_keys,
+            seen_by_bottom_up=key in bu_keys,
+        ):
+            return rec
+        return {**rec, "from_arm": "both", "gold": True}
+
+    sources_td = [_with_gold(rec) for rec in td_list]
     if url_td:
-        td_url = url_td["url"]
-        if td_url in bu_seen:
-            url_td = {**url_td, "from_arm": "both"}
-            for row in rows:
-                marked = []
-                for bu in row.get("urls_bu") or []:
-                    rec = {**bu, "from_arm": "both"} if bu.get("url") == td_url else bu
-                    marked.append(rec)
-                    if rec.get("url"):
-                        bu_seen[rec["url"]] = rec
-                row["urls_bu"] = marked
-                if (row.get("url_bu") or {}).get("url") == td_url:
-                    row["url_bu"] = {**row["url_bu"], "from_arm": "both"}
-                    bu_seen[td_url] = row["url_bu"]
-        sources_td = td_list
-        for i, rec in enumerate(sources_td):
-            if rec.get("url") == url_td.get("url"):
-                sources_td[i] = url_td
-                break
-    else:
-        sources_td = []
+        url_td = next(
+            (rec for rec in sources_td if rec.get("url") == url_td.get("url")),
+            _with_gold(url_td),
+        )
+    for row in rows:
+        marked = [_with_gold(bu) for bu in (row.get("urls_bu") or [])]
+        row["urls_bu"] = marked
+        for rec in marked:
+            if rec.get("url"):
+                bu_seen[rec["url"]] = rec
+        if row.get("url_bu"):
+            row["url_bu"] = _with_gold(row["url_bu"])
+            if row["url_bu"].get("url"):
+                bu_seen[row["url_bu"]["url"]] = row["url_bu"]
 
     sources_bu = list(bu_seen.values())
     item = zone_to_item(zone)
@@ -320,6 +331,11 @@ def assemble_zone_fiche(zone: dict, ports: list[dict], *,
     item["ports"] = rows
     item["wrote_poe_ports"] = False
     item["crawled"] = False
+    item["entry_mode"] = entry_mode(zone)
+    item["data_gap"] = counts_as_data_gap(
+        zone,
+        missing_designated_list=not sources_td and not sources_bu,
+    )
     return item
 
 

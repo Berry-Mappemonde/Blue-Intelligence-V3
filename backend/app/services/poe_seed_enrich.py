@@ -160,6 +160,10 @@ def apply_judge_verdict(seed: dict, judge: dict) -> str:
             return "unverified"
         return current
     if status == "accepted" and has_listing and has_coords:
+        from app.services.poe_rules import noonsite_blocks_confirmation
+        # Listing signal may still raise confidence. A Noonsite URL cannot confirm.
+        if noonsite_blocks_confirmation(seed):
+            return "probable"
         return "confirmed"
     if status == "accepted":
         return "probable"

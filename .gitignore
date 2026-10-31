@@ -25,6 +25,7 @@ UpdatedPub150.csv
 **/UpdatedPub150.csv
 backend/data/cached_pdfs/
 backend/data/runs/
+backend/data/exports/
 backend/data/claude_usage.json
 backend/data/claude_usage.lock
 .env*

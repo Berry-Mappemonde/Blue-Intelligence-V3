@@ -24,6 +24,9 @@ class TestGitState:
 
 class TestFingerprint:
     def test_no_secrets_and_features(self, monkeypatch):
+        monkeypatch.delenv("NEBIUS_API_KEY", raising=False)
+        monkeypatch.delenv("LLM_PROVIDER", raising=False)
+        monkeypatch.delenv("BI_TF_BASE", raising=False)
         monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-secret")
         monkeypatch.setenv("TINYFISH_API_KEY", "tf-secret")
         monkeypatch.setenv("SERPER_API_KEY", "sp-secret")

@@ -20,6 +20,8 @@ MONGO_URL = os.environ.get("MONGO_URL") or os.environ.get("MONGO_URL_FALLBACK", 
 DB_NAME = os.environ.get("DB_NAME") or os.environ.get("DB_NAME_FALLBACK", "app")
 
 # Completions: NVIDIA NIM if NVIDIA_API_KEY (per-usage chains, see nvidia.CHAINS).
+# Nemotron uses Nebius Token Factory (EU) when NEBIUS_API_KEY is set or
+# LLM_PROVIDER=tokenfactory. Absent key keeps NVIDIA NIM. See tokenfactory.py.
 # OpenRouter stays for web search (:online) and fallback.
 # load_dotenv does not overwrite a MONGO_URL already in the process.
 DEFAULT_SETTINGS = {

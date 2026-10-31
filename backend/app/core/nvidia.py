@@ -36,7 +36,10 @@ not the playground nor the local card (temp/top_k outside hosted schema):
 
 
 Key: NVIDIA_API_KEY (env) or settings["nvidia_api_key"] (UI).
-Provider: LLM_PROVIDER=nvidia|openrouter|auto (auto = NVIDIA if a key is present).
+Provider: LLM_PROVIDER=nvidia|openrouter|tokenfactory|auto
+(auto = Token Factory if NEBIUS_API_KEY and no NVIDIA key, else NVIDIA if a key
+is present). Nemotron roles use the EU Token Factory host whenever
+NEBIUS_API_KEY is set or the provider is tokenfactory (see tokenfactory.py).
 """
 from __future__ import annotations
 
@@ -166,8 +169,10 @@ def get_nvidia_key(settings: dict | None = None) -> str:
 def llm_provider(settings: dict | None = None) -> str:
     s = settings or {}
     raw = str(s.get("llm_provider") or _env("LLM_PROVIDER") or "auto").strip().lower()
-    if raw in ("nvidia", "openrouter"):
+    if raw in ("nvidia", "openrouter", "tokenfactory"):
         return raw
+    if _env("NEBIUS_API_KEY") and not get_nvidia_key(s):
+        return "tokenfactory"
     return "nvidia" if get_nvidia_key(s) else "openrouter"
 
 
@@ -219,13 +224,22 @@ def _dedupe(models: list[str]) -> tuple[str, ...]:
     return tuple(out)
 
 
-def models_for(role: str, preferred: str | None = None) -> tuple[str, ...]:
+def models_for(role: str, preferred: str | None = None,
+               settings: dict | None = None) -> tuple[str, ...]:
     """NIM order for the role. `CHAINS` is the source; no implicit Muse pin.
 
     Overrides: `NVIDIA_MODEL_CHAIN_{ROLE}` (full list), else
     `NVIDIA_MODEL` / `NVIDIA_MODEL_LEGAL` at the head only if they are set.
     `preferred`: a one-off call (2nd extract reader, etc.).
+
+    When Token Factory is active, a Nemotron role is a single EU catalogue id
+    (no NIM fallback, so the call cannot land on the US host).
     """
+    from app.core.tokenfactory import routed_model
+
+    routed = routed_model(role, preferred, settings)
+    if routed:
+        return (routed,)
     key = role if role in CHAINS else "json"
     extra = _env(f"NVIDIA_MODEL_CHAIN_{key.upper()}")
     if extra:
@@ -514,7 +528,8 @@ async def _complete_one(key: str, payload: dict, *,
         last_err = "nvidia: no JSON in output"
         if delay is None:
             break
-        used["max_tokens"] = min(int(used.get("max_tokens") or max_tokens) * 2, 2500)
+        used["max_tokens"] = min(int(used.get("max_tokens") or max_tokens) * 2,
+                                 max(2500, max_tokens))
         if log:
             log(f"nvidia {used['model']}: no strict JSON, retry tokens={used['max_tokens']}")
         await asyncio.sleep(2.0)
@@ -532,6 +547,12 @@ async def complete_json_nvidia_tracked(
         log=None,
         images: list[bytes] | None = None) -> tuple[dict, str]:
     """Like complete_json_nvidia, plus the id actually served."""
+    from app.core.tokenfactory import serves as tf_serves, complete_json as tf_complete
+
+    if tf_serves(role, model, settings):
+        return await tf_complete(
+            system, prompt, role=role, model=model, max_tokens=max_tokens,
+            log=log, images=images, settings=settings)
     key = get_nvidia_key(settings)
     if not key:
         raise RuntimeError("NVIDIA_API_KEY missing")
@@ -581,6 +602,12 @@ async def complete_text_nvidia(system: str, prompt: str,
                                max_tokens: int = 800,
                                log=None) -> str:
     """Text completion (no json_object). `text` chain by default."""
+    from app.core.tokenfactory import serves as tf_serves, complete_text as tf_complete_text
+
+    if tf_serves(role, model, settings):
+        return await tf_complete_text(
+            system, prompt, role=role, model=model,
+            max_tokens=max_tokens, log=log)
     key = get_nvidia_key(settings)
     if not key:
         raise RuntimeError("NVIDIA_API_KEY missing")
@@ -630,7 +657,7 @@ async def extract_ports_nvidia(context: str, zone: dict,
                                model: str | None = None,
                                engine: str | None = None,
                                fallback: bool | None = None) -> list[dict]:
-    from app.core.llm import POE_EXTRACT_PROMPT, coerce_ports, reader_context
+    from app.core.llm import POE_EXTRACT_PROMPT, coerce_ports, extract_output_tokens, reader_context
 
     # Primary reader: extract chain (Pro → gpt-oss → Muse).
     # Kimi is second reader only via second_extract_choice (decree).
@@ -644,7 +671,8 @@ async def extract_ports_nvidia(context: str, zone: dict,
     )
     data, used = await complete_json_nvidia_tracked(
         "Tu réponds uniquement en JSON strict.", prompt, settings,
-        model=model, role=role, fallback=do_fb, max_tokens=2500, log=log)
+        model=model, role=role, fallback=do_fb,
+        max_tokens=extract_output_tokens(fallback=True), log=log)
     tag = engine or engine_label(used)
     ports = coerce_ports(data, context=context)
     for p in ports:
