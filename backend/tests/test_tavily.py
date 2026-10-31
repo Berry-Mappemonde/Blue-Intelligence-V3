@@ -289,10 +289,10 @@ class TestCascade:
         sw = Swarm(None)
         sw.settings = {}
         seed = {"name": "Example Ocean", "url": "https://example.org/projects/"}
-        urls, n_tf, n_sp = _run(sw._search_discover(seed, 6))
+        urls, n_tf, n_sp, n_tv = _run(sw._search_discover(seed, 6))
         assert urls == ["https://example.org/projects/coral-restore"]
         assert n_tf == 0 and n_sp == 0
-        assert sw._last_tavily_n == 1
+        assert n_tv == 1
         assert _FakeClient.posts[0]["url"] == tv.SEARCH_URL
         assert _FakeClient.posts[0]["json"]["include_domains"] == ["example.org"]
         assert "api_key" not in _FakeClient.posts[0]["json"]
@@ -302,9 +302,9 @@ class TestCascade:
         sw = Swarm(None)
         sw.settings = {}
         seed = {"name": "Example Ocean", "url": "https://example.org/projects/"}
-        urls, n_tf, n_sp = _run(sw._search_discover(seed, 6))
+        urls, n_tf, n_sp, n_tv = _run(sw._search_discover(seed, 6))
         assert urls == []
-        assert (n_tf, n_sp, sw._last_tavily_n) == (0, 0, 0)
+        assert (n_tf, n_sp, n_tv) == (0, 0, 0)
         assert _FakeClient.posts == []
 
     def test_find_sources_merges_tavily_url(self, monkeypatch):
@@ -762,3 +762,34 @@ class TestSearchNamedConcurrency:
         doc = (named.__doc__ or "") + (named.search_named.__doc__ or "")
         assert "concurrently" in doc
         assert "before DuckDuckGo" not in doc
+
+
+class TestSwarmTavilyCounts:
+    """Review PR #8 finding 5: the Tavily count is per seed, not shared Swarm state."""
+
+    def test_concurrent_seeds_keep_their_own_count(self, monkeypatch):
+        from app.services.swarm_pipeline import Swarm
+        sw = Swarm(None)
+        sw.settings = {}
+
+        async def empty(*a, **k):
+            return []
+
+        async def fake_tavily(query, log=None, include_domains=None):
+            dom = (include_domains or ["x"])[0]
+            n = 3 if dom == "a.org" else 1
+            await asyncio.sleep(0.02 if n == 3 else 0.0)
+            return [{"url": f"https://{dom}/projects/p{i}", "title": "p"} for i in range(n)]
+
+        monkeypatch.setattr(sw, "_tf_search_discover", empty)
+        monkeypatch.setattr(sw, "_serper_discover", empty)
+        monkeypatch.setattr(sw, "_tavily_discover", fake_tavily)
+        seeds = [{"name": "A", "url": "https://a.org/projects/"},
+                 {"name": "B", "url": "https://b.org/projects/"}]
+
+        async def go():
+            return await asyncio.gather(*(sw._search_discover(s, 6) for s in seeds))
+
+        (_, _, _, n_a), (_, _, _, n_b) = _run(go())
+        assert (n_a, n_b) == (3, 1)
+        assert not hasattr(sw, "_last_tavily_n")

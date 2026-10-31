@@ -300,7 +300,6 @@ class Swarm:
         self.wrote_projects = False
         self._journal_seq = 0
         self._serper_queries = 0
-        self._last_tavily_n = 0
         self._tf_live_runs: dict[str, str] = {}
 
     # ---------- state helpers ----------
@@ -927,10 +926,9 @@ class Swarm:
                 used_engine = "Search"
                 self.set_agent(aid, engine="Listing Search TF∥Serper")
                 log_fn = lambda m: self.agent_log(aid, m)
-                self._last_tavily_n = 0
                 try:
-                    searched, n_tf, n_sp = await self._search_listing(seed, log=log_fn)
-                    n_tv = self._last_tavily_n
+                    searched, n_tf, n_sp, *more = await self._search_listing(seed, log=log_fn)
+                    n_tv = more[0] if more else 0
                 except Exception as e:
                     searched, n_tf, n_sp, n_tv = [], 0, 0, 0
                     self.agent_log(aid, f"Listing Search échec: {type(e).__name__}: {str(e)[:80]}")
@@ -1142,12 +1140,11 @@ class Swarm:
                 used_engine = "Search"
                 self.set_agent(aid, engine="Search TF∥Serper")
                 log_fn = lambda m: self.agent_log(aid, m)
-                self._last_tavily_n = 0
                 try:
-                    urls, n_tf, n_sp = await self._search_discover(
+                    urls, n_tf, n_sp, *more = await self._search_discover(
                         seed, max_urls, log=log_fn,
                         retry_query=fiche_search_retry_query(seed))
-                    n_tv = self._last_tavily_n
+                    n_tv = more[0] if more else 0
                 except Exception as e:
                     search_err = f"{type(e).__name__}: {str(e)[:80]}"
                     self.agent_log(aid, f"Search échec: {search_err}")
@@ -1554,7 +1551,10 @@ class Swarm:
     async def _search_with_filter(self, seed, query, max_urls, *,
                                   filter_fn, purpose, log=None,
                                   retry_query=None):
-        """One TF ∥ Serper ∥ Tavily shot, then retry only if hits were filtered down to 0."""
+        """One TF ∥ Serper ∥ Tavily shot, then retry only if hits were filtered down to 0.
+
+        Returns (urls, n_tinyfish, n_serper, n_tavily). The counts travel with the
+        result, not on the Swarm: seeds run concurrently on the same instance."""
         tf_hits, sp_hits, tv_hits = await self._search_trio(
             query, seed, log=log, purpose=purpose)
         n_tf, n_sp, n_tv = len(tf_hits), len(sp_hits), len(tv_hits)
@@ -1562,8 +1562,7 @@ class Swarm:
         urls = filter_fn(combined, seed, max_urls)
         raw = [_hit_url(h) for h in combined if _hit_url(h).startswith("http")]
         if urls or not raw or not retry_query:
-            self._last_tavily_n = n_tv
-            return urls, n_tf, n_sp
+            return urls, n_tf, n_sp, n_tv
         if log:
             log(f"Search: {len(raw)} hits → 0 after filter — retry")
         self.log(f"[{seed.get('name')}] Search: {len(raw)} hits → 0 after filter — retry")
@@ -1573,8 +1572,7 @@ class Swarm:
         n_sp += len(sp2)
         n_tv += len(tv2)
         urls = filter_fn(tf2 + sp2 + tv2, seed, max_urls, exclude_urls=raw)
-        self._last_tavily_n = n_tv
-        return urls, n_tf, n_sp
+        return urls, n_tf, n_sp, n_tv
 
     async def _search_listing(self, seed, log=None):
         return await self._search_with_filter(
