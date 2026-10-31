@@ -317,6 +317,7 @@ async def execute_run(db, state, run_id: str, label: str = "",
 
         from app.core.tokenfactory import (calls_taken, plan_zone_calls, restore_calls,
                                            restore_spend, summary as cost_summary)
+        from app.core.tavily import summary as tavily_summary
         if resume:  # the call count and the USD ledger live in memory: a restart would hand
             # out a fresh cap and budget, and the summary would only cover this session
             stored = [c for c in (existing.get("tokenfactory_cost"),
@@ -379,6 +380,7 @@ async def execute_run(db, state, run_id: str, label: str = "",
                         "zones_done": counter["done"], "last_zone": name,
                         "calls_taken": calls_taken(run_id),
                         "tokenfactory_cost": cost_summary(run_id),
+                        "tavily_cost": tavily_summary(run_id),
                     }})
 
         await asyncio.gather(*(_one(z) for z in todo))
@@ -414,6 +416,8 @@ async def execute_run(db, state, run_id: str, label: str = "",
         }
         from app.core.tokenfactory import attach
         attach(summary, run_id)
+        from app.core.tavily import attach as tavily_attach
+        tavily_attach(summary, run_id)
         await db.poe_runs.update_one({"_id": run_id}, {"$set": {
             "state": "cancelled" if cancelled else "done",
             "finished_at": poe.now_iso(),

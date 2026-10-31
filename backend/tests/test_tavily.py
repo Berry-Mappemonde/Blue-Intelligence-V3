@@ -388,3 +388,109 @@ class TestCascade:
         monkeypatch.setattr(ext, "_tinyfish_mirror_text", no_mirror)
         assert _run(ext.fetch_mirror_text("https://www.douane.gouv.fr/x")) is None
         assert called == []
+
+
+class TestCacheHygiene:
+    """Review PR #8 finding 1: empty / failed answers must not be frozen."""
+
+    @pytest.fixture(autouse=True)
+    def _stats(self):
+        tv.reset_stats()
+        yield
+        tv.reset_stats()
+
+    def test_empty_search_is_not_cached(self, monkeypatch, tmp_path):
+        _use_key(monkeypatch)
+        _FakeClient.queue = [
+            _Resp(200, {"results": []}),
+            _Resp(200, {"results": [
+                {"url": "https://douane.gouv.fr/ports", "title": "P", "content": "p"},
+            ]}),
+        ]
+        assert _run(tv.tavily_search("ports")) == []
+        assert list(tmp_path.glob("*.json")) == []
+        hits = _run(tv.tavily_search("ports"))
+        assert [h["url"] for h in hits] == ["https://douane.gouv.fr/ports"]
+        assert len(_FakeClient.posts) == 2
+
+    def test_old_empty_entry_is_a_miss(self, monkeypatch, tmp_path):
+        _use_key(monkeypatch)
+        body, _ = tv._search_body("ports", 10, "basic", None, None)
+        (tmp_path / f"{tv.request_cache_id('search', body)}.json").write_text(
+            json.dumps({"results": []}), encoding="utf-8")
+        _FakeClient.default = _Resp(200, {"results": [
+            {"url": "https://douane.gouv.fr/ports", "title": "P", "content": "p"},
+        ]})
+        assert _run(tv.tavily_search("ports"))
+        assert len(_FakeClient.posts) == 1
+
+    def test_failed_extract_url_is_retried(self, monkeypatch, tmp_path):
+        _use_key(monkeypatch)
+        ok, bad = "https://douane.gouv.fr/ok", "https://douane.gouv.fr/bad"
+        _FakeClient.queue = [
+            _Resp(200, {"results": [{"url": ok, "raw_content": "read"}],
+                        "failed_results": [{"url": bad, "error": "timeout"}]}),
+            _Resp(200, {"results": [{"url": bad, "raw_content": "now read"}]}),
+        ]
+        rows = _run(tv.tavily_extract([ok, bad]))
+        assert [r["url"] for r in rows] == [ok]
+        for f in tmp_path.glob("*.json"):
+            blob = f.read_text(encoding="utf-8")
+            assert bad not in blob and "failed_results" not in blob
+        rows = _run(tv.tavily_extract([ok, bad]))
+        assert {r["url"] for r in rows} == {ok, bad}
+        # second call sends only the URL that failed; the read one is a cache hit
+        assert _FakeClient.posts[1]["json"]["urls"] == [bad]
+
+    def test_ttl_expires_entries(self, monkeypatch):
+        _use_key(monkeypatch)
+        _FakeClient.default = _Resp(200, {"results": [
+            {"url": "https://example.org/a", "title": "A", "content": "a"},
+        ]})
+        now = [1_000_000.0]
+        monkeypatch.setattr(tv.time, "time", lambda: now[0])
+        assert _run(tv.tavily_search("ports"))
+        now[0] += 6 * 86400
+        assert _run(tv.tavily_search("ports"))
+        assert len(_FakeClient.posts) == 1
+        now[0] += 2 * 86400  # 8 days > default 7
+        assert _run(tv.tavily_search("ports"))
+        assert len(_FakeClient.posts) == 2
+
+    def test_ttl_is_a_run_rule(self, monkeypatch):
+        from app.core.run_rules import bind_rules, get_rule_def, reset_rules
+        rule = get_rule_def("tavily.cache_ttl_days")
+        assert rule["value"] == 7 and rule["kind"] == "budget"
+        token = bind_rules({"chosen": {"tavily.cache_ttl_days": {"value": 0}}})
+        try:
+            assert tv.cache_ttl_days() == 0
+            _use_key(monkeypatch)
+            _FakeClient.default = _Resp(200, {"results": [
+                {"url": "https://example.org/a", "title": "A", "content": "a"},
+            ]})
+            _run(tv.tavily_search("ports"))
+            _run(tv.tavily_search("ports"))
+            assert len(_FakeClient.posts) == 2  # 0 days = cache not read
+        finally:
+            reset_rules(token)
+        assert tv.cache_ttl_days() == 7
+
+    def test_hit_ratio_recorded_per_run(self, monkeypatch):
+        from app.core.tokenfactory import bind_run
+        _use_key(monkeypatch)
+        _FakeClient.default = _Resp(200, {"results": [
+            {"url": "https://example.org/a", "title": "A", "content": "a"},
+        ]})
+
+        async def two_searches(rid):
+            bind_run(rid)
+            await tv.tavily_search("ports")
+            await tv.tavily_search("ports")
+
+        _run(two_searches("run-tv-a"))
+        _run(two_searches("run-tv-b"))
+        a, b = tv.summary("run-tv-a"), tv.summary("run-tv-b")
+        assert (a["cache_hits"], a["cache_misses"], a["cache_hit_ratio"]) == (1, 1, 0.5)
+        assert (b["cache_hits"], b["cache_misses"], b["cache_hit_ratio"]) == (2, 0, 1.0)
+        doc = tv.attach({"run_id": "run-tv-a"}, "run-tv-a")
+        assert doc["tavily"]["cache_hit_ratio"] == 0.5

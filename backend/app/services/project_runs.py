@@ -167,6 +167,8 @@ async def finalize_run(db, run_id: str, *, cancelled: bool = False, error: str |
     }
     from app.core.tokenfactory import attach
     attach(summary, run_id)
+    from app.core.tavily import attach as tavily_attach
+    tavily_attach(summary, run_id)
     state = "cancelled" if cancelled else ("failed" if error else "done")
     await db.project_runs.update_one({"_id": run_id}, {"$set": {
         "state": state,

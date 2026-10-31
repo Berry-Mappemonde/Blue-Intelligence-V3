@@ -179,6 +179,7 @@ A marinas / anchorages build now writes a `marina_runs` document with the same `
 | `shared.claude_budget_usd` | 0 | budget |
 | `shared.nominatim_interval_s` | 1.1 s | budget **not adjustable downward** (ToS) |
 | `shared.tinyfish_search_rpm` / `fetch_rpm` | 30 / 150 | budget **capped by the provider** |
+| `tavily.cache_ttl_days` | 7 d | budget (0 = no cache; empty answers and failed URLs are never cached) |
 
 ### 3.5 Science — catalogues + Argo + CSR
 

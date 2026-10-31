@@ -1,7 +1,10 @@
 """Tavily Search / Extract. Key from env TAVILY_API_KEY only.
 
 On-disk JSON cache: sha256 of the request (never the key) under
-TAVILY_CACHE_DIR, default backend/data/cache/tavily.
+TAVILY_CACHE_DIR, default backend/data/cache/tavily. Only answers with
+results are cached; Extract entries keep only the URLs that were read.
+An entry older than the run rule ``tavily.cache_ttl_days`` (default 7)
+is a miss. Cache hits and misses are counted per run (``summary``).
 
 Credits actually billed (a cache hit is free):
   basic / fast / ultra-fast search = 1, advanced search = 2,
@@ -13,6 +16,8 @@ import asyncio
 import hashlib
 import json
 import os
+import threading
+import time
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -30,7 +35,77 @@ _SECRET_FIELDS = {"api_key", "apikey", "authorization", "token"}
 # backend/app/core/tavily.py -> parents[2] = backend/
 _DEFAULT_CACHE = Path(__file__).resolve().parents[2] / "data" / "cache" / "tavily"
 
-CREDITS = {"search": 0, "extract": 0}
+DEFAULT_CACHE_TTL_DAYS = 7
+_CACHED_AT = "_cached_at"
+
+CREDITS = {"search": 0, "extract": 0}  # process total; per run: summary()
+
+_STATS: dict[str, dict] = {}
+_stats_guard = threading.Lock()
+
+
+def _run_key(run_id: str | None = None) -> str:
+    """Same per-run key as the Token Factory ledger."""
+    from app.core.tokenfactory import ledger_key
+    return ledger_key(run_id)
+
+
+def _slot(rid: str) -> dict:
+    return _STATS.setdefault(rid, {"cache_hits": 0, "cache_misses": 0})
+
+
+def _count(field: str, n: int = 1, run_id: str | None = None) -> None:
+    rid = _run_key(run_id)
+    with _stats_guard:
+        slot = _slot(rid)
+        slot[field] = slot.get(field, 0) + n
+
+
+def reset_stats(run_id: str | None = None) -> None:
+    with _stats_guard:
+        if run_id is None:
+            _STATS.clear()
+        else:
+            _STATS.pop(run_id, None)
+
+
+def summary(run_id: str | None = None) -> dict:
+    """Per-run Tavily record: cache hits / misses and hit ratio.
+
+    One lookup = one search query or one Extract URL."""
+    rid = _run_key(run_id)
+    with _stats_guard:
+        slot = dict(_STATS.get(rid) or {})
+    hits = int(slot.get("cache_hits") or 0)
+    misses = int(slot.get("cache_misses") or 0)
+    total = hits + misses
+    return {
+        "run_id": rid,
+        "provider": "tavily",
+        "requests": total,
+        "cache_hits": hits,
+        "cache_misses": misses,
+        "cache_hit_ratio": round(hits / total, 4) if total else None,
+        "cache_ttl_days": cache_ttl_days(),
+    }
+
+
+def attach(summary_doc: dict, run_id: str) -> dict:
+    summary_doc["tavily"] = summary(run_id)
+    return summary_doc
+
+
+def cache_ttl_days() -> float:
+    """Run rule ``tavily.cache_ttl_days``. 0 = cache neither read nor trusted."""
+    try:
+        from app.core.run_rules import get_rule
+        raw = get_rule("tavily.cache_ttl_days", DEFAULT_CACHE_TTL_DAYS)
+    except Exception:
+        raw = DEFAULT_CACHE_TTL_DAYS
+    try:
+        return max(0.0, float(raw))
+    except (TypeError, ValueError):
+        return float(DEFAULT_CACHE_TTL_DAYS)
 
 
 def tavily_api_key() -> str:
@@ -120,27 +195,65 @@ def _cache_path(path: str, body: dict) -> Path:
     return cache_dir() / f"{request_cache_id(path, body)}.json"
 
 
+def _cacheable(path: str, payload: dict | None) -> dict | None:
+    """What may be cached: a search with results, an extract with read URLs only.
+
+    An empty answer or a failed URL can be transient; caching it would freeze it
+    for every later run. ``failed_results`` is dropped, and so is any row with
+    no text.
+    """
+    if not isinstance(payload, dict):
+        return None
+    rows = [r for r in (payload.get("results") or []) if isinstance(r, dict)]
+    if path == "extract":
+        rows = [r for r in rows
+                if (r.get("url") or "").strip()
+                and (r.get("raw_content") or r.get("content"))]
+        if not rows:
+            return None
+        out = {k: v for k, v in payload.items() if k != "failed_results"}
+        out["results"] = rows
+        return out
+    if not rows:
+        return None
+    return payload
+
+
 def _read_cache(path: str, body: dict) -> dict | None:
+    ttl_days = cache_ttl_days()
+    if ttl_days <= 0:
+        return None
     dest = _cache_path(path, body)
     try:
         if not dest.is_file():
             return None
         data = json.loads(dest.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            return None
+        cached_at = data.pop(_CACHED_AT, None)
+        if not isinstance(cached_at, (int, float)):
+            cached_at = dest.stat().st_mtime
     except Exception:
         return None
-    return data if isinstance(data, dict) else None
+    if time.time() - float(cached_at) > ttl_days * 86400:
+        return None
+    # Entries written before empty answers were refused are not trusted either.
+    return _cacheable(path, data)
 
 
-def _write_cache(path: str, body: dict, payload: dict) -> None:
+def _write_cache(path: str, body: dict, payload: dict) -> bool:
+    keep = _cacheable(path, payload)
+    if keep is None:
+        return False
     directory = cache_dir()
     directory.mkdir(parents=True, exist_ok=True)
     dest = _cache_path(path, body)
-    tmp = directory / f".{dest.stem}.{os.getpid()}.tmp"
-    tmp.write_text(
-        json.dumps(_redact(payload), ensure_ascii=False),
-        encoding="utf-8",
-    )
+    tmp = directory / f".{dest.stem}.{os.getpid()}.{threading.get_ident()}.tmp"
+    blob = dict(_redact(keep))
+    blob[_CACHED_AT] = time.time()
+    tmp.write_text(json.dumps(blob, ensure_ascii=False), encoding="utf-8")
     os.replace(tmp, dest)
+    return True
 
 
 def _as_domains(values) -> list[str]:
@@ -278,12 +391,14 @@ async def _sleep_retry() -> None:
 
 
 async def _post(path: str, url: str, body: dict, log) -> tuple[dict | None, bool]:
-    """Return (payload, from_cache). Failures are (None, False) and are not cached."""
+    """Return (payload, from_cache). Failures and empty answers are not cached."""
     if not tavily_api_key():
         return None, False
     cached = _read_cache(path, body)
     if cached is not None:
+        _count("cache_hits")
         return cached, True
+    _count("cache_misses")
     data = await _request(url, body, log)
     if data is None:
         return None, False
@@ -317,11 +432,18 @@ async def tavily_search(query: str, *, max_results: int = 10,
     return hits
 
 
+def _extract_body(url: str, depth: str) -> dict:
+    """Cache key of one URL. Extract is cached per URL, so a failed URL in a
+    batch is sent again next time while the URLs already read stay cached."""
+    return {"urls": [url], "extract_depth": depth, "format": "markdown"}
+
+
 async def tavily_extract(urls: list[str] | None, *, extract_depth: str = "basic",
                          log=None) -> list[dict]:
     """POST /extract, batches of 20. Each row keeps the source ``url``.
 
     No key or no http(s) URL → []. 1 credit per 5 URLs actually sent.
+    Cache per URL: only the URLs not cached (or expired) are sent.
     """
     log = log or (lambda _m: None)
     if not tavily_api_key():
@@ -336,14 +458,34 @@ async def tavily_extract(urls: list[str] | None, *, extract_depth: str = "basic"
     if not clean:
         return []
     depth = "advanced" if (extract_depth or "").strip().lower() == "advanced" else "basic"
-    out: list[dict] = []
-    for i in range(0, len(clean), EXTRACT_BATCH):
-        batch = clean[i:i + EXTRACT_BATCH]
+    by_url: dict[str, dict] = {}
+    todo: list[str] = []
+    for url in clean:
+        cached = _read_cache("extract", _extract_body(url, depth))
+        if cached is not None:
+            _count("cache_hits")
+            for row in _map_extract(cached):
+                by_url.setdefault(row["url"], row)
+        else:
+            todo.append(url)
+    for i in range(0, len(todo), EXTRACT_BATCH):
+        batch = todo[i:i + EXTRACT_BATCH]
         body = {"urls": batch, "extract_depth": depth, "format": "markdown"}
-        data, from_cache = await _post("extract", EXTRACT_URL, body, log)
+        _count("cache_misses", len(batch))
+        data = await _request(EXTRACT_URL, body, log)
         if data is None:
             continue
-        if not from_cache:
-            CREDITS["extract"] += extract_credit_cost(len(batch))
-        out.extend(_map_extract(data))
-    return out
+        CREDITS["extract"] += extract_credit_cost(len(batch))
+        rows = [r for r in (data.get("results") or []) if isinstance(r, dict)]
+        for row in rows:
+            url = (row.get("url") or "").strip()
+            if url not in batch:
+                continue
+            try:
+                _write_cache("extract", _extract_body(url, depth), {"results": [row]})
+            except Exception as exc:
+                log(f"Tavily: cache ignoré ({_safe_err(exc)})")
+        for row in _map_extract({"results": rows}):
+            by_url.setdefault(row["url"], row)
+    ordered = [by_url[u] for u in clean if u in by_url]
+    return ordered + [row for u, row in by_url.items() if u not in clean]

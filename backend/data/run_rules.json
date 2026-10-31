@@ -468,6 +468,33 @@
       "group": "budget"
     },
     {
+      "id": "tavily.cache_ttl_days",
+      "mode": "shared",
+      "kind": "budget",
+      "value": 7,
+      "numeric": "int",
+      "unit": "days",
+      "interval": [
+        0,
+        90
+      ],
+      "vary": true,
+      "principle": "Une réponse Tavily en cache n'est rejouée que pendant 7 jours : assez pour qu'une reprise ou un second run de la semaine ne repaie pas, assez court pour qu'un run complet suivant relise le web. Les réponses vides et les URL en échec ne sont jamais mises en cache. 0 = cache ignoré.",
+      "cdc": "PLAN-V3.md §4.1 · §7",
+      "code": [
+        "app/core/tavily.py:cache_ttl_days"
+      ],
+      "title": {
+        "fr": "Durée de vie du cache Tavily",
+        "en": "Tavily cache lifetime"
+      },
+      "help": {
+        "fr": "Au-delà, une requête Tavily repart à l'API. 0 = pas de cache. Les réponses vides ne sont jamais gardées.",
+        "en": "Past this age a Tavily request goes back to the API. 0 = no cache. Empty answers are never kept."
+      },
+      "group": "budget"
+    },
+    {
       "id": "projects.no_hq_as_site",
       "mode": "projects",
       "kind": "loi",
