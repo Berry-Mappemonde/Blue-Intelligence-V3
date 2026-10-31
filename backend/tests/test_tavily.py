@@ -1,4 +1,4 @@
-"""Tavily Search / Extract — mocked httpx, no network."""
+"""Tavily Search / Extract — fake Tavily client (tv._client), no network."""
 import asyncio
 import json
 import sys
@@ -69,18 +69,55 @@ def _run(coro):
     return asyncio.run(coro)
 
 
+_REAL_ASYNC_CLIENT = httpx.AsyncClient
+
+
+class _StrayHTTP:
+    """Any httpx call outside Tavily is a test bug: record it and fail at teardown,
+    instead of letting a fake Tavily client answer it silently."""
+    calls: list = []
+
+    def __init__(self, *a, **k):
+        pass
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *a):
+        return False
+
+    async def _stray(self, method, url, *a, **k):
+        _StrayHTTP.calls.append(f"{method} {url}")
+        raise AssertionError(f"unstubbed HTTP in a Tavily test: {method} {url}")
+
+    async def get(self, url, *a, **k):
+        return await self._stray("GET", url)
+
+    async def post(self, url, *a, **k):
+        return await self._stray("POST", url)
+
+    async def request(self, method, url, *a, **k):
+        return await self._stray(method, url)
+
+    async def aclose(self):
+        return None
+
+
 @pytest.fixture(autouse=True)
 def _isolate(monkeypatch, tmp_path):
     monkeypatch.setenv("TAVILY_CACHE_DIR", str(tmp_path))
     monkeypatch.delenv("TAVILY_API_KEY", raising=False)
     monkeypatch.setattr(tv, "RETRY_SLEEP_S", 0)
-    monkeypatch.setattr(tv.httpx, "AsyncClient", _FakeClient)
+    monkeypatch.setattr(tv, "_client", _FakeClient)
+    monkeypatch.setattr(httpx, "AsyncClient", _StrayHTTP)
+    _StrayHTTP.calls = []
     tv.CREDITS["search"] = 0
     tv.CREDITS["extract"] = 0
     _FakeClient.posts = []
     _FakeClient.queue = []
     _FakeClient.default = None
     yield
+    assert _StrayHTTP.calls == [], _StrayHTTP.calls
 
 
 def _use_key(monkeypatch):
@@ -194,7 +231,7 @@ class TestSearch:
 
     def test_timeout_returns_empty(self, monkeypatch):
         _use_key(monkeypatch)
-        monkeypatch.setattr(tv.httpx, "AsyncClient", _BoomClient)
+        monkeypatch.setattr(tv, "_client", _BoomClient)
         assert _run(tv.tavily_search("ports")) == []
         assert tv.CREDITS["search"] == 0
 
@@ -590,7 +627,7 @@ class TestCreditBudget:
                 return _Resp(200, {"results": [
                     {"url": "https://example.org/a", "title": "A", "content": "a"}]})
 
-        monkeypatch.setattr(tv.httpx, "AsyncClient", _SlowClient)
+        monkeypatch.setattr(tv, "_client", _SlowClient)
 
         async def go():
             return await asyncio.gather(*(tv.tavily_search(f"q{i}") for i in range(12)))
@@ -838,7 +875,7 @@ class TestTransportRetry:
                 return _Resp(200, {"results": [
                     {"url": "https://example.org/a", "title": "A", "content": "a"}]})
 
-        monkeypatch.setattr(tv.httpx, "AsyncClient", _FlakyClient)
+        monkeypatch.setattr(tv, "_client", _FlakyClient)
         hits = _run(tv.tavily_search("ports"))
         assert [h["url"] for h in hits] == ["https://example.org/a"]
         assert len(calls) == 2
@@ -852,6 +889,16 @@ class TestTransportRetry:
                 calls.append(1)
                 raise httpx.ConnectTimeout("timed out")
 
-        monkeypatch.setattr(tv.httpx, "AsyncClient", _Boom)
+        monkeypatch.setattr(tv, "_client", _Boom)
         assert _run(tv.tavily_search("ports")) == []
         assert len(calls) == 2
+
+
+class TestIsolation:
+    """Review PR #8 finding 9: tests fake the Tavily client, not httpx for everyone."""
+
+    def test_tavily_client_is_injected(self):
+        assert tv._client is _FakeClient
+        # httpx itself is the stray-call guard, not the Tavily fake
+        assert httpx.AsyncClient is _StrayHTTP
+        assert _REAL_ASYNC_CLIENT is not _StrayHTTP

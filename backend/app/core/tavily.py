@@ -237,6 +237,11 @@ def _timeout() -> httpx.Timeout:
     return httpx.Timeout(TIMEOUT_S, connect=CONNECT_TIMEOUT_S)
 
 
+def _client() -> httpx.AsyncClient:
+    """The HTTP client of Tavily calls only (tests replace this, not httpx)."""
+    return httpx.AsyncClient(timeout=_timeout())
+
+
 def _public_body(body: dict) -> dict:
     out = {}
     for key, val in (body or {}).items():
@@ -453,7 +458,7 @@ async def _request(url: str, body: dict, log) -> dict | None:
     last_status = None
     for attempt in range(2):
         try:
-            async with httpx.AsyncClient(timeout=_timeout()) as client:
+            async with _client() as client:
                 resp = await client.post(url, headers=headers, json=sent)
             last_status = resp.status_code
             if resp.status_code == 429 and attempt == 0:
