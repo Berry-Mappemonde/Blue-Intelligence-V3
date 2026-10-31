@@ -16,71 +16,43 @@ same scale. The numeric 0–100 score is left untouched.
 from __future__ import annotations
 
 import re
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 
 LEVELS = ("C0", "C1", "C2", "C3", "C4")
 _RANK = {name: i for i, name in enumerate(LEVELS)}
 
-GOV_HINTS = (
-    ".gouv.fr", ".gov", "gouv.", "douane", "customs", "prefecture",
-    "collectivite", "cacem", "ville-", "mairie",
-)
-AGGREGATORS = (
-    "navily", "marinareservation", "noonsite", "superyacht", "tripadvisor",
-    "wikipedia", "facebook", "yachtinsidersguide", "azmartinique",
-    "marineconnect", "boatsetter",
-)
 GEO_AGREE_KM = 0.5
 GEO_KINDS = frozenset({"in_eez", "coastal_land"})
-_NAME_STOP = ("port", "marina", "harbour", "plaisance", "office", "capitainerie")
 _WS = re.compile(r"\s+")
 
 
-def host(url: str) -> str:
-    if not isinstance(url, str):
-        return ""
-    h = (url or "").split("//", 1)[-1].split("/", 1)[0].lower()
-    return h[4:] if h.startswith("www.") else h
+def is_official(url: str, whitelist: Sequence[str] | None) -> bool:
+    """Official = the URL's host is on the zone's State whitelist.
 
-
-def is_official(url: str, name: str = "") -> bool:
-    """Official = government domain, or the facility's own domain.
-
-    Own domain: the host shares a >=4-character token with the name.
-    Aggregators are never official.
+    The whitelist is the pipeline's own (`poe_pipeline.build_whitelist`,
+    matched with `url_allowed`): host only, never path or query, and no
+    name-token or keyword heuristic. No whitelist, nothing is official.
     """
-    h = host(url)
-    if any(a in h for a in AGGREGATORS):
+    if not isinstance(url, str) or not url.strip() or not whitelist:
         return False
-    blob = (url or "").lower()
-    if any(g in h or g in blob for g in GOV_HINTS):
-        return True
-    toks = [
-        t for t in re.findall(r"[a-z]{4,}", (name or "").lower())
-        if t not in _NAME_STOP
-    ]
-    return any(t in h for t in toks)
+    from app.services.poe_pipeline import url_allowed
+
+    return url_allowed(url, list(whitelist))
 
 
 def _evidence(entity: dict) -> list[dict]:
     return [e for e in (entity.get("evidence") or []) if isinstance(e, dict)]
 
 
-def _evidence_official(evidence: dict, name: str) -> bool:
-    if evidence.get("official") is True:
-        return True
-    return is_official(evidence.get("url") or "", name)
-
-
 def level(entity: dict) -> str:
-    """C0–C4 ladder. Does not look at quote text — see `confidence_level`."""
+    """C0–C4 ladder on resolved evidence (`official` already set from the
+    whitelist, see `with_official`). Does not look at quote text — see
+    `confidence_level`."""
     ev = _evidence(entity)
     if not ev:
         return "C0"
-    raw_name = entity.get("name")
-    name = raw_name if isinstance(raw_name, str) else ""
     lvl = "C0"
-    if any(e.get("extracted") and _evidence_official(e, name) for e in ev):
+    if any(e.get("extracted") and e.get("official") is True for e in ev):
         lvl = "C1"
     if lvl == "C1" and any(e.get("judge") == "supported" for e in ev):
         lvl = "C2"
@@ -187,21 +159,37 @@ def _pack(before: str, after: str, checked: dict) -> dict:
     return out
 
 
-def assess_level(entity: dict, pages: Mapping[str, str] | None = None) -> dict:
+def with_official(entity: dict, whitelist: Sequence[str] | None) -> dict:
+    """Copy whose evidence `official` flags come from the whitelist only.
+
+    A caller-supplied `official: True` is not trusted.
+    """
+    out = dict(entity)
+    out["evidence"] = [
+        {**e, "official": is_official(e.get("url") or "", whitelist)}
+        for e in _evidence(entity)
+    ]
+    return out
+
+
+def assess_level(entity: dict, pages: Mapping[str, str] | None = None, *,
+                 whitelist: Sequence[str] | None = None) -> dict:
     """Ladder before and after the quote check.
 
     Returns confidence_level, and downgraded_from / quote_verified when
     a quote was checked.
     """
+    entity = with_official(entity, whitelist)
     before = level(entity)
     checked = _with_verified_quotes(entity, pages)
     after = level(checked)
     return _pack(before, after, checked)
 
 
-def confidence_level(entity: dict, pages: Mapping[str, str] | None = None) -> str:
+def confidence_level(entity: dict, pages: Mapping[str, str] | None = None, *,
+                     whitelist: Sequence[str] | None = None) -> str:
     """C0–C4 after dropping evidence whose quote is not in the fetched page."""
-    return assess_level(entity, pages)["confidence_level"]
+    return assess_level(entity, pages, whitelist=whitelist)["confidence_level"]
 
 
 def _reasons(port: dict) -> list[str]:
@@ -290,13 +278,6 @@ def _lifts_above_c1(port: dict, *, honor_quotes: bool,
     return _explicit_judge_supported(port, honor_quotes=honor_quotes, pages=pages)
 
 
-def _url_is_official(url: str, port: dict, official_source: bool | None) -> bool:
-    if official_source is True or "source d'État" in _reasons(port):
-        return True
-    name = port.get("name") if isinstance(port.get("name"), str) else ""
-    return is_official(url, name)
-
-
 def _geo_from_v2(port: dict) -> dict:
     geo = port.get("geo")
     if isinstance(geo, dict) and ("agree" in geo or "independent_sources" in geo):
@@ -322,7 +303,7 @@ def _geo_from_v2(port: dict) -> dict:
             "agreement_km": km, "spatial_kind": port.get("spatial_kind")}
 
 
-def _from_v2(port: dict, official_source: bool | None, *, honor_quotes: bool,
+def _from_v2(port: dict, whitelist: Sequence[str] | None, *, honor_quotes: bool,
              pages: Mapping[str, str] | None) -> dict:
     """Shape a scored V2 port as a certify entity. Does not mutate `port`."""
     reasons = _reasons(port)
@@ -335,7 +316,7 @@ def _from_v2(port: dict, official_source: bool | None, *, honor_quotes: bool,
     evidence = []
     for url in urls:
         item = {"url": url, "extracted": extracted}
-        if _url_is_official(url, port, official_source):
+        if is_official(url, whitelist):
             item["official"] = True
         if lift:
             item["judge"] = "supported"
@@ -354,40 +335,36 @@ def _from_v2(port: dict, official_source: bool | None, *, honor_quotes: bool,
     }
 
 
-def assess_port(port: dict, *, official_source: bool | None = None,
+def assess_port(port: dict, *, whitelist: Sequence[str] | None = None,
                 pages: Mapping[str, str] | None = None) -> dict:
     """Map a prototype entity or a V2 scored port, then apply the quote check."""
     if not isinstance(port, dict):
         return {"confidence_level": "C0"}
     if isinstance(port.get("evidence"), list):
-        entity = dict(port)
-        entity["evidence"] = [dict(e) for e in _evidence(port)]
-        if official_source is True:
-            entity["evidence"] = [{**e, "official": True} for e in entity["evidence"]]
-        return assess_level(entity, pages)
-    before = level(_from_v2(port, official_source, honor_quotes=False, pages=pages))
+        return assess_level(port, pages, whitelist=whitelist)
+    before = level(_from_v2(port, whitelist, honor_quotes=False, pages=pages))
     checked = _with_verified_quotes(
-        _from_v2(port, official_source, honor_quotes=True, pages=pages), pages)
+        _from_v2(port, whitelist, honor_quotes=True, pages=pages), pages)
     return _pack(before, level(checked), checked)
 
 
-def level_from_v2(port: dict, *, official_source: bool | None = None,
+def level_from_v2(port: dict, *, whitelist: Sequence[str] | None = None,
                   pages: Mapping[str, str] | None = None) -> str:
     """C0–C4 for a V2 port (`poe_confidence` fields) or a prototype entity.
 
-    Official source required for C1+. An LLM-only reading (single extractor,
+    A whitelisted (State) host is required for C1+. An LLM-only reading (single extractor,
     or two LLM readers) never goes above C1. Catalogue, LLM∩NER, or a judge
     verdict of "supported" can. A judge quote that is not in the fetched page
     does not count. `human == "confirmed"` lifts only C3 to C4.
     """
-    return assess_port(port, official_source=official_source, pages=pages)["confidence_level"]
+    return assess_port(port, whitelist=whitelist, pages=pages)["confidence_level"]
 
 
-def attach_confidence_level(port: dict, *, official_source: bool | None = None,
+def attach_confidence_level(port: dict, *, whitelist: Sequence[str] | None = None,
                             pages: Mapping[str, str] | None = None) -> dict:
     """Set `confidence_level` on a port. Does not change the numeric score."""
     try:
-        assessed = assess_port(port, official_source=official_source, pages=pages)
+        assessed = assess_port(port, whitelist=whitelist, pages=pages)
     except Exception:
         port["confidence_level"] = "C0"
         return port

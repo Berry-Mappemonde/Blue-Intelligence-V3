@@ -2580,7 +2580,8 @@ def _hmem_remember(docs: list[dict], run_id: str) -> dict:
 
 async def _extract_and_geocode(zone: dict, context: str, used_sources: list[dict], log,
                                rec=None, run=None, catalog_text: str | None = None,
-                               settings: dict | None = None) -> list[dict]:
+                               settings: dict | None = None,
+                               whitelist: list[str] | None = None) -> list[dict]:
     """Step 4 — Parallel extraction (NIM → OR → Claude ∥ NER) then geocoding.
 
     Coords already in the source (table or LLM copy) → no Nominatim.
@@ -2592,6 +2593,8 @@ async def _extract_and_geocode(zone: dict, context: str, used_sources: list[dict
     """
     mrgid = int(zone["mrgid"])
     name = zone.get("name") or zone.get("geoname")
+    if whitelist is None:
+        whitelist = build_whitelist(zone.get("iso2"), zone.get("sov_iso2"))
     ports = await extract_ports_llm(context, zone, log, rec=rec,
                                    catalog_text=catalog_text, settings=settings)
     listing_ports: list[dict] = []
@@ -2782,7 +2785,7 @@ async def _extract_and_geocode(zone: dict, context: str, used_sources: list[dict
         doc["memories_recalled"] = len(recalled)
         apply_score(doc, score_port(doc, official_source=port_official,
                                     listing_ports=listing_ports))
-        attach_confidence_level(doc, official_source=port_official)
+        attach_confidence_level(doc, whitelist=whitelist)
         docs.append(doc)
         agree_note = ""
         if geo.get("agree") is True:
@@ -2889,7 +2892,7 @@ async def _persist_zone(db, zone: dict, docs: list[dict], status: str,
                         {**d, "osm_confidence": match["osm_confidence"]},
                         official_source=any(s.get("official") for s in used_sources)))
                     attach_confidence_level(
-                        d, official_source=any(s.get("official") for s in used_sources))
+                        d, whitelist=build_whitelist(zone.get("iso2"), zone.get("sov_iso2")))
                     updates["confidence"] = d.get("confidence")
                     updates["confidence_parts"] = d.get("confidence_parts")
                     updates["confidence_reasons"] = d.get("confidence_reasons")
@@ -3120,7 +3123,7 @@ async def generate_zone_poe(db, mrgid: int, logger=None, force: bool = False,
                         apply_score(d, score_port(
                             d, official_source=False,
                             listing_ports=None))
-                        attach_confidence_level(d, official_source=False)
+                        attach_confidence_level(d, whitelist=whitelist)
 
         # Official evidence records from the fetched text (never model output), stored for
         # the run pipeline and /api/poe/verify, which read ports from Zetaris.

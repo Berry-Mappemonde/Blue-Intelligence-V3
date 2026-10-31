@@ -16,19 +16,39 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from app.pipeline.run_pipeline import _port_out  # noqa: E402
 from app.services.poe_confidence import apply_score, score_port  # noqa: E402
 from app.services.poe_pipeline import ports_to_geojson  # noqa: E402
+from app.services import v3_certify  # noqa: E402
 from app.services.v3_certify import (  # noqa: E402
     LEVELS,
-    assess_level,
-    assess_port,
-    attach_confidence_level,
-    confidence_level,
     is_official,
-    level,
-    level_from_v2,
     verified_quote,
+    with_official,
 )
 
 GOV = "https://www.martinique.gouv.fr/x"
+# State whitelist the pipeline builds for a French zone (build_whitelist).
+WL = ["gouv.fr"]
+
+
+# Every ladder entry point below uses WL unless a test passes its own.
+def _wl(fn):
+    def call(*args, **kwargs):
+        kwargs.setdefault("whitelist", WL)
+        return fn(*args, **kwargs)
+    return call
+
+
+assess_level = _wl(v3_certify.assess_level)
+assess_port = _wl(v3_certify.assess_port)
+attach_confidence_level = _wl(v3_certify.attach_confidence_level)
+confidence_level = _wl(v3_certify.confidence_level)
+level_from_v2 = _wl(v3_certify.level_from_v2)
+
+
+def level(entity):
+    """Ladder on evidence resolved against WL."""
+    return v3_certify.level(with_official(entity, WL))
+
+
 # PLAN-V3 §5 C3 geo: two geocoders < 500 m, at sea or at the quay.
 GEO_OK = {"geocode_agree": True, "geocode_agreement_km": 0.3, "spatial_kind": "in_eez"}
 GEO_OK_ENTITY = {"agree": True, "independent_sources": 2, "agreement_km": 0.3,
@@ -55,7 +75,7 @@ def test_level_matches_prototype_ladder():
     }
     assert level(aggregator) == "C0"
     assert confidence_level(aggregator) == "C0"
-    assert is_official("https://navily.com/x", "Marina du Marin") is False
+    assert is_official("https://navily.com/x", WL) is False
 
     official = {
         "name": "Marina du Marin",
@@ -69,11 +89,18 @@ def test_level_matches_prototype_ladder():
     assert confidence_level(official) == "C4"
     assert level({}) == "C0"
 
+    # The facility's own domain is not a State source (name-token rule removed).
     own_domain = {
         "name": "Le Marin",
         "evidence": [{"url": "https://lemarin.fr/a", "extracted": True}],
     }
-    assert level(own_domain) == "C1"
+    assert level(own_domain) == "C0"
+    # A caller-supplied official flag is not trusted: only the whitelist counts.
+    flagged = {
+        "name": "Le Marin",
+        "evidence": [{"url": "https://lemarin.fr/a", "extracted": True, "official": True}],
+    }
+    assert confidence_level(flagged) == "C0"
 
 
 def test_llm_only_never_above_c1_even_with_geo_and_human():
@@ -88,15 +115,16 @@ def test_llm_only_never_above_c1_even_with_geo_and_human():
     assert level_from_v2(judged) == "C4"
 
 
-def test_v2_official_flag_and_catalogue_ladder():
+def test_v2_official_from_whitelist_and_catalogue_ladder():
+    assert level_from_v2(_v2(source_urls=["https://navily.com/x"])) == "C0"
+    # The V2 reason "source d'État" does not make a non-whitelisted host official.
     assert level_from_v2(_v2(
         source_urls=["https://navily.com/x"],
-        confidence_reasons=["source nationale non whitelistée"],
-    ), official_source=False) == "C0"
-    assert level_from_v2(_v2(
-        source_urls=["https://navily.com/x"],
-        confidence_reasons=[],
-    ), official_source=True) == "C1"
+        confidence_reasons=["source d'État"],
+    )) == "C0"
+    assert level_from_v2(_v2(), whitelist=[]) == "C0"
+    assert level_from_v2(_v2(), whitelist=None) == "C0"
+    assert level_from_v2(_v2()) == "C1"
 
     catalogue = _v2(
         extraction_engine="catalog",
@@ -236,7 +264,7 @@ def test_apply_score_leaves_the_level_to_its_callers():
     assert port["confidence"] == scored["confidence"]
 
     before = dict(port)
-    attach_confidence_level(port, official_source=True)
+    attach_confidence_level(port)
     assert port["confidence_level"] in LEVELS
     assert {k: port[k] for k in before} == before
 
@@ -255,8 +283,9 @@ def test_geojson_and_run_output_include_confidence_level():
         **GEO_OK,
         "confidence_reasons": ["source d'État", "catalogue officiel"],
     }
+    # Read-time recompute has no zone whitelist, so nothing is official there.
     props = ports_to_geojson([doc])["features"][0]["properties"]
-    assert props["confidence_level"] == "C3"
+    assert props["confidence_level"] == "C0"
     stored = {**doc, "_id": "p2", "confidence_level": "C1"}
     assert ports_to_geojson([stored])["features"][0]["properties"]["confidence_level"] == "C1"
 
@@ -271,7 +300,7 @@ def test_geojson_and_run_output_include_confidence_level():
         "confidence_reasons": ["source d'État", "un seul extracteur"],
         "extraction_engine": "llm",
     })
-    assert out["confidence_level"] == "C1"
+    assert out["confidence_level"] == "C0"
 
 
 def test_levels_work_without_env():
@@ -313,3 +342,38 @@ def test_c3_needs_500_m_agreement_and_land_mask(geo, expected):
                 "spatial_kind": geo["spatial_kind"]},
     }
     assert level(entity) == expected
+
+
+@pytest.mark.parametrize("url, expected", [
+    ("https://www.martinique.gouv.fr/x", True),
+    ("https://douane.gouv.fr/guide?a=1", True),
+    ("http://gouv.fr", True),
+    # Keywords in the path or query, or lookalike hosts, are not official.
+    ("https://blog.example.com/customs-guide", False),
+    ("https://example.com/x?ref=douane.gouv.fr", False),
+    ("https://example.com/gouv.fr/page", False),
+    ("https://governor.com/x", False),
+    ("https://notgouv.fr/x", False),
+    ("https://gouv.fr.evil.com/x", False),
+    ("https://saint-pierre-hotel.com/", False),
+    ("https://www.mairie-lemarin.fr/", False),
+    ("https://cacem.fr/", False),
+    ("https://navily.com/x", False),
+    ("", False),
+    (None, False),
+])
+def test_official_is_a_host_match_on_the_whitelist(url, expected):
+    assert is_official(url, WL) is expected
+
+
+def test_official_uses_the_pipeline_whitelist():
+    from app.services.poe_pipeline import build_whitelist
+
+    wl = build_whitelist("FR", None, {"manual": {"FR": ["port-autonome.example"]}})
+    assert "gouv.fr" in wl
+    assert is_official("https://www.douane.gouv.fr/x", wl)
+    assert is_official("https://port-autonome.example/a", wl)
+    assert not is_official("https://saint-pierre-hotel.com/", wl)
+    port = {"name": "Saint-Pierre", "source_urls": ["https://saint-pierre-hotel.com/"],
+            "extraction_engine": "catalog"}
+    assert v3_certify.level_from_v2(port, whitelist=wl) == "C0"
