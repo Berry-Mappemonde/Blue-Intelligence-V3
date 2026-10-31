@@ -11,8 +11,10 @@ quoted evidence must literally appear in the fetched page (whitespace and
 case normalized). Otherwise that evidence is not extracted and the level
 is recomputed — it can only fall.
 
-`level_from_v2` maps a port already scored by `poe_confidence` onto the
-same scale. The numeric 0–100 score is left untouched.
+`level_from_v2` maps a pipeline port onto the same scale from its
+extraction, source, judge and geo fields. It never reads the V2 score
+(`confidence`, `confidence_parts`, `confidence_reasons`) and never writes
+it: the two stay separate (PLAN-V3 §7, relation still to confirm).
 """
 from __future__ import annotations
 
@@ -20,6 +22,9 @@ import re
 from collections.abc import Mapping, Sequence
 
 LEVELS = ("C0", "C1", "C2", "C3", "C4")
+# Fields attach_confidence_level writes. Run collections only, never poe_ports.
+LEVEL_FIELDS = ("confidence_level", "confidence_downgraded_from", "quote_verified",
+                "judge_contradicted")
 _RANK = {name: i for i, name in enumerate(LEVELS)}
 
 GEO_AGREE_KM = 0.5
@@ -193,15 +198,6 @@ def confidence_level(entity: dict, pages: Mapping[str, str] | None = None, *,
     return assess_level(entity, pages, whitelist=whitelist)["confidence_level"]
 
 
-def _reasons(port: dict) -> list[str]:
-    raw = port.get("confidence_reasons") or []
-    if isinstance(raw, str):
-        return [raw]
-    if isinstance(raw, (list, tuple)):
-        return [r for r in raw if isinstance(r, str)]
-    return []
-
-
 def _urls(port: dict) -> list[str]:
     out: list[str] = []
     for url in port.get("source_urls") or []:
@@ -211,18 +207,15 @@ def _urls(port: dict) -> list[str]:
 
 
 def _non_llm_corroboration(port: dict) -> bool:
-    """Catalogue or LLM∩NER. Two LLM readers do not count."""
+    """Catalogue or LLM∩NER, read from the extraction fields. Two LLM readers
+    do not count. The V2 score's reasons are never read."""
     engine = (port.get("extraction_engine") or "").lower()
-    reasons = set(_reasons(port))
     if engine == "catalog":
         return True
-    if "catalogue officiel" in reasons or "catalogue + LLM + NER" in reasons:
+    note = port.get("note") if isinstance(port.get("note"), str) else ""
+    if "catalogue officiel" in note:
         return True
-    if port.get("extraction_agreement") is True:
-        return True
-    if "LLM et NER d'accord" in reasons or "LLM ∩ NER ∩ Claude" in reasons:
-        return True
-    return False
+    return port.get("extraction_agreement") is True
 
 
 JUDGE_SUPPORTED = "supported"
@@ -300,9 +293,8 @@ def _geo_from_v2(port: dict) -> dict:
 
 def _from_v2(port: dict, whitelist: Sequence[str] | None) -> dict:
     """Shape a scored V2 port as a certify entity. Does not mutate `port`."""
-    reasons = _reasons(port)
     urls = _urls(port)
-    synthesis = bool(port.get("from_synthesis")) or "synthèse web sans page" in reasons
+    synthesis = bool(port.get("from_synthesis"))
     extracted = bool(urls) and not synthesis
     lift = _lifts_above_c1(port)
     quote = port.get("quote") if isinstance(port.get("quote"), str) else ""
@@ -344,7 +336,7 @@ def assess_port(port: dict, *, whitelist: Sequence[str] | None = None,
 
 def level_from_v2(port: dict, *, whitelist: Sequence[str] | None = None,
                   pages: Mapping[str, str] | None = None) -> str:
-    """C0–C4 for a V2 port (`poe_confidence` fields) or a prototype entity.
+    """C0–C4 for a pipeline port or a prototype entity.
 
     A whitelisted (State) host is required for C1+. An LLM-only reading (single extractor,
     or two LLM readers) never goes above C1. Catalogue, LLM∩NER, or a judge

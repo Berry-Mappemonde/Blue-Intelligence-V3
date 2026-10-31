@@ -43,7 +43,6 @@ from app.agents.evaluator import (
 )
 from app.agents.memory import recall_node, remember_node
 from app.core import generator, paths
-from app.services.v3_certify import level_from_v2
 
 RUN_TIMEOUT_S = 300.0
 PIPELINE_AGENT = 'RunPipeline'
@@ -358,12 +357,7 @@ async def _run(ctx: dict) -> None:
 
 def _port_out(port: dict) -> dict:
     provenance = port.get('source_provenance') or {}
-    try:
-        c_level = level_from_v2(port)
-    except Exception:
-        c_level = port.get('confidence_level') or 'C0'
     return dict(name=port.get('name'), verdict=port.get('verdict'), confidence=port.get('confidence'),
-                confidence_level=c_level,
                 lat=port.get('lat'), lon=port.get('lon'),
                 reasons_en=list(port.get('reasons_en') or []),
                 sources=[dict(url=u, provenance=provenance.get(u, 'zetaris'))

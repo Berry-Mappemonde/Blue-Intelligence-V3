@@ -21,8 +21,8 @@ AGENTS = {'ZetarisAdapter', 'HMemAgent', 'EvaluatorAgent', 'NemotronJudge', 'Res
           'MeterlessGenerator'}
 OUTPUT_KEYS = {'run_id', 'zone', 'mode', 'ports', 'summary', 'brief', 'llm', 'components', 'retries',
                'memory', 'trace_file', 'timings_ms', 'error', 'registry', 'judge'}
-PORT_KEYS = {'name', 'verdict', 'confidence', 'confidence_level', 'lat', 'lon', 'reasons_en', 'sources',
-             'memories_recalled', 'research', 'registry', 'judge'}
+PORT_KEYS = {'name', 'verdict', 'confidence', 'lat', 'lon', 'reasons_en', 'sources', 'memories_recalled', 'research',
+             'registry', 'judge'}
 _CREDENTIAL_ENV = ('ZETARIS_API_KEY', 'ZETARIS_ORG_ID', 'ZETARIS_REST_URL', 'METERLESS_BASE_URL',
                    'METERLESS_RUNTIME_TOKEN', 'METERLESS_MODEL', 'MODEL_BASE_URL', 'MODEL_API_KEY',
                    'MODEL_NAME', 'NVIDIA_API_KEY')

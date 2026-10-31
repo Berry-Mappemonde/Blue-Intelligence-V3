@@ -13,7 +13,6 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app.pipeline.run_pipeline import _port_out  # noqa: E402
 from app.services.poe_confidence import apply_score, score_port  # noqa: E402
 from app.services.poe_pipeline import ports_to_geojson  # noqa: E402
 from app.services import v3_certify  # noqa: E402
@@ -300,35 +299,142 @@ def test_apply_score_leaves_the_level_to_its_callers():
     assert src.count("attach_confidence_level(") >= 2
 
 
-def test_geojson_and_run_output_include_confidence_level():
-    doc = {
-        "_id": "p1",
-        "name": "Papeete",
-        "lat": -17.5,
-        "lon": -149.5,
-        "source_urls": [GOV],
-        "extraction_engine": "catalog",
-        **GEO_OK,
-        "confidence_reasons": ["source d'État", "catalogue officiel"],
-    }
-    # Read-time recompute has no zone whitelist, so nothing is official there.
+def test_level_never_derived_from_the_v2_score():
+    port = _v2(extraction_engine="catalog", lat=14.5, lon=-61.0, **GEO_OK)
+    expected = level_from_v2(port)
+    assert expected == "C3"
+    for score in ({"confidence": 0, "confidence_parts": {}, "confidence_reasons": []},
+                  {"confidence": 100, "confidence_parts": {"source": 30},
+                   "confidence_reasons": ["source d'État", "catalogue + LLM + NER"]}):
+        assert level_from_v2({**port, **score}) == expected
+    # V2 reasons alone do not lift: an LLM-only reading stays C1.
+    llm = _v2(confidence=99, confidence_reasons=["catalogue officiel", "LLM et NER d'accord"],
+              **GEO_OK)
+    assert level_from_v2(llm) == "C1"
+    # Attaching the level never touches the V2 score fields.
+    scored = {**port, "confidence": 42, "confidence_parts": {"source": 30},
+              "confidence_reasons": ["x"]}
+    attach_confidence_level(scored)
+    assert (scored["confidence"], scored["confidence_parts"], scored["confidence_reasons"]) == (
+        42, {"source": 30}, ["x"])
+    # And the V2 score does not read the level.
+    a = score_port({**port, "confidence_level": "C0"}, official_source=True)
+    b = score_port({**port, "confidence_level": "C4"}, official_source=True)
+    assert a == b
+
+
+def test_geojson_copies_the_stored_level_and_never_recomputes():
+    doc = {"_id": "p1", "name": "Papeete", "lat": -17.5, "lon": -149.5,
+           "source_urls": [GOV], "extraction_engine": "catalog", "confidence": 80, **GEO_OK}
     props = ports_to_geojson([doc])["features"][0]["properties"]
-    assert props["confidence_level"] == "C0"
+    assert props["confidence_level"] is None
+    assert props["confidence"] == 80
     stored = {**doc, "_id": "p2", "confidence_level": "C1"}
     assert ports_to_geojson([stored])["features"][0]["properties"]["confidence_level"] == "C1"
+    bad = {**doc, "_id": "p3", "confidence_level": "C9"}
+    assert ports_to_geojson([bad])["features"][0]["properties"]["confidence_level"] is None
 
-    out = _port_out({
-        "name": "Papeete",
-        "verdict": "pass",
-        "confidence": 70,
-        "lat": -17.5,
-        "lon": -149.5,
-        "reasons_en": [],
-        "source_urls": [GOV],
-        "confidence_reasons": ["source d'État", "un seul extracteur"],
-        "extraction_engine": "llm",
-    })
-    assert out["confidence_level"] == "C0"
+
+def test_run_pipeline_output_has_no_level():
+    from app.pipeline.run_pipeline import _port_out
+
+    out = _port_out({"name": "Papeete", "verdict": "pass", "confidence": 70,
+                     "source_urls": [GOV], "extraction_engine": "catalog"})
+    assert "confidence_level" not in out
+    assert out["confidence"] == 70
+
+
+def _geo_zone_fakes(monkeypatch):
+    from app.services import poe_pipeline as poe
+
+    async def fake_extract(context, zone, log, rec=None, catalog_text=None, settings=None):
+        return [{"name": "Fort-de-France", "lat": 14.6, "lon": -61.07,
+                 "extraction_engine": "catalog"}]
+
+    async def no_dual(*a, **k):
+        raise AssertionError("no geocoding: coordinates come from the source")
+
+    monkeypatch.setattr(poe, "extract_ports_llm", fake_extract)
+    monkeypatch.setattr(poe, "geocode_port_dual", no_dual)
+    monkeypatch.setattr(poe, "_hmem_recall", lambda docs, run_id: [[] for _ in docs])
+    monkeypatch.setattr(poe, "_hmem_remember", lambda docs, run_id: {})
+    zone = {"mrgid": 1, "name": "Martinique", "iso2": "MQ", "sov_iso2": "FR",
+            "geometry": None}
+    sources = [{"url": GOV, "official": True}]
+    return poe, zone, sources
+
+
+def test_level_is_attached_in_run_mode_only(monkeypatch):
+    import asyncio
+    from types import SimpleNamespace
+
+    poe, zone, sources = _geo_zone_fakes(monkeypatch)
+    live = asyncio.run(poe._extract_and_geocode(zone, "ctx", sources, lambda m: None,
+                                                whitelist=WL))
+    assert live and all("confidence_level" not in d for d in live)
+    assert all(isinstance(d.get("confidence"), int) for d in live)
+
+    run = SimpleNamespace(run_id="run-test", variant="tinyfish")
+    in_run = asyncio.run(poe._extract_and_geocode(zone, "ctx", sources, lambda m: None,
+                                                  run=run, whitelist=WL))
+    assert in_run and all(d["confidence_level"] in LEVELS for d in in_run)
+    assert [d["confidence"] for d in in_run] == [d["confidence"] for d in live]
+
+
+class _Cursor:
+    def __init__(self, rows):
+        self.rows = rows
+
+    async def to_list(self, n):
+        return list(self.rows)
+
+
+class _Coll:
+    def __init__(self, rows=None):
+        self.rows = rows or []
+        self.inserted, self.updates = [], []
+
+    def find(self, q):
+        return _Cursor([r for r in self.rows if all(r.get(k) == v for k, v in q.items())])
+
+    async def insert_one(self, doc):
+        self.inserted.append(dict(doc))
+
+    async def update_one(self, q, upd, upsert=False):
+        self.updates.append((q, upd))
+
+    async def count_documents(self, q):
+        return len(self.rows) + len(self.inserted)
+
+    async def find_one(self, q):
+        return {"mrgid": q.get("mrgid"), "status": "ia"}
+
+
+def test_persist_zone_never_writes_the_level_to_poe_ports():
+    import asyncio
+    from types import SimpleNamespace
+
+    from app.services import poe_pipeline as poe
+
+    existing = {"_id": "e1", "mrgid": 1, "name": "Fort-de-France", "dedup_key": "1:fortdefrance",
+                "lat": 14.6, "lon": -61.07, "osm_confidence": 0.9, "source_urls": [GOV]}
+    level_fields = {"confidence_level": "C3", "confidence_downgraded_from": "C4",
+                    "quote_verified": True, "judge_contradicted": True}
+    merged = {"mrgid": 1, "name": "Fort-de-France", "dedup_key": "1:fortdefrance",
+              "lat": 14.6, "lon": -61.07, "source_urls": [GOV], "confidence": 50,
+              "extracted_at": "now", "extraction_engine": "catalog", **level_fields}
+    fresh = {"mrgid": 1, "name": "Le Marin", "dedup_key": "1:lemarin", "lat": 14.47,
+             "lon": -60.87, "source_urls": [GOV], "confidence": 40, "extracted_at": "now",
+             **level_fields}
+    db = SimpleNamespace(poe_ports=_Coll([existing]), eez_zones=_Coll())
+    asyncio.run(poe._persist_zone(db, {"mrgid": 1}, [merged, fresh], "ia",
+                                  [{"url": GOV, "official": True}], {}, {}, lambda m: None))
+    assert db.poe_ports.inserted and db.poe_ports.updates
+    for doc in db.poe_ports.inserted:
+        assert not set(level_fields) & set(doc)
+    for _, upd in db.poe_ports.updates:
+        assert not set(level_fields) & set(upd.get("$set", {}))
+        assert "confidence" in upd["$set"]
 
 
 def test_levels_work_without_env():
