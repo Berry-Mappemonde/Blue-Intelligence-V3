@@ -8,6 +8,8 @@ import sys
 from copy import deepcopy
 from pathlib import Path
 
+import pytest
+
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -27,6 +29,10 @@ from app.services.v3_certify import (  # noqa: E402
 )
 
 GOV = "https://www.martinique.gouv.fr/x"
+# PLAN-V3 §5 C3 geo: two geocoders < 500 m, at sea or at the quay.
+GEO_OK = {"geocode_agree": True, "geocode_agreement_km": 0.3, "spatial_kind": "in_eez"}
+GEO_OK_ENTITY = {"agree": True, "independent_sources": 2, "agreement_km": 0.3,
+                 "spatial_kind": "in_eez"}
 
 
 def _v2(**overrides):
@@ -56,7 +62,7 @@ def test_level_matches_prototype_ladder():
         "evidence": [{"url": GOV, "extracted": True, "judge": "supported"}],
     }
     assert level(official) == "C2"
-    official["geo"] = {"agree": True, "independent_sources": 2}
+    official["geo"] = dict(GEO_OK_ENTITY)
     assert level(official) == "C3"
     official["human"] = "confirmed"
     assert level(official) == "C4"
@@ -73,12 +79,12 @@ def test_level_matches_prototype_ladder():
 def test_llm_only_never_above_c1_even_with_geo_and_human():
     port = _v2(
         claude_agreement=True,
-        geocode_agree=True,
+        **GEO_OK,
         human="confirmed",
         confidence_reasons=["source d'État", "deux lecteurs LLM"],
     )
     assert level_from_v2(port) == "C1"
-    judged = _v2(judge="supported", geocode_agree=True, human="confirmed")
+    judged = _v2(judge="supported", **GEO_OK, human="confirmed")
     assert level_from_v2(judged) == "C4"
 
 
@@ -96,13 +102,13 @@ def test_v2_official_flag_and_catalogue_ladder():
         extraction_engine="catalog",
         extraction_agreement=True,
         confidence_reasons=["source d'État", "catalogue officiel"],
-        geocode_agree=True,
+        **GEO_OK,
     )
     assert level_from_v2(catalogue) == "C3"
     assert level_from_v2({**catalogue, "human": "confirmed"}) == "C4"
     assert level_from_v2({**catalogue, "geocode_agree": False}) == "C2"
     assert level_from_v2(_v2(from_synthesis=True, extraction_engine="catalog",
-                             geocode_agree=True, human="confirmed")) == "C0"
+                             **GEO_OK, human="confirmed")) == "C0"
 
 
 def test_advisory_judge_does_not_lift_and_unverified_quote_downgrades():
@@ -168,7 +174,7 @@ def test_bad_extraction_quote_downgrades_and_does_not_mutate():
             "extracted": True,
             "judge": "supported",
         }],
-        "geo": {"agree": True, "independent_sources": 2},
+        "geo": dict(GEO_OK_ENTITY),
     }
     pages = {url: "port of entry at fort-de-france"}
     assert level(entity) == "C3"
@@ -187,7 +193,7 @@ def test_bad_extraction_quote_downgrades_and_does_not_mutate():
     port = _v2(
         extraction_engine="catalog",
         confidence_reasons=["source d'État", "catalogue officiel"],
-        geocode_agree=True,
+        **GEO_OK,
         quote="Official   CATALOGUE\ntext",
     )
     assert level_from_v2(port, pages={url: "official catalogue text"}) == "C3"
@@ -200,7 +206,7 @@ def test_catalogue_survives_a_bad_judge_excerpt():
     port = _v2(
         extraction_engine="catalog",
         confidence_reasons=["source d'État", "catalogue officiel"],
-        geocode_agree=True,
+        **GEO_OK,
         judge={
             "verdict": "supported",
             "quoted_excerpt": "not on the page",
@@ -246,7 +252,7 @@ def test_geojson_and_run_output_include_confidence_level():
         "lon": -149.5,
         "source_urls": [GOV],
         "extraction_engine": "catalog",
-        "geocode_agree": True,
+        **GEO_OK,
         "confidence_reasons": ["source d'État", "catalogue officiel"],
     }
     props = ports_to_geojson([doc])["features"][0]["properties"]
@@ -281,3 +287,29 @@ def test_unified_run_is_the_only_run_mechanism():
     assert importlib.util.find_spec("app.services.v3_run_manifest") is None
     assert run_artifacts.LEVEL_FIELD == "confidence_level"
     assert run_artifacts.SCORE_FIELD == "confidence"
+
+
+@pytest.mark.parametrize("geo, expected", [
+    ({"geocode_agree": True, "geocode_agreement_km": 0.5, "spatial_kind": "in_eez"}, "C3"),
+    ({"geocode_agree": True, "geocode_agreement_km": 0.2, "spatial_kind": "coastal_land"}, "C3"),
+    # Agreeing under the pipeline's 2 km flag, but not within 500 m.
+    ({"geocode_agree": True, "geocode_agreement_km": 1.8, "spatial_kind": "in_eez"}, "C2"),
+    ({"geocode_agree": True, "geocode_agreement_km": None, "spatial_kind": "in_eez"}, "C2"),
+    ({"geocode_agree": True, "spatial_kind": "in_eez"}, "C2"),
+    # Within 500 m but off the land mask.
+    ({"geocode_agree": True, "geocode_agreement_km": 0.1, "spatial_kind": "out_of_eez"}, "C2"),
+    ({"geocode_agree": True, "geocode_agreement_km": 0.1, "spatial_kind": "inland_river"}, "C2"),
+    ({"geocode_agree": True, "geocode_agreement_km": 0.1, "spatial_kind": None}, "C2"),
+    ({"geocode_agree": False, "geocode_agreement_km": 0.1, "spatial_kind": "in_eez"}, "C2"),
+])
+def test_c3_needs_500_m_agreement_and_land_mask(geo, expected):
+    port = _v2(extraction_engine="catalog", note="catalogue officiel", lat=14.5, lon=-61.0, **geo)
+    assert level_from_v2(port) == expected
+    entity = {
+        "name": "Marina du Marin",
+        "evidence": [{"url": GOV, "extracted": True, "judge": "supported"}],
+        "geo": {"agree": geo["geocode_agree"], "independent_sources": 2,
+                "agreement_km": geo.get("geocode_agreement_km"),
+                "spatial_kind": geo["spatial_kind"]},
+    }
+    assert level(entity) == expected

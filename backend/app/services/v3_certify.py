@@ -2,8 +2,8 @@
 
 Same ladder as the V3 prototype (`certify.level`): a level never rests on an
 LLM-only point above C1. C1 needs an official extracted source, C2 a
-non-LLM corroboration or an explicit judge "supported", C3 two agreeing
-geo sources, C4 a human confirmation on top of C3.
+non-LLM corroboration or an explicit judge "supported", C3 two geocoders
+within 500 m, at sea or at the quay, C4 a human confirmation on top of C3.
 
 `confidence_level` applies that ladder after a verified-quote check: the
 quoted evidence must literally appear in the fetched page (whitespace and
@@ -30,6 +30,8 @@ AGGREGATORS = (
     "wikipedia", "facebook", "yachtinsidersguide", "azmartinique",
     "marineconnect", "boatsetter",
 )
+GEO_AGREE_KM = 0.5
+GEO_KINDS = frozenset({"in_eez", "coastal_land"})
 _NAME_STOP = ("port", "marina", "harbour", "plaisance", "office", "capitainerie")
 _WS = re.compile(r"\s+")
 
@@ -83,11 +85,28 @@ def level(entity: dict) -> str:
     if lvl == "C1" and any(e.get("judge") == "supported" for e in ev):
         lvl = "C2"
     g = entity.get("geo") if isinstance(entity.get("geo"), dict) else {}
-    if lvl == "C2" and g.get("agree") and _enough_sources(g):
+    if lvl == "C2" and _geo_agrees(g):
         lvl = "C3"
     if lvl == "C3" and entity.get("human") == "confirmed":
         lvl = "C4"
     return lvl
+
+
+def _geo_agrees(geo: dict) -> bool:
+    """PLAN-V3 §5 C3 gate: two independent geocoders within GEO_AGREE_KM of
+    each other, and the point at sea or at the quay (land mask).
+
+    The pipeline's own `geocode_agree` flag uses a 2 km tolerance
+    (core.geo.GEOCODE_AGREE_KM) and is not enough on its own.
+    """
+    if geo.get("agree") is not True or not _enough_sources(geo):
+        return False
+    km = geo.get("agreement_km")
+    if isinstance(km, bool) or not isinstance(km, (int, float)) or km < 0:
+        return False
+    if km > GEO_AGREE_KM:
+        return False
+    return geo.get("spatial_kind") in GEO_KINDS
 
 
 def _enough_sources(geo: dict) -> bool:
@@ -284,6 +303,8 @@ def _geo_from_v2(port: dict) -> dict:
         return {
             "agree": geo.get("agree"),
             "independent_sources": geo.get("independent_sources", 0),
+            "agreement_km": geo.get("agreement_km"),
+            "spatial_kind": geo.get("spatial_kind", port.get("spatial_kind")),
         }
     alts = port.get("geocode_alternates") or {}
     n = 0
@@ -294,7 +315,11 @@ def _geo_from_v2(port: dict) -> dict:
     agree = port.get("geocode_agree")
     if agree is True:
         n = max(n, 2)
-    return {"agree": bool(agree), "independent_sources": n}
+    km = port.get("geocode_agreement_km")
+    if km is None:
+        km = port.get("agreement_km")
+    return {"agree": agree is True, "independent_sources": n,
+            "agreement_km": km, "spatial_kind": port.get("spatial_kind")}
 
 
 def _from_v2(port: dict, official_source: bool | None, *, honor_quotes: bool,
