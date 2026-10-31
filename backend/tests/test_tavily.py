@@ -821,3 +821,37 @@ class TestSwarmTavilyScope:
         _run(sw._search_discover(seed, 6))
         assert listing and all(inc is None for inc in listing)
         assert seen and all(inc == ["example.org"] for inc in seen)
+
+
+class TestTransportRetry:
+    """Review PR #8 finding 7: one retry on a network error."""
+
+    def test_connect_reset_is_retried_once(self, monkeypatch):
+        _use_key(monkeypatch)
+        calls = []
+
+        class _FlakyClient(_FakeClient):
+            async def post(self, url, **kwargs):
+                calls.append(url)
+                if len(calls) == 1:
+                    raise httpx.ReadError("connection reset")
+                return _Resp(200, {"results": [
+                    {"url": "https://example.org/a", "title": "A", "content": "a"}]})
+
+        monkeypatch.setattr(tv.httpx, "AsyncClient", _FlakyClient)
+        hits = _run(tv.tavily_search("ports"))
+        assert [h["url"] for h in hits] == ["https://example.org/a"]
+        assert len(calls) == 2
+
+    def test_persistent_timeout_gives_up_after_one_retry(self, monkeypatch):
+        _use_key(monkeypatch)
+        calls = []
+
+        class _Boom(_BoomClient):
+            async def post(self, *a, **k):
+                calls.append(1)
+                raise httpx.ConnectTimeout("timed out")
+
+        monkeypatch.setattr(tv.httpx, "AsyncClient", _Boom)
+        assert _run(tv.tavily_search("ports")) == []
+        assert len(calls) == 2

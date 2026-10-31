@@ -474,7 +474,9 @@ async def _request(url: str, body: dict, log) -> dict | None:
             return _redact(data)
         except Exception as exc:
             log(f"Tavily: échec ({_safe_err(exc)})")
-            if last_status == 429 and attempt == 0:
+            # One retry after a 429, or after a network error (timeout, reset).
+            transient = isinstance(exc, httpx.TransportError) or last_status == 429
+            if transient and attempt == 0:
                 await _sleep_retry()
                 continue
             return None
