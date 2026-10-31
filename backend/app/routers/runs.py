@@ -1,8 +1,12 @@
 """
 app.routers.runs — Versioned PoE pipeline runs (several in parallel).
 
-POST /api/poe/runs                     start (or resume) a run
-POST /api/poe/runs/multi               launch v1 + v2 + tinyfish in parallel
+POST /api/runs                         unified entry: start or resume (P0-4)
+GET  /api/runs/{id}/manifest           data/runs/<id>/manifest.json
+POST /api/runs/{id}/export             GeoJSON + manifest export (+ optional upload)
+POST /api/runs/{id}/upload             retry the upload of an existing, verified export
+POST /api/poe/runs                     start (or resume) a run — wrapper of /api/runs
+POST /api/poe/runs/multi               deprecated: v1 + v2 + tinyfish in parallel
 GET  /api/poe/runs                     list of runs
 GET  /api/poe/runs/searxng             search-engine health
 GET  /api/poe/runs/compare             N-run comparison (+ v1)
@@ -39,6 +43,7 @@ POST /api/poe/seeds/osm/refresh        reload Overpass → osm_port_seeds
 GET  /api/poe/runs/code-fingerprint
 """
 import asyncio
+import logging
 import time
 
 import httpx
@@ -50,6 +55,7 @@ from app.core.tasks import TaskState
 from app.db import db as _db
 from app.services import poe_pipeline as poe
 from app.services import poe_runs
+from app.services import unified_runs
 from app.services.listing_control import (
     build_listing_control_report, compare_runs_to_listing, persist_review,
     suggest_canary_zones,
@@ -70,6 +76,7 @@ from app.services.poe_confirmed_gps_audit import audit_from_db
 from app.services.poe_gps_registry import public_view as gps_registry_view
 
 router = APIRouter(prefix="/api")
+logger = logging.getLogger(__name__)
 
 MAX_PARALLEL_RUNS = 4
 RUN_STATES: dict[str, TaskState] = {}
@@ -146,22 +153,40 @@ class SeedMineBody(BaseModel):
 async def _launch_run(*, resume: bool, run_id: str, label: str, limit: int,
                       zones, concurrency: int, variant: str,
                       rules_overrides: dict | None = None,
-                      profile: str | None = None) -> str:
+                      profile: str | None = None,
+                      retry_errored: bool = False, force: bool = False) -> str:
     if len(_active_ids()) >= MAX_PARALLEL_RUNS:
         raise HTTPException(409, f"déjà {MAX_PARALLEL_RUNS} runs actifs")
     if run_id in RUN_STATES and RUN_STATES[run_id].running:
         raise HTTPException(409, f"Run {run_id} already running")
+    # Reserve the slot before the first await: the check above and this
+    # registration must not be split by the Mongo lookup, or two requests
+    # both pass the check and the run executes twice.
+    previous = RUN_STATES.get(run_id)
     state = TaskState(max_logs=2000)
     state.start()
     RUN_STATES[run_id] = state
+    try:
+        resolved = await unified_runs.resolve_launch(
+            _db, run_id=run_id, resume=resume, label=label, limit=limit,
+            zones=zones, concurrency=concurrency, variant=variant,
+            retry_errored=retry_errored, force=force)
+    except BaseException as e:
+        if RUN_STATES.get(run_id) is state:
+            if previous is None:
+                RUN_STATES.pop(run_id, None)
+            else:
+                RUN_STATES[run_id] = previous
+        if isinstance(e, ValueError):
+            busy = isinstance(e, (unified_runs.RunExists, unified_runs.RunBusy))
+            raise HTTPException(409 if busy else 400, str(e)) from e
+        raise
 
     async def _runner():
         try:
-            state.summary = await poe_runs.execute_run(
-                _db, state, run_id, label=label, limit=limit,
-                only_zones=zones, concurrency=concurrency, resume=resume,
-                variant=variant, rules_overrides=rules_overrides,
-                profile=profile)
+            state.summary = await unified_runs.start_run(
+                _db, state, resolved=resolved,
+                rules_overrides=rules_overrides, profile=profile)
         except Exception as e:
             state.error = f"{type(e).__name__}: {e}"
             state.log(f"FATAL: {state.error}")
@@ -217,7 +242,11 @@ async def poe_run_start(body: RunBody | None = None):
 
 @router.post("/poe/runs/multi", status_code=202)
 async def poe_run_multi(body: MultiRunBody | None = None):
-    """Launch the requested variants in parallel. Each run has its run_id."""
+    """Deprecated (P0-4): launch the requested variants in parallel.
+
+    Still works; each run goes through the unified runner. Use POST /api/runs.
+    """
+    logger.warning("POST /api/poe/runs/multi is deprecated — use POST /api/runs")
     body = body or MultiRunBody()
     started = []
     errors = []
@@ -241,7 +270,8 @@ async def poe_run_multi(body: MultiRunBody | None = None):
     if not started:
         raise HTTPException(409, {"detail": "aucun run démarré", "errors": errors})
     return {"status": "started", "runs": started, "errors": errors,
-            "active_run_ids": _active_ids()}
+            "active_run_ids": _active_ids(),
+            "deprecated": "use POST /api/runs"}
 
 
 @router.get("/poe/runs/code-fingerprint")
@@ -788,3 +818,86 @@ async def poe_run_listing_control_persist(run_id: str, restrict_to_run_zones: bo
         _db, run_id, restrict_to_run_zones=restrict_to_run_zones)
     persisted = await persist_review(_db, report)
     return {"report": report, "persisted": persisted}
+
+
+class UnifiedRunBody(BaseModel):
+    layer: str = "poe"
+    run_id: str | None = None
+    resume: bool = False
+    retry_errored: bool = False         # resume only: redo errored zones once
+    force: bool = False                 # resume only: take over a run marked running
+    label: str = ""
+    limit: int = 0
+    concurrency: int = 2
+    zones: list[int] | None = None
+    variant: str = "tinyfish"
+    profile: str | None = None
+    rules: dict | None = None
+
+
+@router.post("/runs", status_code=202)
+async def unified_run_start(body: UnifiedRunBody | None = None):
+    """Single entry point (P0-4): new run, or resume of an existing run_id."""
+    body = body or UnifiedRunBody()
+    try:
+        unified_runs.normalize_layer(body.layer)
+        variant = normalize_variant(body.variant)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    if body.resume and not body.run_id:
+        raise HTTPException(400, "run_id required to resume")
+    run_id = body.run_id or poe_runs.new_run_id()
+    label = body.label or ("" if body.resume else f"{variant}-full")
+    if not body.resume and (body.rules or body.profile):
+        from app.core.run_rules import RuleError
+        from app.db import get_settings
+        try:
+            snapshot_for_run(mode="formalities", settings=await get_settings(),
+                             overrides=body.rules, profile=body.profile)
+        except RuleError as e:
+            raise HTTPException(400, str(e)) from e
+    await _launch_run(resume=body.resume, run_id=run_id, label=label,
+                      limit=body.limit, zones=body.zones,
+                      concurrency=body.concurrency, variant=variant,
+                      rules_overrides=None if body.resume else body.rules,
+                      profile=None if body.resume else body.profile,
+                      retry_errored=body.retry_errored,
+                      force=body.resume and body.force)
+    return {"status": "started", "run_id": run_id, "resume": body.resume,
+            "layer": "poe", "variant": variant}
+
+
+@router.get("/runs/{run_id}/manifest")
+async def unified_run_manifest(run_id: str):
+    from app.services import run_artifacts
+    try:
+        path = run_artifacts.manifest_path(run_id)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    doc = run_artifacts.read_manifest(path)
+    if doc is None:
+        raise HTTPException(404, f"no manifest for run {run_id}")
+    return doc
+
+
+@router.post("/runs/{run_id}/export")
+async def unified_run_export(run_id: str):
+    """Export a finished run (GeoJSON + manifest). Upload only if enabled."""
+    try:
+        return await unified_runs.export_run(_db, run_id)
+    except FileExistsError as e:
+        raise HTTPException(409, str(e)) from e
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@router.post("/runs/{run_id}/upload")
+async def unified_run_upload(run_id: str):
+    """Upload an existing export again (after a failed upload); never re-exports.
+    The export is checked against its manifest hashes first."""
+    try:
+        return await unified_runs.upload_existing_export(_db, run_id)
+    except unified_runs.ExportIncomplete as e:
+        raise HTTPException(409, str(e)) from e
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
