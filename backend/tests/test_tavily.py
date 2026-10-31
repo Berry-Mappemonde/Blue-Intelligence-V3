@@ -494,3 +494,129 @@ class TestCacheHygiene:
         assert (b["cache_hits"], b["cache_misses"], b["cache_hit_ratio"]) == (2, 0, 1.0)
         doc = tv.attach({"run_id": "run-tv-a"}, "run-tv-a")
         assert doc["tavily"]["cache_hit_ratio"] == 0.5
+
+
+class TestCreditBudget:
+    """Review PR #8 finding 2: credit cap per run, semaphore, credits stored with the run."""
+
+    @pytest.fixture(autouse=True)
+    def _stats(self):
+        tv.reset_stats()
+        yield
+        tv.reset_stats()
+
+    @staticmethod
+    def _cap(n):
+        from app.core.run_rules import bind_rules
+        return bind_rules({"chosen": {"tavily.max_credits": {"value": n}}})
+
+    def test_max_credits_is_a_run_rule(self):
+        from app.core.run_rules import get_rule_def, reset_rules
+        rule = get_rule_def("tavily.max_credits")
+        assert rule["kind"] == "budget" and rule["value"] == tv.DEFAULT_MAX_CREDITS
+        token = self._cap(3)
+        try:
+            assert tv.max_credits() == 3
+        finally:
+            reset_rules(token)
+
+    def test_cap_stops_calls_and_is_recorded(self, monkeypatch):
+        from app.core.run_rules import reset_rules
+        from app.core.tokenfactory import bind_run
+        _use_key(monkeypatch)
+        _FakeClient.default = _Resp(200, {"results": [
+            {"url": "https://example.org/a", "title": "A", "content": "a"},
+        ]})
+        token = self._cap(3)
+
+        async def go():
+            bind_run("run-cap")
+            a = await tv.tavily_search("q1")                          # 1
+            b = await tv.tavily_search("q2", search_depth="advanced")  # 2 -> 3
+            c = await tv.tavily_search("q3")                          # 4 > 3: refused
+            d = await tv.tavily_search("q1")                          # cache hit: free
+            return a, b, c, d
+
+        try:
+            a, b, c, d = _run(go())
+        finally:
+            reset_rules(token)
+        assert a and b and d and c == []
+        assert len(_FakeClient.posts) == 2
+        s = tv.summary("run-cap")
+        assert s["credits"] == {"search": 3, "extract": 0, "total": 3}
+        assert s["calls_capped"] == 1 and s["budget_reached"] is True
+        assert tv.summary("other-run")["credits"]["total"] == 0
+
+    def test_failed_call_gives_credits_back(self, monkeypatch):
+        from app.core.tokenfactory import bind_run
+        _use_key(monkeypatch)
+        _FakeClient.queue = [_Resp(500, {})]
+
+        async def go():
+            bind_run("run-fail")
+            return await tv.tavily_search("q")
+
+        assert _run(go()) == []
+        assert tv.summary("run-fail")["credits"]["total"] == 0
+
+    def test_extract_bills_urls_read(self, monkeypatch):
+        from app.core.tokenfactory import bind_run
+        _use_key(monkeypatch)
+        urls = [f"https://example.org/p{i}" for i in range(7)]
+        _FakeClient.default = _Resp(200, {
+            "results": [{"url": u, "raw_content": "t"} for u in urls[:5]],
+            "failed_results": [{"url": u} for u in urls[5:]],
+        })
+
+        async def go():
+            bind_run("run-ex")
+            return await tv.tavily_extract(urls)
+
+        assert len(_run(go())) == 5
+        # 7 sent would reserve 2 credits; 5 read bill 1
+        assert tv.summary("run-ex")["credits"]["extract"] == 1
+
+    def test_semaphore_bounds_concurrent_calls(self, monkeypatch):
+        _use_key(monkeypatch)
+        state = {"now": 0, "peak": 0}
+
+        class _SlowClient(_FakeClient):
+            async def post(self, url, **kwargs):
+                state["now"] += 1
+                state["peak"] = max(state["peak"], state["now"])
+                await asyncio.sleep(0.01)
+                state["now"] -= 1
+                return _Resp(200, {"results": [
+                    {"url": "https://example.org/a", "title": "A", "content": "a"}]})
+
+        monkeypatch.setattr(tv.httpx, "AsyncClient", _SlowClient)
+
+        async def go():
+            return await asyncio.gather(*(tv.tavily_search(f"q{i}") for i in range(12)))
+
+        assert all(_run(go()))
+        assert 1 <= state["peak"] <= tv.MAX_CONCURRENT < 12
+
+    def test_restore_keeps_cap_across_resume(self, monkeypatch):
+        from app.core.run_rules import reset_rules
+        from app.core.tokenfactory import bind_run
+        _use_key(monkeypatch)
+        _FakeClient.default = _Resp(200, {"results": [
+            {"url": "https://example.org/a", "title": "A", "content": "a"}]})
+        stored = {"credits": {"search": 4, "extract": 1, "total": 5},
+                  "cache_hits": 2, "cache_misses": 5}
+        tv.restore(stored, "run-resume")
+        token = self._cap(5)
+
+        async def go():
+            bind_run("run-resume")
+            return await tv.tavily_search("q")
+
+        try:
+            assert _run(go()) == []
+        finally:
+            reset_rules(token)
+        assert _FakeClient.posts == []
+        s = tv.summary("run-resume")
+        assert s["credits"]["total"] == 5 and s["cache_misses"] == 6

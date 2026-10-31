@@ -8,7 +8,13 @@ is a miss. Cache hits and misses are counted per run (``summary``).
 
 Credits actually billed (a cache hit is free):
   basic / fast / ultra-fast search = 1, advanced search = 2,
-  extract = 1 per 5 URLs.
+  extract = 1 per 5 URLs read.
+
+Budget, per run (same run key as the Token Factory ledger): a call is sent
+only if its credits fit under the run rule ``tavily.max_credits``; credits
+are reserved before the call and given back if it fails. At most
+``MAX_CONCURRENT`` calls are in flight per event loop. ``summary(run_id)``
+is stored with the run (``tavily_cost`` on PoE runs, ``summary.tavily``).
 """
 from __future__ import annotations
 
@@ -18,6 +24,7 @@ import json
 import os
 import threading
 import time
+import weakref
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -36,12 +43,38 @@ _SECRET_FIELDS = {"api_key", "apikey", "authorization", "token"}
 _DEFAULT_CACHE = Path(__file__).resolve().parents[2] / "data" / "cache" / "tavily"
 
 DEFAULT_CACHE_TTL_DAYS = 7
+DEFAULT_MAX_CREDITS = 1000
+MAX_CONCURRENT = 4
 _CACHED_AT = "_cached_at"
 
 CREDITS = {"search": 0, "extract": 0}  # process total; per run: summary()
 
 _STATS: dict[str, dict] = {}
 _stats_guard = threading.Lock()
+_sems: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
+
+
+def _sem() -> asyncio.Semaphore:
+    """One semaphore per event loop (tests and threads run their own loops)."""
+    loop = asyncio.get_running_loop()
+    sem = _sems.get(loop)
+    if sem is None:
+        sem = asyncio.Semaphore(MAX_CONCURRENT)
+        _sems[loop] = sem
+    return sem
+
+
+def max_credits() -> int:
+    """Run rule ``tavily.max_credits``. 0 = no paid Tavily call (cache still read)."""
+    try:
+        from app.core.run_rules import get_rule
+        raw = get_rule("tavily.max_credits", DEFAULT_MAX_CREDITS)
+    except Exception:
+        raw = DEFAULT_MAX_CREDITS
+    try:
+        return max(0, int(raw))
+    except (TypeError, ValueError):
+        return DEFAULT_MAX_CREDITS
 
 
 def _run_key(run_id: str | None = None) -> str:
@@ -51,7 +84,61 @@ def _run_key(run_id: str | None = None) -> str:
 
 
 def _slot(rid: str) -> dict:
-    return _STATS.setdefault(rid, {"cache_hits": 0, "cache_misses": 0})
+    return _STATS.setdefault(rid, {
+        "cache_hits": 0, "cache_misses": 0,
+        "credits_search": 0, "credits_extract": 0, "capped": 0,
+    })
+
+
+def _credits_used(slot: dict) -> int:
+    return int(slot.get("credits_search") or 0) + int(slot.get("credits_extract") or 0)
+
+
+def reserve_credits(kind: str, cost: int, run_id: str | None = None) -> bool:
+    """Take ``cost`` credits for this run if they fit under ``tavily.max_credits``."""
+    cost = max(0, int(cost))
+    cap = max_credits()
+    rid = _run_key(run_id)
+    with _stats_guard:
+        slot = _slot(rid)
+        if _credits_used(slot) + cost > cap:
+            slot["capped"] = int(slot.get("capped") or 0) + 1
+            return False
+        slot[f"credits_{kind}"] = int(slot.get(f"credits_{kind}") or 0) + cost
+    return True
+
+
+def refund_credits(kind: str, cost: int, run_id: str | None = None) -> None:
+    """Give back credits reserved for a call that failed or billed less."""
+    cost = max(0, int(cost))
+    if not cost:
+        return
+    rid = _run_key(run_id)
+    with _stats_guard:
+        slot = _slot(rid)
+        slot[f"credits_{kind}"] = max(0, int(slot.get(f"credits_{kind}") or 0) - cost)
+
+
+def credits_used(run_id: str | None = None) -> int:
+    with _stats_guard:
+        return _credits_used(_STATS.get(_run_key(run_id)) or {})
+
+
+def restore(cost: dict | None, run_id: str | None = None) -> None:
+    """Resume after a restart: credits and cache counts from the stored ``summary()``,
+    so the cap covers the whole run. Does nothing if this process already counted."""
+    cost = cost if isinstance(cost, dict) else {}
+    credits = cost.get("credits") if isinstance(cost.get("credits"), dict) else {}
+    rid = _run_key(run_id)
+    with _stats_guard:
+        slot = _slot(rid)
+        if _credits_used(slot) or slot.get("cache_hits") or slot.get("cache_misses"):
+            return
+        slot["credits_search"] = int(credits.get("search") or 0)
+        slot["credits_extract"] = int(credits.get("extract") or 0)
+        slot["cache_hits"] = int(cost.get("cache_hits") or 0)
+        slot["cache_misses"] = int(cost.get("cache_misses") or 0)
+        slot["capped"] = int(cost.get("calls_capped") or 0)
 
 
 def _count(field: str, n: int = 1, run_id: str | None = None) -> None:
@@ -79,6 +166,10 @@ def summary(run_id: str | None = None) -> dict:
     hits = int(slot.get("cache_hits") or 0)
     misses = int(slot.get("cache_misses") or 0)
     total = hits + misses
+    c_search = int(slot.get("credits_search") or 0)
+    c_extract = int(slot.get("credits_extract") or 0)
+    cap = max_credits()
+    used = c_search + c_extract
     return {
         "run_id": rid,
         "provider": "tavily",
@@ -87,6 +178,10 @@ def summary(run_id: str | None = None) -> dict:
         "cache_misses": misses,
         "cache_hit_ratio": round(hits / total, 4) if total else None,
         "cache_ttl_days": cache_ttl_days(),
+        "credits": {"search": c_search, "extract": c_extract, "total": used},
+        "max_credits": cap,
+        "budget_reached": used >= cap or int(slot.get("capped") or 0) > 0,
+        "calls_capped": int(slot.get("capped") or 0),
     }
 
 
@@ -390,7 +485,26 @@ async def _sleep_retry() -> None:
     await asyncio.sleep(RETRY_SLEEP_S)
 
 
-async def _post(path: str, url: str, body: dict, log) -> tuple[dict | None, bool]:
+async def _paid_request(kind: str, url: str, body: dict, cost: int, log) -> dict | None:
+    """Reserve ``cost`` credits under tavily.max_credits, then send under the
+    semaphore. A failed call gives its credits back. Over the cap → None."""
+    if not reserve_credits(kind, cost):
+        log(f"Tavily: tavily.max_credits atteint ({credits_used()}/{max_credits()}) — appel non envoyé")
+        return None
+    try:
+        async with _sem():
+            data = await _request(url, body, log)
+    except BaseException:
+        refund_credits(kind, cost)
+        raise
+    if data is None:
+        refund_credits(kind, cost)
+        return None
+    CREDITS[kind] += cost
+    return data
+
+
+async def _post(path: str, url: str, body: dict, log, cost: int) -> tuple[dict | None, bool]:
     """Return (payload, from_cache). Failures and empty answers are not cached."""
     if not tavily_api_key():
         return None, False
@@ -399,7 +513,7 @@ async def _post(path: str, url: str, body: dict, log) -> tuple[dict | None, bool
         _count("cache_hits")
         return cached, True
     _count("cache_misses")
-    data = await _request(url, body, log)
+    data = await _paid_request(path, url, body, cost, log)
     if data is None:
         return None, False
     try:
@@ -422,11 +536,10 @@ async def tavily_search(query: str, *, max_results: int = 10,
         return []
     body, depth = _search_body(
         q, max_results, search_depth, include_domains, exclude_domains)
-    data, from_cache = await _post("search", SEARCH_URL, body, log)
+    data, from_cache = await _post(
+        "search", SEARCH_URL, body, log, search_credit_cost(depth))
     if data is None:
         return []
-    if not from_cache:
-        CREDITS["search"] += search_credit_cost(depth)
     hits = _map_search(data)
     log(f"Tavily: {len(hits)} résultat(s)" + (" (cache)" if from_cache else ""))
     return hits
@@ -472,11 +585,16 @@ async def tavily_extract(urls: list[str] | None, *, extract_depth: str = "basic"
         batch = todo[i:i + EXTRACT_BATCH]
         body = {"urls": batch, "extract_depth": depth, "format": "markdown"}
         _count("cache_misses", len(batch))
-        data = await _request(EXTRACT_URL, body, log)
+        reserved = extract_credit_cost(len(batch))
+        data = await _paid_request("extract", EXTRACT_URL, body, reserved, log)
         if data is None:
             continue
-        CREDITS["extract"] += extract_credit_cost(len(batch))
         rows = [r for r in (data.get("results") or []) if isinstance(r, dict)]
+        # Billed on URLs read, not URLs sent: give back the rest of the reservation.
+        billed = extract_credit_cost(len([r for r in rows if (r.get("url") or "").strip()]))
+        if billed < reserved:
+            refund_credits("extract", reserved - billed)
+            CREDITS["extract"] -= reserved - billed
         for row in rows:
             url = (row.get("url") or "").strip()
             if url not in batch:

@@ -180,6 +180,7 @@ A marinas / anchorages build now writes a `marina_runs` document with the same `
 | `shared.nominatim_interval_s` | 1.1 s | budget **not adjustable downward** (ToS) |
 | `shared.tinyfish_search_rpm` / `fetch_rpm` | 30 / 150 | budget **capped by the provider** |
 | `tavily.cache_ttl_days` | 7 d | budget (0 = no cache; empty answers and failed URLs are never cached) |
+| `tavily.max_credits` | 1000 | budget per run (same run key as the Token Factory ledger; 0 = no paid call) |
 
 ### 3.5 Science — catalogues + Argo + CSR
 

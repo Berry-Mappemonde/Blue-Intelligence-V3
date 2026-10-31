@@ -495,6 +495,33 @@
       "group": "budget"
     },
     {
+      "id": "tavily.max_credits",
+      "mode": "shared",
+      "kind": "budget",
+      "value": 1000,
+      "numeric": "int",
+      "unit": "credits",
+      "interval": [
+        0,
+        100000
+      ],
+      "vary": true,
+      "principle": "Plafond de crédits Tavily pour tout un run, compté sur la même clé de run que le budget USD Token Factory. Recherche basic = 1 crédit, advanced = 2, Extract = 1 par 5 URL lues. Les crédits sont réservés avant l'appel et rendus s'il échoue ; un appel qui dépasserait le plafond n'est pas envoyé (résultat vide, compté dans calls_capped). Un hit de cache est gratuit. 0 = aucun appel payant. Choix opérateur, consigné avec le run.",
+      "cdc": "PLAN-V3.md §7",
+      "code": [
+        "app/core/tavily.py:reserve_credits"
+      ],
+      "title": {
+        "fr": "Crédits Tavily max par run",
+        "en": "Max Tavily credits per run"
+      },
+      "help": {
+        "fr": "Au-delà, les appels Tavily du run ne partent plus ; le cache reste lu. 0 = Tavily payant éteint.",
+        "en": "Past this, the run sends no more Tavily calls; the cache is still read. 0 = paid Tavily off."
+      },
+      "group": "budget"
+    },
+    {
       "id": "projects.no_hq_as_site",
       "mode": "projects",
       "kind": "loi",

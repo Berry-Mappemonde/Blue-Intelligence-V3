@@ -317,7 +317,7 @@ async def execute_run(db, state, run_id: str, label: str = "",
 
         from app.core.tokenfactory import (calls_taken, plan_zone_calls, restore_calls,
                                            restore_spend, summary as cost_summary)
-        from app.core.tavily import summary as tavily_summary
+        from app.core.tavily import restore as tavily_restore, summary as tavily_summary
         if resume:  # the call count and the USD ledger live in memory: a restart would hand
             # out a fresh cap and budget, and the summary would only cover this session
             stored = [c for c in (existing.get("tokenfactory_cost"),
@@ -327,6 +327,12 @@ async def execute_run(db, state, run_id: str, label: str = "",
                 [int(c.get("calls_taken") or 0) for c in stored], default=0), run_id)
             if stored:
                 restore_spend(max(stored, key=lambda c: int(c.get("calls") or 0)), run_id)
+            tv_stored = [c for c in (existing.get("tavily_cost"),
+                                     (existing.get("summary") or {}).get("tavily"))
+                         if isinstance(c, dict)]
+            if tv_stored:  # the credit cap covers the whole run, not this session
+                tavily_restore(max(tv_stored, key=lambda c: int(
+                    (c.get("credits") or {}).get("total") or 0)), run_id)
         plan_zone_calls(len(todo), run_id)  # each zone gets a fair share of the call cap
         sem = asyncio.Semaphore(max(1, concurrency))
         counter = {"done": len(done_mrgids), "errors": 0}
