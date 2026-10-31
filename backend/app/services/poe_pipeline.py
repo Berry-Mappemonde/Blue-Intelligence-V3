@@ -58,6 +58,7 @@ from app.adapters import evidence_store
 from app.adapters.zetaris import ZetarisClient
 from app.agents import registry_check
 from app.services.poe_confidence import apply_score, listing_role, score_port, zone_confidence_avg
+from app.services.v3_certify import LEVEL_FIELDS, attach_confidence_level
 from app.services.poe_zone_label import (
     keep_extracted_in_zone, search_polygon_name, serp_place_name,
     zone_qualifier, zone_search_location,
@@ -2672,7 +2673,8 @@ def _hmem_remember(docs: list[dict], run_id: str) -> dict:
 
 async def _extract_and_geocode(zone: dict, context: str, used_sources: list[dict], log,
                                rec=None, run=None, catalog_text: str | None = None,
-                               settings: dict | None = None) -> list[dict]:
+                               settings: dict | None = None,
+                               whitelist: list[str] | None = None) -> list[dict]:
     """Step 4 — Parallel extraction (NIM → OR → Claude ∥ NER) then geocoding.
 
     Coords already in the source (table or LLM copy) → no Nominatim.
@@ -2684,6 +2686,8 @@ async def _extract_and_geocode(zone: dict, context: str, used_sources: list[dict
     """
     mrgid = int(zone["mrgid"])
     name = zone.get("name") or zone.get("geoname")
+    if whitelist is None:
+        whitelist = build_whitelist(zone.get("iso2"), zone.get("sov_iso2"))
     ports = await extract_ports_llm(context, zone, log, rec=rec,
                                    catalog_text=catalog_text, settings=settings)
     listing_ports: list[dict] = []
@@ -2874,6 +2878,9 @@ async def _extract_and_geocode(zone: dict, context: str, used_sources: list[dict
         doc["memories_recalled"] = len(recalled)
         apply_score(doc, score_port(doc, official_source=port_official,
                                     listing_ports=listing_ports))
+        if run is not None:
+            # C0-C4 lives in the run space only (poe_run_ports), never in poe_ports.
+            attach_confidence_level(doc, whitelist=whitelist)
         docs.append(doc)
         agree_note = ""
         if geo.get("agree") is True:
@@ -2891,10 +2898,12 @@ async def _extract_and_geocode(zone: dict, context: str, used_sources: list[dict
             kind_note = f" ⚠ {spatial_kind} ({dist_km} km)"
         log(f"  ⚓ {p['name']} → {'%.3f, %.3f' % (lat, lon) if lat is not None else 'non géocodé'}"
             f"{kind_note}  confiance {doc.get('confidence')}"
+            + (f" ({doc['confidence_level']})" if doc.get("confidence_level") else "")
             + agree_note)
         await emit(rec, "port", name=p["name"], city=p.get("city"), lat=lat, lon=lon,
                    validated=validated, distance_km=dist_km,
                    spatial_kind=spatial_kind, confidence=doc.get("confidence"),
+                   confidence_level=doc.get("confidence_level"),
                    extraction_agreement=p.get("extraction_agreement"),
                    geocode_agree=geo.get("agree"))
 
@@ -2960,6 +2969,8 @@ async def _persist_zone(db, zone: dict, docs: list[dict], status: str,
     if docs:
         # Internal dedup (core.dedup: Haversine <500m + fuzzy >60%)
         docs = deduplicate_list(docs, title_key="name")
+        # The C0-C4 level is a run-space field (poe_run_ports): never written to poe_ports.
+        docs = [{k: v for k, v in d.items() if k not in LEVEL_FIELDS} for d in docs]
         # NON-DESTRUCTIVE upsert: existing PoEs are enriched, never purged
         # (preserves Bottom-Up fields: osm_confidence, spatial_anomaly…).
         existing_ports = await db.poe_ports.find({"mrgid": mrgid}).to_list(500)
@@ -3208,6 +3219,8 @@ async def generate_zone_poe(db, mrgid: int, logger=None, force: bool = False,
                         apply_score(d, score_port(
                             d, official_source=False,
                             listing_ports=None))
+                        if run is not None:
+                            attach_confidence_level(d, whitelist=whitelist)
 
         # Official evidence records from the fetched text (never model output), stored for
         # the run pipeline and /api/poe/verify, which read ports from Zetaris.
@@ -3273,11 +3286,16 @@ def zone_to_item(doc: dict) -> dict:
 
 def ports_to_geojson(docs: list[dict]) -> dict:
     from app.agents.evaluator import _reasons_en
+    from app.services.v3_certify import LEVELS
 
     feats = []
     for d in docs:
         if d.get("lat") is None or d.get("lon") is None:
             continue
+        # Copied as stored (run ports only), never derived from the V2 score.
+        c_level = d.get("confidence_level")
+        if c_level not in LEVELS:
+            c_level = None
         feats.append({
             "type": "Feature",
             "geometry": {"type": "Point", "coordinates": [d["lon"], d["lat"]]},
@@ -3294,6 +3312,7 @@ def ports_to_geojson(docs: list[dict]) -> dict:
                 "osm_tags": d.get("osm_tags"),
                 "spatial_anomaly": d.get("spatial_anomaly"),
                 "confidence": d.get("confidence"),
+                "confidence_level": c_level,
                 "confidence_reasons": d.get("confidence_reasons"),
                 "confidence_parts": d.get("confidence_parts"),
                 "reasons_en": (
