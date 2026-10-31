@@ -821,6 +821,14 @@ def build_whitelist(iso2: str | None, sov_iso2: str | None, exceptions: dict | N
     return sorted(out)
 
 
+def bind_official_reader(whitelist: list[str]):
+    """Official URLs of the zone (whitelist) are read with Tavily Extract first
+    (PLAN-V3 §4.1, C1). Returns the ContextVar token to reset."""
+    from app.core.extract import official_url_fn
+    wl = list(whitelist or [])
+    return official_url_fn.set((lambda u: url_allowed(u, wl)) if wl else None)
+
+
 def url_allowed(url: str, whitelist: list[str]) -> bool:
     try:
         ext = _tld(url)
@@ -3081,6 +3089,7 @@ async def generate_zone_poe(db, mrgid: int, logger=None, force: bool = False,
     variant = normalize_variant(getattr(run, "variant", None) if run is not None else "tinyfish")
     from app.core.extract import allow_tinyfish_fetch
     _tf_token = allow_tinyfish_fetch.set(variant == "tinyfish")
+    _official_token = bind_official_reader(whitelist)
     _ctx_token = llm_context_chars.set(LLM_CONTEXT_CHARS)
     _budget = ExitStack()
     _budget.enter_context(zone_extract_budget())
@@ -3228,6 +3237,8 @@ async def generate_zone_poe(db, mrgid: int, logger=None, force: bool = False,
         _budget.close()
         llm_context_chars.reset(_ctx_token)
         allow_tinyfish_fetch.reset(_tf_token)
+        from app.core.extract import official_url_fn
+        official_url_fn.reset(_official_token)
 
 
 # ---------------------------------------------------------------------------

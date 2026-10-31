@@ -49,6 +49,10 @@ from urllib.parse import unquote, urljoin, urlparse
 # Disabled for v1/v2 variants (SearXNG only) — TinyFish Fetch stays
 # reserved for the "tinyfish" variant. Default True so Swarm is not broken.
 allow_tinyfish_fetch: ContextVar[bool] = ContextVar("allow_tinyfish_fetch", default=True)
+# Official-domain test of the current zone (PoE whitelist). When it accepts a URL
+# and TAVILY_API_KEY is set, extract_cascade reads it with Tavily Extract first
+# (PLAN-V3 §4.1 / §5 C1), then falls back to the V2 cascade.
+official_url_fn: ContextVar = ContextVar("official_url_fn", default=None)
 
 import httpx
 from bs4 import BeautifulSoup
@@ -1999,6 +2003,60 @@ async def _wayback_mirror_text(url: str, log) -> str | None:
     return None
 
 
+_MD_LINK_RE = re.compile(r"\[([^\]]*)\]\((https?://[^)\s]+|/[^)\s]*)\)")
+
+
+def _markdown_links_html(text: str, base_url: str) -> str:
+    """Anchors for the links of a markdown page, so attachments and depth-2
+    follow-ups still work on a Tavily Extract read (no HTML is returned)."""
+    from html import escape
+    out = []
+    for label, href in _MD_LINK_RE.findall(text or ""):
+        href = urljoin(base_url, href)
+        out.append(f'<a href="{escape(href, quote=True)}">{escape(label)}</a>')
+    return "\n".join(out)
+
+
+def _is_official_for_tavily(url: str, official: bool | None) -> bool:
+    if official is not None:
+        return bool(official)
+    fn = official_url_fn.get()
+    if fn is None:
+        return False
+    try:
+        return bool(fn(url))
+    except Exception:
+        return False
+
+
+async def _tavily_official_page(url: str, min_chars: int, log) -> dict | None:
+    """C1 reader: Tavily Extract on an official URL. None → V2 cascade."""
+    from app.core.tavily import tavily_api_key, tavily_extract
+    if not tavily_api_key():
+        return None
+    try:
+        rows = await tavily_extract([url], log=log)
+    except Exception as e:
+        log(f"Tavily Extract officiel: échec ({type(e).__name__})")
+        return None
+    for row in rows or []:
+        text = ((row or {}).get("raw_content") or "").strip()
+        if not (row or {}).get("url") or len(text) < max(min_chars, 1) or looks_blocked(text):
+            continue
+        out = empty_page(url, level="N0-tavily-extract")
+        out["text"] = text
+        out["title"] = (row or {}).get("title") or ""
+        out["html"] = _markdown_links_html(text, url) or None
+        out["links"] = html_hrefs(out["html"], url) if out["html"] else []
+        out["md5"] = hashlib.md5(text.encode("utf-8")).hexdigest()
+        out["is_pdf"] = url_looks_like_pdf(url)
+        out["official_extract"] = True
+        log(f"N0 Tavily Extract (domaine officiel): {len(text)} chars")
+        return out
+    log("N0 Tavily Extract (domaine officiel): rien d'utilisable — cascade V2")
+    return None
+
+
 async def _tavily_mirror_text(url: str, log) -> str | None:
     """Tavily Extract when free mirrors failed. No key → None. Source URL stays upstream."""
     from app.core.tavily import tavily_api_key, tavily_extract
@@ -2017,8 +2075,8 @@ async def _tavily_mirror_text(url: str, log) -> str | None:
     return None
 
 
-async def fetch_mirror_text(url: str, log=None, skip_tinyfish: bool = False
-                            ) -> tuple[str, str] | None:
+async def fetch_mirror_text(url: str, log=None, skip_tinyfish: bool = False,
+                            skip_tavily: bool = False) -> tuple[str, str] | None:
     """Generic mirror when the official page is behind a challenge.
     Jina ∥ TinyFish Fetch (if key), then Wayback, then Tavily Extract
     if TAVILY_API_KEY is set. The original URL stays the source; the
@@ -2026,6 +2084,7 @@ async def fetch_mirror_text(url: str, log=None, skip_tinyfish: bool = False
 
     skip_tinyfish: Fetch was already tried upstream (prefer_fetch) — do not
     pay for it a second time.
+    skip_tavily: Tavily Extract was already tried first (official URL).
 
     Return (text, level) — optional compare as 3rd element if arbitrated."""
     log = log or (lambda m: None)
@@ -2055,7 +2114,7 @@ async def fetch_mirror_text(url: str, log=None, skip_tinyfish: bool = False
         jorf = await _jorf_reader_text(url, log)
         if jorf:
             return jorf, "N3-mirror-jorf"
-    tv = await _tavily_mirror_text(url, log)
+    tv = None if skip_tavily else await _tavily_mirror_text(url, log)
     if tv:
         return tv, "N3-mirror-tavily"
     return None
@@ -2063,18 +2122,22 @@ async def fetch_mirror_text(url: str, log=None, skip_tinyfish: bool = False
 
 async def extract_cascade(url: str, min_chars: int = 200, allow_render: bool = True,
                           log=None, skip_fetch_mirror: bool = False,
-                          keep_raw: bool = False) -> dict:
+                          keep_raw: bool = False, official: bool | None = None) -> dict:
     """
     Local reading engine. The public door is ``read_url``.
 
     Return {url, text, md5, level, title, meta_desc, image, ext_links, links,
             is_pdf, html, blocked, render_used, parse, final_url, error}.
-    level ∈ N1-pymupdf | N1-trafilatura | N2-readability | N3-render | blocked | failed
-            | N3-mirror-* .
+    level ∈ N0-tavily-extract | N1-pymupdf | N1-trafilatura | N2-readability | N3-render
+            | blocked | failed | N3-mirror-* .
     md5 = fingerprint of extracted text (stable) else of raw content.
     blocked = anti-bot interstitial detected (content invalidated, never ingested).
     parse = {n1_chars, n2_chars, similarity, agree} — compared dual parsing.
     skip_fetch_mirror: Fetch already tried — Jina / Wayback only.
+    official: the URL is on an official domain (default: ``official_url_fn``).
+      With TAVILY_API_KEY, Tavily Extract reads it first (N0); if that gives
+      nothing usable, the V2 cascade runs and Tavily is not paid again as a mirror.
+      Not used with keep_raw (the caller needs the raw bytes).
     """
     log = log or (lambda m: None)
     out = empty_page(url)
@@ -2093,6 +2156,15 @@ async def extract_cascade(url: str, min_chars: int = 200, allow_render: bool = T
         log("URL image — cascade sautée (pas une fiche, pas de Chromium)")
         out["error"] = "image_url"
         return out
+
+    tavily_tried = False
+    if not keep_raw and _is_official_for_tavily(url, official):
+        from app.core.tavily import tavily_api_key
+        if tavily_api_key():
+            tavily_tried = True
+            page = await _tavily_official_page(url, min_chars, log)
+            if page is not None:
+                return page
 
     content = None
     ctype = ""
@@ -2209,7 +2281,9 @@ async def extract_cascade(url: str, min_chars: int = 200, allow_render: bool = T
     # Generic mirror: official page blocked, too short, or captcha .pdf
     # (205 Chromium chars must not short-circuit TinyFish Fetch).
     if want_mirror and not _is_mirror_url(url):
-        mirrored = await fetch_mirror_text(url, log=log, skip_tinyfish=skip_fetch_mirror)
+        extra = {"skip_tavily": True} if tavily_tried else {}
+        mirrored = await fetch_mirror_text(url, log=log, skip_tinyfish=skip_fetch_mirror,
+                                           **extra)
         if mirrored:
             text, level = mirrored[0], mirrored[1]
             out["text"] = text

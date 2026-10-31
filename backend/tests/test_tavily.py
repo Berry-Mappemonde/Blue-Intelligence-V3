@@ -620,3 +620,106 @@ class TestCreditBudget:
         assert _FakeClient.posts == []
         s = tv.summary("run-resume")
         assert s["credits"]["total"] == 5 and s["cache_misses"] == 6
+
+
+class TestOfficialExtractFirst:
+    """Review PR #8 finding 3: PLAN-V3 §4.1 / §5 C1 — Tavily Extract first on official domains."""
+
+    @pytest.fixture(autouse=True)
+    def _stats(self):
+        tv.reset_stats()
+        yield
+        tv.reset_stats()
+
+    PAGE = "https://www.douane.gouv.fr/demarche/ports-entree"
+    TEXT = ("Liste officielle des ports d'entrée. [Annexe](/sites/liste-ports.pdf) "
+            "[Contacts](https://www.douane.gouv.fr/annuaire) ") * 8
+
+    def test_official_url_reads_tavily_before_fetch(self, monkeypatch):
+        _use_key(monkeypatch)
+        from app.core import extract as ext
+        _FakeClient.default = _Resp(200, {"results": [
+            {"url": self.PAGE, "raw_content": self.TEXT}]})
+
+        async def boom_fetch(url, timeout=25):
+            raise AssertionError("V2 fetch must not run before Tavily on an official URL")
+
+        monkeypatch.setattr(ext, "fetch_raw", boom_fetch)
+        page = _run(ext.extract_cascade(self.PAGE, allow_render=False, official=True))
+        assert page["level"] == "N0-tavily-extract"
+        assert page["url"] == self.PAGE and page["official_extract"] is True
+        assert "ports d'entrée" in page["text"]
+        assert _FakeClient.posts[0]["url"] == tv.EXTRACT_URL
+        # links survive for attachments / depth-2
+        assert "https://www.douane.gouv.fr/sites/liste-ports.pdf" in page["links"]
+        assert "https://www.douane.gouv.fr/annuaire" in ext.internal_followups(
+            page["html"], self.PAGE)
+
+    def test_whitelist_context_selects_official_urls(self, monkeypatch):
+        _use_key(monkeypatch)
+        from app.core import extract as ext
+        from app.services import poe_pipeline as poe
+        fetched = []
+        _FakeClient.default = _Resp(200, {"results": [
+            {"url": self.PAGE, "raw_content": self.TEXT}]})
+
+        async def offline_fetch(url, timeout=25):
+            fetched.append(url)
+            raise RuntimeError("offline")
+
+        async def no_mirror(*a, **k):
+            return None
+
+        monkeypatch.setattr(ext, "fetch_raw", offline_fetch)
+        for name in ("_jina_mirror_text", "_wayback_mirror_text", "_jorf_reader_text"):
+            monkeypatch.setattr(ext, name, no_mirror)
+
+        async def go():
+            token = poe.bind_official_reader(poe.build_whitelist("FR", "FR"))
+            try:
+                a = await ext.extract_cascade(self.PAGE, allow_render=False)
+                b = await ext.extract_cascade("https://blog.example.com/ports",
+                                              allow_render=False)
+            finally:
+                ext.official_url_fn.reset(token)
+            return a, b
+
+        a, b = _run(go())
+        assert a["level"] == "N0-tavily-extract"
+        assert fetched == ["https://blog.example.com/ports"]  # non-official: V2 first
+        assert ext.official_url_fn.get() is None
+
+    def test_tavily_empty_falls_back_without_paying_twice(self, monkeypatch):
+        _use_key(monkeypatch)
+        from app.core import extract as ext
+        _FakeClient.default = _Resp(200, {"results": [],
+                                          "failed_results": [{"url": self.PAGE}]})
+
+        async def offline_fetch(url, timeout=25):
+            raise RuntimeError("offline")
+
+        async def no_mirror(*a, **k):
+            return None
+
+        monkeypatch.setattr(ext, "fetch_raw", offline_fetch)
+        for name in ("_jina_mirror_text", "_wayback_mirror_text", "_jorf_reader_text"):
+            monkeypatch.setattr(ext, name, no_mirror)
+        page = _run(ext.extract_cascade(self.PAGE, allow_render=False, official=True))
+        assert page["level"] == "failed"
+        assert len(_FakeClient.posts) == 1  # the Tavily mirror is not tried again
+
+    def test_no_key_keeps_v2_order(self, monkeypatch):
+        from app.core import extract as ext
+
+        async def offline_fetch(url, timeout=25):
+            raise RuntimeError("offline")
+
+        async def no_mirror(*a, **k):
+            return None
+
+        monkeypatch.setattr(ext, "fetch_raw", offline_fetch)
+        for name in ("_jina_mirror_text", "_wayback_mirror_text", "_jorf_reader_text"):
+            monkeypatch.setattr(ext, name, no_mirror)
+        page = _run(ext.extract_cascade(self.PAGE, allow_render=False, official=True))
+        assert page["level"] == "failed"
+        assert _FakeClient.posts == []
