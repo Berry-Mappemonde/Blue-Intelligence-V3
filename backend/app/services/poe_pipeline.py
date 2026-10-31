@@ -1985,6 +1985,26 @@ def _tavily_key() -> str:
         return ""
 
 
+async def _merge_scoped(candidates: list[dict], scoped: list[dict], *, rec, protect,
+                        whitelist: list[str], log) -> tuple[list[dict], list[dict]]:
+    """Merge a scoped (include_domains) search into the candidates: serp filter,
+    ML rank, then re-select the official ones. Same for TinyFish and Tavily."""
+    candidates = _merge_candidates(candidates, scoped)
+    audit_s = audit_serp_filter(list(candidates), protect_fn=protect)
+    candidates = serp_filter(candidates, protect_fn=protect)
+    dropped_s = [a["url"] for a in audit_s if not a["kept"]]
+    if dropped_s:
+        await emit(rec, "serp_filter", kept=len(candidates), dropped=dropped_s,
+                   scoped=True, audit=audit_s)
+    scores_s: list = []
+    candidates = rank_candidates_ml(candidates, log, scores_out=scores_s,
+                                    whitelist=whitelist)
+    if scores_s:
+        await emit(rec, "serp_rank", scores=scores_s, scoped=True)
+    official = [c for c in candidates if url_allowed(c["url"], whitelist)]
+    return candidates, official
+
+
 async def _tavily_search_safe(query: str, log, *, include_domains=None,
                               search_depth: str = "basic",
                               max_results: int = 10) -> list[dict]:
@@ -2282,20 +2302,8 @@ async def _find_sources(zone: dict, whitelist: list[str], exceptions: dict, log,
                    n=len(scoped), results=scoped, scoped=True, round="classic")
         if scoped:
             log(f"TinyFish Search scoped: {len(scoped)} résultat(s) include_domains")
-            candidates = _merge_candidates(candidates, scoped)
-            before_s = list(candidates)
-            audit_s = audit_serp_filter(before_s, protect_fn=protect)
-            candidates = serp_filter(candidates, protect_fn=protect)
-            dropped_s = [a["url"] for a in audit_s if not a["kept"]]
-            if dropped_s:
-                await emit(rec, "serp_filter", kept=len(candidates), dropped=dropped_s,
-                           scoped=True, audit=audit_s)
-            scores_s: list = []
-            candidates = rank_candidates_ml(candidates, log, scores_out=scores_s,
-                                            whitelist=whitelist)
-            if scores_s:
-                await emit(rec, "serp_rank", scores=scores_s, scoped=True)
-            official = [c for c in candidates if url_allowed(c["url"], whitelist)]
+            candidates, official = await _merge_scoped(
+                candidates, scoped, rec=rec, protect=protect, whitelist=whitelist, log=log)
     elif key and not whitelist and (not official or compare.get("discordant")):
         log("TinyFish scoped sauté : whitelist vide pour cette ZEE")
 
@@ -2306,20 +2314,8 @@ async def _find_sources(zone: dict, whitelist: list[str], exceptions: dict, log,
                    n=len(scoped_tv), results=scoped_tv, scoped=True, round="classic")
         if scoped_tv:
             log(f"Tavily Search scoped: {len(scoped_tv)} résultat(s) include_domains")
-            candidates = _merge_candidates(candidates, scoped_tv)
-            before_s = list(candidates)
-            audit_s = audit_serp_filter(before_s, protect_fn=protect)
-            candidates = serp_filter(candidates, protect_fn=protect)
-            dropped_s = [a["url"] for a in audit_s if not a["kept"]]
-            if dropped_s:
-                await emit(rec, "serp_filter", kept=len(candidates), dropped=dropped_s,
-                           scoped=True, audit=audit_s)
-            scores_s: list = []
-            candidates = rank_candidates_ml(candidates, log, scores_out=scores_s,
-                                            whitelist=whitelist)
-            if scores_s:
-                await emit(rec, "serp_rank", scores=scores_s, scoped=True)
-            official = [c for c in candidates if url_allowed(c["url"], whitelist)]
+            candidates, official = await _merge_scoped(
+                candidates, scoped_tv, rec=rec, protect=protect, whitelist=whitelist, log=log)
 
     seeded_preview = seed_url_candidates(zone, exceptions) + landing_url_candidates(zone)
     if needs_lessons_round(official + seeded_preview):

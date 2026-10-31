@@ -902,3 +902,33 @@ class TestIsolation:
         # httpx itself is the stray-call guard, not the Tavily fake
         assert httpx.AsyncClient is _StrayHTTP
         assert _REAL_ASYNC_CLIENT is not _StrayHTTP
+
+
+class TestMergeScoped:
+    """Review PR #8 finding 8: one helper for the TinyFish and Tavily scoped blocks."""
+
+    def test_merge_scoped_filters_ranks_and_reselects_official(self, monkeypatch):
+        from app.services import poe_pipeline as poe
+        events = []
+
+        class _Rec:
+            async def event(self, step, **payload):
+                events.append(step)
+
+        monkeypatch.setattr(poe, "rank_candidates_ml",
+                            lambda cands, log, scores_out=None, whitelist=None: list(cands))
+        wl = poe.build_whitelist("FR", "FR")
+        before = [{"url": "https://blog.example.com/ports", "domain": "blog.example.com"}]
+        scoped = [
+            {"url": "https://www.douane.gouv.fr/ports", "domain": "douane.gouv.fr",
+             "engine": "tavily"},
+            {"url": "https://www.tripadvisor.com/x", "domain": "tripadvisor.com",
+             "engine": "tavily"},
+        ]
+        cands, official = _run(poe._merge_scoped(
+            before, scoped, rec=_Rec(), protect=None, whitelist=wl, log=lambda m: None))
+        urls = [c["url"] for c in cands]
+        assert "https://www.tripadvisor.com/x" not in urls
+        assert "https://blog.example.com/ports" in urls
+        assert [c["url"] for c in official] == ["https://www.douane.gouv.fr/ports"]
+        assert events == ["serp_filter"]
