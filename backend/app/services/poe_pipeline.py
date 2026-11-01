@@ -3195,13 +3195,17 @@ async def _judge_zone_run(zone: dict, docs: list[dict], raw: str, used_sources: 
 
 
 async def _store_evidence(db, zone: dict, docs: list[dict], raw: str,
-                          used_sources: list[dict], log, rec=None) -> int:
-    """Build evidence records from the collected official text and store them; never fails."""
+                          used_sources: list[dict], log, rec=None, run=None) -> int:
+    """Build evidence records from the collected official text and store them; never fails.
+
+    In run mode the records go to the run-scoped ``poe_run_evidence`` with the run_id,
+    never to the shared ``poe_evidence`` that live reads use."""
+    run_id = getattr(run, "run_id", None) if run is not None else None
     try:
         records = await asyncio.to_thread(lambda: evidence_store.build_records(
             zone.get("mrgid"), [d.get("name") for d in docs or []],
             evidence_store.documents_from_context(raw, used_sources)))
-        stored = await evidence_store.store(db, records)
+        stored = await evidence_store.store(db, records, run_id=run_id)
     except Exception as e:  # noqa: BLE001 — evidence is optional, generation must finish
         log(f"evidence: non stockée ({type(e).__name__}: {str(e)[:100]})")
         return 0
@@ -3393,7 +3397,7 @@ async def generate_zone_poe(db, mrgid: int, logger=None, force: bool = False,
 
         # Official evidence records from the fetched text (never model output), stored for
         # the run pipeline and /api/poe/verify, which read ports from Zetaris.
-        await _store_evidence(db, zone, docs, raw, used_sources, log, rec)
+        await _store_evidence(db, zone, docs, raw, used_sources, log, rec, run=run)
 
         # 5. Write: confidence lives on each port, no longer a zone buffer.
         status = "ia" if docs else "erreur"

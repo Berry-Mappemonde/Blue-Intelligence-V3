@@ -370,3 +370,75 @@ def test_sample_mode_end_to_end_tier_counts(isolated):
     assert dict(tiers) == {TIER1: 2, TIER2: 2, TIER_REGISTERED: 11, "tier3": 5}
     assert evidence == {"Port of St. George’s": ["stored_snippet"], "Deep water Harbor": ["stored_snippet"],
                         "Conch Inn Marina": ["stored_snippet"], "Anchorage Small Boat Harbor": ["stored_snippet"]}
+
+
+# --- run isolation (pilot dry-run finding) ---------------------------------------------
+
+def _run_evidence_inputs():
+    raw = f"[SOURCE: {GOV_BM}]\nAll yachts must clear customs at St. George's Harbour.\n"
+    used = [{"url": GOV_BM, "sha256": "c" * 64, "collected_at": "2026-10-25T00:00:00+00:00",
+             "level": "N1"}]
+    docs = [{"name": "Port of St. George’s"}]
+    return raw, used, docs
+
+
+def test_run_evidence_goes_to_the_run_collection_never_poe_evidence():
+    from types import SimpleNamespace
+
+    from app.services import poe_pipeline
+    db, logs = FakeDB(), []
+    raw, used, docs = _run_evidence_inputs()
+    run = SimpleNamespace(run_id="run-ev-1")
+    stored = asyncio.run(poe_pipeline._store_evidence(
+        db, {"mrgid": 8402}, docs, raw, used, logs.append, None, run=run))
+    assert stored == 1
+    assert evidence_store.COLLECTION not in db  # the shared collection is never opened
+    rows = db[evidence_store.RUN_COLLECTION].docs
+    assert [(r["run_id"], r["port_key"]) for r in rows] == [("run-ev-1", "saint george")]
+    assert db[evidence_store.RUN_COLLECTION].indexes[0] == (
+        [("run_id", 1), ("mrgid", 1), ("port_key", 1), ("url", 1)],
+        {"unique": True, "name": "run_mrgid_port_key_url"})
+    # A second run keeps its own copy; neither overwrites the other.
+    asyncio.run(poe_pipeline._store_evidence(
+        db, {"mrgid": 8402}, docs, raw, used, logs.append, None,
+        run=SimpleNamespace(run_id="run-ev-2")))
+    assert sorted(r["run_id"] for r in db[evidence_store.RUN_COLLECTION].docs) == [
+        "run-ev-1", "run-ev-2"]
+    # Without a run (live generation) the shared collection is used, as before.
+    asyncio.run(poe_pipeline._store_evidence(db, {"mrgid": 8402}, docs, raw, used, logs.append))
+    assert [r.get("run_id") for r in db[evidence_store.COLLECTION].docs] == [None]
+
+
+def test_store_rejects_an_empty_run_id():
+    import pytest
+    raw, used, docs = _run_evidence_inputs()
+    with pytest.raises(ValueError):
+        asyncio.run(evidence_store.store(FakeDB(), [{"mrgid": 1, "port_key": "a", "url": "u"}],
+                                         run_id=""))
+
+
+def test_live_lookup_skips_records_that_carry_a_run_id(monkeypatch):
+    seen = {}
+
+    class Coll:
+        def find(self, flt, projection=None):
+            seen["filter"] = flt
+            return self
+
+        def limit(self, n):
+            return []
+
+    class Client:
+        def __init__(self, *a, **k):
+            pass
+
+        def __getitem__(self, name):
+            return {evidence_store.COLLECTION: Coll()}
+
+        def close(self):
+            pass
+
+    import pymongo
+    monkeypatch.setattr(pymongo, "MongoClient", Client)
+    evidence_store._mongo_records(8402)
+    assert seen["filter"] == {"mrgid": 8402, "run_id": {"$exists": False}}
