@@ -19,7 +19,14 @@ import route_whitelist_report as report  # noqa: E402
 from app.services.poe_pipeline import build_whitelist, load_exceptions, url_allowed  # noqa: E402
 
 PILOTS = {8364: ("Canary Islands", None, "ES"), 8362: ("Cape Verde", "CV", "CV"),
-          8416: ("Saint Lucia", "LC", "LC"), 33178: ("Martinique", "MQ", "FR")}
+          8416: ("Saint Lucia", "LC", "LC"), 33178: ("Martinique", "MQ", "FR"),
+          # French overseas zones on the route.
+          33177: ("Guadeloupe", "GP", "FR"), 48952: ("Saint-Barthélemy", "BL", "FR"),
+          8495: ("Collectivity of Saint Martin", "MF", "FR"), 8462: ("French Guiana", "GF", "FR"),
+          8494: ("Saint-Pierre and Miquelon", "PM", "FR"), 8440: ("French Polynesia", "PF", "FR"),
+          8454: ("Wallis and Futuna", "WF", "FR"), 8312: ("New Caledonia", "NC", "FR"),
+          48944: ("Mayotte", "YT", "FR"), 8338: ("Réunion", "RE", "FR"),
+          48946: ("Ile Tromelin", None, "FR"), 8341: ("Europa Island", "TF", "FR")}
 ROLES = {"customs", "immigration", "maritime_authority", "port_authority"}
 # Never official, whatever the audit says (CAHIER_DES_CHARGES_POE: Noonsite is a signal only).
 NOT_OFFICIAL = ("noonsite", "navily", "marinareservation", "superyacht", "tripadvisor",
@@ -48,8 +55,12 @@ def test_every_pilot_zone_is_audited(sources):
         assert audit["zone"] == PILOTS[int(mrgid)][0]
         roles = {a["role"] for a in audit["authorities"]}
         assert roles <= ROLES
+        # A role with no authority in the zone (no port, no customs post) says why.
+        none = audit.get("no_authority") or {}
+        assert set(none) <= ROLES and not set(none) & roles
+        assert all(isinstance(why, str) and why.strip() for why in none.values())
         # Customs, immigration and at least one of maritime / port authority.
-        assert {"customs", "immigration"} <= roles
+        assert {"customs", "immigration"} <= roles | set(none)
         assert roles & {"maritime_authority", "port_authority"}
 
 
@@ -104,6 +115,20 @@ def test_new_entries_do_not_open_lookalike_hosts(exceptions):
     assert not url_allowed("https://dm.guadeloupe.developpement-durable.gouv.fr/", mq)
     assert url_allowed("https://www.palmasport.es/en/who-are-we/", es)
     assert not url_allowed("https://palmasport.es.fake.com/", es)
+    # Overseas zones get the national service's host, not its whole parent domain.
+    re_ = build_whitelist("RE", "FR", exceptions)
+    assert url_allowed("https://www.police-nationale.interieur.gouv.fr/x", re_)
+    assert not url_allowed("https://www.interieur.gouv.fr/", re_)
+    assert not url_allowed("https://www.education.gouv.fr/", re_)
+    bl = build_whitelist("BL", "FR", exceptions)
+    assert url_allowed("https://portdegustavia.fr/port-plaisance-gustavia/formalites-port-plaisance", bl)
+    assert not url_allowed("https://www.comstbarth.fr/", bl)  # unverifiable JS shell, not listed
+    nc = build_whitelist("NC", "FR", exceptions)
+    assert url_allowed("https://noumeaport.nc/la-capitainerie/la-presentation/", nc)
+    assert not url_allowed("https://noumeaport.nc.example.com/", nc)
+    # Tromelin uses France's list: taaf.fr is now official for mainland France too.
+    assert url_allowed("https://taaf.fr/acceder-aux-territoires/demande-de-visa/",
+                       build_whitelist(None, "FR", exceptions))
 
 
 def test_route_crosses_the_pilot_zones():

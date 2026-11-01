@@ -12,10 +12,12 @@ the sovereign's (`iso2 or sov_iso2`): Martinique (MQ) does not inherit France's 
 **Gap**: `yes` when an audited authority (customs, immigration, maritime authority,
 port authority) has no matching domain, or the whitelist is empty; `no` when all
 audited authorities match; `not checked` when the zone has not been audited yet.
-Audited on 2026-11-01: the pilot zones. Sources per domain are below
-and in `backend/data/whitelist_sources.json`.
+Audited on 2026-11-01: the pilot zones and the French overseas
+zones on the route. Sources per domain are below and in
+`backend/data/whitelist_sources.json`. A role with no authority in a zone (no port,
+no customs post) is listed under "no authority" with the official text that says so.
 
-70 zones: 6 gap, 4 no gap, 60 not checked.
+70 zones: 4 gap, 16 no gap, 50 not checked.
 
 | mrgid | zone | sovereign | key | domains listed | gap | note |
 |---|---|---|---|---|---|---|
@@ -33,22 +35,22 @@ and in `backend/data/whitelist_sources.json`.
 | 21791 | Oecusse | East Timor | TL | `gov.tl` | not checked |  |
 | 8403 | Galapagos | Ecuador | EC | `gob.ec`, `gov.ec` | not checked |  |
 | 8325 | Fiji | Fiji | FJ | `baf.com.fj`, `frcs.org.fj`, `gov.fj` | not checked |  |
-| 8495 | Collectivity of Saint Martin | France | MF | (none) | yes | empty whitelist |
-| 8341 | Europa Island | France | TF | `taaf.fr` | not checked |  |
-| 5677 | France | France | FR | `douane.gouv.fr`, `gouv.fr`, `service-public.fr` | not checked |  |
-| 48966 | France | France | FR | `douane.gouv.fr`, `gouv.fr`, `service-public.fr` | not checked |  |
-| 8462 | French Guiana | France | GF | `guyane.gouv.fr` | not checked |  |
-| 8440 | French Polynesia | France | PF | `gov.pf`, `service-public.pf` | not checked |  |
-| 33177 | Guadeloupe | France | GP | `guadeloupe.gouv.fr` | not checked |  |
-| 48946 | Ile Tromelin | France | FR | `douane.gouv.fr`, `gouv.fr`, `service-public.fr` | not checked |  |
+| 8495 | Collectivity of Saint Martin | France | MF | `douane.gouv.fr`, `guadeloupe.gouv.fr`, `portdemarigot.com`, `saint-barth-saint-martin.gouv.fr` | no | audited; was missing customs, immigration, maritime authority, port authority |
+| 8341 | Europa Island | France | TF | `dm.sud-ocean-indien.developpement-durable.gouv.fr`, `taaf.fr` | no | audited; no customs |
+| 5677 | France | France | FR | `douane.gouv.fr`, `gouv.fr`, `service-public.fr`, `taaf.fr` | not checked |  |
+| 48966 | France | France | FR | `douane.gouv.fr`, `gouv.fr`, `service-public.fr`, `taaf.fr` | not checked |  |
+| 8462 | French Guiana | France | GF | `douane.gouv.fr`, `guyane.developpement-durable.gouv.fr`, `guyane.gouv.fr`, `portdeguyane.fr` | no | audited; was missing customs, maritime authority, port authority |
+| 8440 | French Polynesia | France | PF | `gov.pf`, `polynesie-francaise.gouv.fr`, `portdepapeete.pf`, `service-public.pf` | no | audited; was missing immigration, port authority |
+| 33177 | Guadeloupe | France | GP | `dm.guadeloupe.developpement-durable.gouv.fr`, `douane.gouv.fr`, `guadeloupe-portcaraibes.com`, `guadeloupe.gouv.fr` | no | audited; was missing customs, maritime authority, port authority |
+| 48946 | Ile Tromelin | France | FR | `douane.gouv.fr`, `gouv.fr`, `service-public.fr`, `taaf.fr` | no | audited; was missing immigration; no customs |
 | 33178 | Martinique | France | MQ | `douane.gouv.fr`, `martinique.developpement-durable.gouv.fr`, `martinique.gouv.fr`, `martinique.port.fr` | no | audited; was missing customs, maritime authority, port authority |
-| 48948 | Matthew and Hunter Islands | France | FR | `douane.gouv.fr`, `gouv.fr`, `service-public.fr` | not checked |  |
-| 48944 | Mayotte | France | YT | `legifrance.gouv.fr`, `mayotte.gouv.fr` | not checked |  |
-| 8312 | New Caledonia | France | NC | `douane.gouv.nc`, `gouv.nc`, `service-public.nc` | not checked |  |
-| 8338 | Réunion | France | RE | `reunion.gouv.fr` | not checked |  |
-| 48952 | Saint-Barthélemy | France | BL | (none) | yes | empty whitelist |
-| 8494 | Saint-Pierre and Miquelon | France | PM | `douane975.fr` | not checked |  |
-| 8454 | Wallis and Futuna | France | WF | `wallis-et-futuna.gouv.fr` | not checked |  |
+| 48948 | Matthew and Hunter Islands | France | FR | `douane.gouv.fr`, `gouv.fr`, `service-public.fr`, `taaf.fr` | not checked |  |
+| 48944 | Mayotte | France | YT | `douane.gouv.fr`, `legifrance.gouv.fr`, `mayotte.developpement-durable.gouv.fr`, `mayotte.gouv.fr`, `police-nationale.interieur.gouv.fr` | no | audited; was missing customs, immigration, maritime authority |
+| 8312 | New Caledonia | France | NC | `douane.gouv.nc`, `gouv.nc`, `noumeaport.nc`, `nouvelle-caledonie.gouv.fr`, `service-public.nc` | no | audited; was missing immigration, port authority |
+| 8338 | Réunion | France | RE | `dm.sud-ocean-indien.developpement-durable.gouv.fr`, `douane.gouv.fr`, `police-nationale.interieur.gouv.fr`, `reunion.gouv.fr`, `reunion.port.fr` | no | audited; was missing customs, immigration, maritime authority, port authority |
+| 48952 | Saint-Barthélemy | France | BL | `dm.guadeloupe.developpement-durable.gouv.fr`, `douane.gouv.fr`, `gendarmerie.interieur.gouv.fr`, `portdegustavia.fr` | no | audited; was missing customs, immigration, maritime authority, port authority |
+| 8494 | Saint-Pierre and Miquelon | France | PM | `douane975.fr`, `saint-pierre-et-miquelon.developpement-durable.gouv.fr`, `saint-pierre-et-miquelon.gouv.fr` | no | audited; was missing immigration, maritime authority, port authority |
+| 8454 | Wallis and Futuna | France | WF | `wallis-et-futuna.gouv.fr` | no | audited |
 | 8419 | Grenada | Grenada | GD | `gov.gd` | not checked |  |
 | 8460 | Guyana | Guyana | GY | `gov.gy` | not checked |  |
 | 8333 | Andaman and Nicobar | India | IN | `gov.in`, `nic.in` | not checked |  |
@@ -131,11 +133,142 @@ and in `backend/data/whitelist_sources.json`.
 | maritime authority | Direction de la mer de la Martinique (DM) | `martinique.developpement-durable.gouv.fr` | yes | https://www.dm.martinique.developpement-durable.gouv.fr/formalites-de-clearance-a707.html | https://www.martinique.gouv.fr/Services-de-l-Etat/Mer-littoral-et-securite-maritime/DM/Formulaires-et-documentation-a-telecharger/Plaisance |
 | port authority | Grand Port Maritime de la Martinique (EPIC since 2013) | `martinique.port.fr` | yes | https://www.martinique.port.fr/autorite_portuaire.aspx | https://atlantic-maritime-strategy.ec.europa.eu/en/partners/grand-port-maritime-de-la-martinique-martinique-hub-cara%C3%AFbe |
 
+### Guadeloupe (33177, whitelist key `GP`)
+
+| role | authority | domain | added | official URL | source |
+|---|---|---|---|---|---|
+| customs | Direction régionale des douanes et droits indirects de Guadeloupe (DGDDI, Direction interrégionale Antilles-Guyane) | `douane.gouv.fr` | yes | https://www.douane.gouv.fr/fiche/navigation-dans-les-departements-doutre-mer | https://www.guadeloupe.gouv.fr/Services-de-l-Etat/Organisation-des-services-de-l-Etat/Economie-finances-publiques-travail-et-emploi/Direction-regionale-des-douanes |
+| immigration | Service territorial de la police aux frontières (STPAF), DTPN de la Guadeloupe | `guadeloupe.gouv.fr` | already listed | https://www.guadeloupe.gouv.fr/Services-de-l-Etat/Organisation-des-services-de-l-Etat/Securite-et-protection-des-personnes/Direction-departementale-de-la-police-nationale-DDPN | https://questions.assemblee-nationale.fr/q16/16-4457QE.htm |
+| maritime authority | Direction de la mer de la Guadeloupe (DM) | `dm.guadeloupe.developpement-durable.gouv.fr` | yes | https://www.dm.guadeloupe.developpement-durable.gouv.fr/plaisanciers-r156.html | https://www.guadeloupe.gouv.fr/Services-de-l-Etat/Organisation-des-services-de-l-Etat/Mer-et-littoral/Direction-de-la-Mer-DM |
+| port authority | Grand Port Maritime de la Guadeloupe (Guadeloupe Port Caraïbes, incl. Bas-du-Fort marina) | `guadeloupe-portcaraibes.com` | yes | https://guadeloupe-portcaraibes.com/nos-sites-portuaires/ | https://www.boamp.fr/telechargements/FILES/PDF/2024/06/24-75282.pdf |
+
+Notes: Clearance is mandatory (arrêté préfectoral of 5 August 2024, Antilles), filed online at demarche.numerique.gouv.fr and handled by customs at approved clearance points.
+
+### Saint-Barthélemy (48952, whitelist key `BL`)
+
+| role | authority | domain | added | official URL | source |
+|---|---|---|---|---|---|
+| customs | Direction régionale des douanes et droits indirects de Guadeloupe (DGDDI), competent for Saint-Barthélemy | `douane.gouv.fr` | yes | https://www.douane.gouv.fr/fiche/cas-particuliers-de-lile-de-saint-martin-et-de-lile-de-saint-barthelemy | https://demarche.numerique.gouv.fr/commencer/declaration-clearance-antilles |
+| immigration | Gendarmerie nationale, brigade de Saint-Barthélemy (Gustavia) | `gendarmerie.interieur.gouv.fr` | yes | https://www.gendarmerie.interieur.gouv.fr/contact/trouver-ma-gendarmerie/brigade-de-saint-barthelemy | https://portdegustavia.fr/port-plaisance-gustavia/formalites-port-plaisance |
+| maritime authority | Direction de la mer de la Guadeloupe, unité territoriale de Saint-Martin / Saint-Barthélemy | `dm.guadeloupe.developpement-durable.gouv.fr` | yes | https://www.dm.guadeloupe.developpement-durable.gouv.fr/les-adresses-de-la-direction-de-la-mer-de-a77.html | https://www.saint-barth-saint-martin.gouv.fr/Services-de-l-Etat/Services-deconcentres-de-l-Etat-Unites-territoriales/UT-DM-Direction-de-la-Mer |
+| port authority | Port de Gustavia (capitainerie, Collectivité de Saint-Barthélemy) | `portdegustavia.fr` | yes | https://portdegustavia.fr/port-plaisance-gustavia/formalites-port-plaisance | https://www.douane.gouv.fr/sites/default/files/2026-01/30/liste-points-clearance-agrees-mise-a-jour.pdf |
+
+Notes: OCT outside the EU customs territory and Schengen since 2012; yacht clearance is French State customs (DR Guadeloupe), at the Gustavia capitainerie, the only approved clearance point. No separate customs service of the Collectivité found on an official page (comstbarth.fr serves an empty JavaScript shell). The gendarmerie page answers 403 to automated fetches.
+
+### Collectivity of Saint Martin (8495, whitelist key `MF`)
+
+| role | authority | domain | added | official URL | source |
+|---|---|---|---|---|---|
+| customs | Direction régionale des douanes et droits indirects de Guadeloupe (DGDDI), competent for Saint-Martin | `douane.gouv.fr` | yes | https://www.douane.gouv.fr/fiche/navigation-dans-les-departements-doutre-mer | https://demarche.numerique.gouv.fr/commencer/declaration-clearance-antilles |
+| immigration | Police aux frontières (STPAF of the DTPN de la Guadeloupe, competent for Saint-Martin) | `guadeloupe.gouv.fr` | yes | https://www.guadeloupe.gouv.fr/Services-de-l-Etat/Organisation-des-services-de-l-Etat/Securite-et-protection-des-personnes/Direction-departementale-de-la-police-nationale-DDPN | https://questions.assemblee-nationale.fr/q16/16-4457QE.htm |
+| maritime authority | Direction de la mer de la Guadeloupe, unité territoriale de Saint-Martin / Saint-Barthélemy (Concordia) | `saint-barth-saint-martin.gouv.fr` | yes | https://www.saint-barth-saint-martin.gouv.fr/Services-de-l-Etat/Services-deconcentres-de-l-Etat-Unites-territoriales/UT-DM-Direction-de-la-Mer | https://www.dm.guadeloupe.developpement-durable.gouv.fr/les-adresses-de-la-direction-de-la-mer-de-a77.html |
+| port authority | Établissement portuaire de Saint-Martin (port de Galisbay / Marigot, Collectivité) | `portdemarigot.com` | yes | https://www.portdemarigot.com/clearances | https://www.com-saint-martin.fr/institutions_satellites |
+
+Notes: French side only; outside Schengen. Marina Fort Louis and Anse Marcel are approved clearance points but marina operators, not authorities: not listed.
+
+### French Guiana (8462, whitelist key `GF`)
+
+| role | authority | domain | added | official URL | source |
+|---|---|---|---|---|---|
+| customs | Direction régionale des douanes et droits indirects de Guyane (DGDDI) | `douane.gouv.fr` | yes | https://www.douane.gouv.fr/particuliers/vous-etes-en-outre-mer/guyane-preparer-son-arrivee-ou-son-retour-sur-le-territoire | https://www.guyane.gouv.fr/Services-de-l-Etat/Finances-publiques/Direction-Regionale-des-Douanes-et-Droits-Indirects |
+| immigration | Police aux frontières, DTPN de Guyane | `guyane.gouv.fr` | already listed | https://www.guyane.gouv.fr/Services-de-l-Etat/Securite-et-Defense/Police-Nationale | https://www.senat.fr/rap/r19-337/r19-33712.html |
+| maritime authority | Direction générale des territoires et de la mer (DGTM) de Guyane (former Direction de la mer) | `guyane.developpement-durable.gouv.fr` | yes | https://www.guyane.developpement-durable.gouv.fr/navigation-de-plaisance-en-zone-maritime-r1014.html | https://www.guyane.gouv.fr/Services-de-l-Etat/Organisation-des-services-de-l-Etat/La-DGTM-direction-generale-des-territoires-et-de-la-mer |
+| port authority | Grand Port Maritime de la Guyane (Dégrad-des-Cannes) | `portdeguyane.fr` | yes | https://portdeguyane.fr/capitainerie/ | https://questions.assemblee-nationale.fr/dyn/14/questions/QANR5L14QE2763.pdf |
+
+Notes: Not covered by the Antilles online clearance (arrêté of 5 August 2024); the customs list of approved clearance points has a Guyane section.
+
+### Saint-Pierre and Miquelon (8494, whitelist key `PM`)
+
+| role | authority | domain | added | official URL | source |
+|---|---|---|---|---|---|
+| customs | Service des Douanes de Saint-Pierre-et-Miquelon (bureaux de Saint-Pierre et de Miquelon) | `douane975.fr` | already listed | https://www.douane975.fr/navigation-maritime/ | https://www.saint-pierre-et-miquelon.gouv.fr/Services-de-l-Etat/Les-services-de-l-Etat/Le-Service-des-Douanes |
+| immigration | Service de la Police aux Frontières de Saint-Pierre-et-Miquelon (Police nationale) | `saint-pierre-et-miquelon.gouv.fr` | yes | https://www.saint-pierre-et-miquelon.gouv.fr/Services-de-l-Etat/Les-services-de-l-Etat/La-Police-aux-Frontieres | https://www.saint-pierre-et-miquelon.developpement-durable.gouv.fr/IMG/pdf/infos_navigateurs_2017-2.pdf |
+| maritime authority | Direction des Territoires, de l'Alimentation et de la Mer (DTAM), Unité Affaires Maritimes | `saint-pierre-et-miquelon.gouv.fr` | yes | https://www.saint-pierre-et-miquelon.gouv.fr/Services-de-l-Etat/Les-services-de-l-Etat/La-Direction-des-Territoires-de-l-Alimentation-et-de-la-Mer-DTAM | https://www.saint-pierre-et-miquelon.developpement-durable.gouv.fr/informations-pratiques-practical-informations-r150.html |
+| port authority | Capitainerie du port de Saint-Pierre-et-Miquelon (commandant de port, DTAM) | `saint-pierre-et-miquelon.developpement-durable.gouv.fr` | yes | https://www.saint-pierre-et-miquelon.developpement-durable.gouv.fr/informations-pratiques-practical-informations-r150.html | https://www.saint-pierre-et-miquelon.gouv.fr/Services-de-l-Etat/Les-services-de-l-Etat/La-Direction-des-Territoires-de-l-Alimentation-et-de-la-Mer-DTAM |
+
+Notes: Outside Schengen. Préfecture hosts need HTTP/1.1 (HTTP/2 fails).
+
+### French Polynesia (8440, whitelist key `PF`)
+
+| role | authority | domain | added | official URL | source |
+|---|---|---|---|---|---|
+| customs | Direction régionale des douanes de Polynésie française (bureau de douane de Papeete Port) | `service-public.pf` | already listed | https://www.service-public.pf/douane/particuliers/je-navigue/les-formalites-dentrees-et-de-sortie-de-polynesie-francaise-de-navire/ | https://www.service-public.pf/dpam/formalites-arrivees-maritimes-pf/ |
+| immigration | Service territorial de la police aux frontières (STPAF), DTPN de Polynésie française | `polynesie-francaise.gouv.fr` | yes | https://www.polynesie-francaise.gouv.fr/Demarches/Accueil-des-etrangers/Conditions-d-entree-des-etrangers-en-Polynesie-francaise | https://www.service-public.pf/dpam/formalites-arrivees-maritimes-pf/ |
+| maritime authority | Direction polynésienne des affaires maritimes (DPAM), téléservice ESCALES | `service-public.pf` | already listed | https://www.service-public.pf/dpam/ | https://www.service-public.pf/dpam/formalites-arrivees-maritimes-pf/ |
+| port authority | Port autonome de Papeete (marinas de Papeete, Taina, Vaiare, Uturoa, Apooiti) | `portdepapeete.pf` | yes | https://www.portdepapeete.pf/plaisance-yachting/marinas/marina-de-papeete/ | https://www.service-public.pf/douane/particuliers/je-navigue/les-formalites-dentrees-et-de-sortie-de-polynesie-francaise-de-navire/ |
+
+Notes: polynesie-francaise.pref.gouv.fr redirects (301) to polynesie-francaise.gouv.fr. On islands without a customs/PAF office, formalities go to the gendarmerie.
+
+### Wallis and Futuna (8454, whitelist key `WF`)
+
+| role | authority | domain | added | official URL | source |
+|---|---|---|---|---|---|
+| customs | Service des Douanes et Contributions diverses de Wallis-et-Futuna (bureaux de Mata-Utu et de Leava) | `wallis-et-futuna.gouv.fr` | already listed | https://www.wallis-et-futuna.gouv.fr/Services-de-l-Etat-et-du-Territoire/Les-autres-services-de-l-Etat-et-du-Territoire/Service-des-Douanes-et-Contributions-diverses | https://www.wallis-et-futuna.gouv.fr/Demarches/Demarches-et-consignes-a-l-attention-des-plaisanciers-et-arrivants-par-voie-maritime |
+| immigration | Police aux frontières (PAF) de Wallis-et-Futuna | `wallis-et-futuna.gouv.fr` | already listed | https://www.wallis-et-futuna.gouv.fr/Services-de-l-Etat-et-du-Territoire/Les-autres-services-de-l-Etat-et-du-Territoire/Police-aux-frontieres-PAF | https://www.wallis-et-futuna.gouv.fr/Demarches/Demarches-et-consignes-a-l-attention-des-plaisanciers-et-arrivants-par-voie-maritime |
+| maritime authority | Service des Affaires Maritimes, Ports, Phares et Balises (SAMPPB), incl. capitainerie of Mata-Utu, Halalo and Leava | `wallis-et-futuna.gouv.fr` | already listed | https://www.wallis-et-futuna.gouv.fr/Services-de-l-Etat-et-du-Territoire/Les-autres-services-de-l-Etat-et-du-Territoire/Service-des-Affaires-Maritimes-Ports-Phares-et-Balises | https://www.wallis-et-futuna.gouv.fr/Demarches/Demarches-et-consignes-a-l-attention-des-plaisanciers-et-arrivants-par-voie-maritime |
+
+Notes: All authorities are on the already listed wallis-et-futuna.gouv.fr. douane.wf (named by the préfecture) did not answer: not added.
+
+### New Caledonia (8312, whitelist key `NC`)
+
+| role | authority | domain | added | official URL | source |
+|---|---|---|---|---|---|
+| customs | Direction régionale des douanes de Nouvelle-Calédonie (bureau de douane de Nouméa Port) | `douane.gouv.nc` | already listed | https://douane.gouv.nc/particuliers/formalites-douanieres-pour-les-navires-de-plaisance | https://noumeaport.nc/les-services/douane/ |
+| immigration | Police aux frontières de Nouvelle-Calédonie (DTPN 988, USG Port) | `nouvelle-caledonie.gouv.fr` | yes | https://www.nouvelle-caledonie.gouv.fr/Services-de-l-Etat/Securite/PAF-Police-Aux-Frontieres | https://noumeaport.nc/les-services/police-air-frontieres/ |
+| maritime authority | Direction des affaires maritimes de la Nouvelle-Calédonie (DAM NC) | `dam.gouv.nc` | already listed | https://dam.gouv.nc/ | https://www.nouvelle-caledonie.gouv.fr/Services-de-l-Etat/Espace-maritime-et-aerien/SAMNC-Service-des-Affaires-Maritimes-de-la-Nouvelle-Caledonie |
+| port authority | Port autonome de la Nouvelle-Calédonie (PANC), capitainerie de Nouméa | `noumeaport.nc` | yes | https://noumeaport.nc/la-capitainerie/la-presentation/ | https://drhfpnc.gouv.nc/sites/default/files/atoms/files/0889_panc_cdi_commandant_de_port.docx.pdf |
+
+Notes: Nouméa is the compulsory port of entry. www.noumeaport.nc fails TLS; use the bare host. Port Moselle marina (SODEMO, SEM) excluded as commercial.
+
+### Mayotte (48944, whitelist key `YT`)
+
+| role | authority | domain | added | official URL | source |
+|---|---|---|---|---|---|
+| customs | Direction régionale des douanes et droits indirects de Mayotte (DGDDI) | `douane.gouv.fr` | yes | https://www.douane.gouv.fr/fiche/vous-voyagez-mayotte | https://www.mayotte.gouv.fr/contenu/telechargement/27462/248038/file/recueil-r06-2024-075-recueil-des-actes-administratifs.pdf |
+| immigration | Police aux frontières (Direction territoriale de la police nationale de Mayotte; DNPAF) | `police-nationale.interieur.gouv.fr` | yes | https://www.police-nationale.interieur.gouv.fr/nous-decouvrir/notre-organisation/organisation/direction-nationale-de-police-aux-frontieres-dnpaf | https://www.mayotte.gouv.fr/contenu/telechargement/27462/248038/file/recueil-r06-2024-075-recueil-des-actes-administratifs.pdf |
+| maritime authority | DEAL de Mayotte (DEALM), Service maritime et littoral | `mayotte.developpement-durable.gouv.fr` | yes | https://www.mayotte.developpement-durable.gouv.fr/mer-et-littoral-r66.html | https://www.mayotte.gouv.fr/contenu/telechargement/27462/248038/file/recueil-r06-2024-075-recueil-des-actes-administratifs.pdf |
+
+Notes: Arrêté préfectoral n°2024-DEALM-272 (2 April 2024): 48h notice to the Mamoudzou marina harbour master, who informs customs, PAF, PC AEM and DEALM. The marina is run by a CCI concessionaire (mayotte-plaisance.com, commercial): not listed.
+
+### Réunion (8338, whitelist key `RE`)
+
+| role | authority | domain | added | official URL | source |
+|---|---|---|---|---|---|
+| customs | Direction régionale des douanes et droits indirects de La Réunion (DGDDI) | `douane.gouv.fr` | yes | https://www.douane.gouv.fr/fiche/navigation-dans-les-departements-doutre-mer | https://reunion.port.fr/wp-content/uploads/2019/11/20170309-arr%C3%AAt%C3%A9-pr%C3%A9fectoral-n%C2%B0401-relatif-aux-formalit%C3%A9s-dacc%C3%A8s-des-navires-de-plaisance-dans-les-ports-de-la-R%C3%A9union.pdf |
+| immigration | Police aux frontières (PAF) at La Réunion (DNPAF) | `police-nationale.interieur.gouv.fr` | yes | https://www.police-nationale.interieur.gouv.fr/nous-decouvrir/notre-organisation/organisation/direction-nationale-de-police-aux-frontieres-dnpaf | https://reunion.port.fr/wp-content/uploads/2019/11/20170309-arr%C3%AAt%C3%A9-pr%C3%A9fectoral-n%C2%B0401-relatif-aux-formalit%C3%A9s-dacc%C3%A8s-des-navires-de-plaisance-dans-les-ports-de-la-R%C3%A9union.pdf |
+| maritime authority | Direction de la mer Sud océan Indien (DMSOI) | `dm.sud-ocean-indien.developpement-durable.gouv.fr` | yes | https://www.dm.sud-ocean-indien.developpement-durable.gouv.fr/les-missions-de-la-direction-de-la-mer-sud-ocean-a169.html | https://www.legifrance.gouv.fr/jorf/article_jo/JORFARTI000026566864 |
+| port authority | Grand Port Maritime de La Réunion (Port-Réunion), capitainerie at Port Ouest | `reunion.port.fr` | yes | https://reunion.port.fr/fr/capitainerie/ | https://www.legifrance.gouv.fr/jorf/id/JORFTEXT000026447931 |
+
+Notes: Arrêté préfectoral n°401 (9 March 2017): first call at Port Ouest (Pointe des Galets), 48h notice to the harbour master, crew aboard 1h for customs/PAF control.
+
+### Ile Tromelin (48946, whitelist key `FR`)
+
+| role | authority | domain | added | official URL | source |
+|---|---|---|---|---|---|
+| immigration | Préfet, administrateur supérieur des TAAF (visa agreement; the chef de district can refuse admission) | `taaf.fr` | yes | https://taaf.fr/acceder-aux-territoires/demande-de-visa/ | https://www.legifrance.gouv.fr/codes/section_lc/LEGITEXT000006070158/LEGISCTA000042771428?idSecParent=LEGISCTA000042776979 |
+| maritime authority | Préfet, administrateur supérieur des TAAF (prior authorisation for access, mooring and landing in the îles Éparses) | `taaf.fr` | yes | https://taaf.fr/acceder-aux-territoires/demandes-dactivites-et-dacces/acces-et-mouillage-dans-les-eparses/ | https://www.legifrance.gouv.fr/codes/section_lc/JORFTEXT000000879815/LEGISCTA000006087726/ |
+| maritime authority | Direction de la mer Sud océan Indien (DMSOI), competent in the TAAF | `dm.sud-ocean-indien.developpement-durable.gouv.fr` | already listed | https://www.dm.sud-ocean-indien.developpement-durable.gouv.fr/les-missions-de-la-direction-de-la-mer-sud-ocean-a169.html | https://www.legifrance.gouv.fr/jorf/article_jo/JORFARTI000026566897 |
+
+No customs authority: No port and no customs post; TAAF access texts (Arrêté TAAF n°2022-102) name no customs formality. Landing is impossible (taaf.fr).
+
+Notes: Arrêté TAAF n°2022-102: prior authorisation of the préfet, administrateur supérieur des TAAF for landing and mooring; mooring and stay taxes. Whitelist key FR: taaf.fr also becomes official for mainland France.
+
+### Europa Island (8341, whitelist key `TF`)
+
+| role | authority | domain | added | official URL | source |
+|---|---|---|---|---|---|
+| immigration | Préfet, administrateur supérieur des TAAF (visa agreement; the chef de district can refuse admission) | `taaf.fr` | already listed | https://taaf.fr/acceder-aux-territoires/demande-de-visa/ | https://www.legifrance.gouv.fr/codes/section_lc/LEGITEXT000006070158/LEGISCTA000042771428?idSecParent=LEGISCTA000042776979 |
+| maritime authority | Préfet, administrateur supérieur des TAAF (prior authorisation for access, mooring and landing in the îles Éparses) | `taaf.fr` | already listed | https://taaf.fr/acceder-aux-territoires/demandes-dactivites-et-dacces/acces-et-mouillage-dans-les-eparses/ | https://www.legifrance.gouv.fr/codes/section_lc/JORFTEXT000000879815/LEGISCTA000006087726/ |
+| maritime authority | Direction de la mer Sud océan Indien (DMSOI), competent in the TAAF | `dm.sud-ocean-indien.developpement-durable.gouv.fr` | yes | https://www.dm.sud-ocean-indien.developpement-durable.gouv.fr/les-missions-de-la-direction-de-la-mer-sud-ocean-a169.html | https://www.legifrance.gouv.fr/jorf/article_jo/JORFARTI000026566897 |
+
+No customs authority: No port and no customs post; TAAF access texts (Arrêté TAAF n°2022-102) name no customs formality.
+
+Notes: Arrêté TAAF n°2022-102 and n°2014-39 (ecotourism, Europa waters): prior authorisation for landing and mooring; a gendarme on site.
+
 ## Next
 
 - Audit the `not checked` zones the same way (one authority per role, official
-  source each). Zones with an empty whitelist come first: Collectivity of Saint
-  Martin, Saint-Barthélemy, Bonaire, Saba, Sint-Eustatius, Western Sahara.
-- Other French overseas zones (Guadeloupe, French Guiana, Réunion, Mayotte,
-  Saint-Martin, Saint-Barthélemy) have the same pattern as Martinique: their own
-  ISO2 means `douane.gouv.fr` is not in their whitelist.
+  source each). Zones with an empty whitelist come first: Bonaire, Saba,
+  Sint-Eustatius, Western Sahara.
+- Ile Tromelin and Matthew and Hunter Islands have no ISO2 of their own and use
+  France's list (`FR`): a domain added for them is official for mainland France too.

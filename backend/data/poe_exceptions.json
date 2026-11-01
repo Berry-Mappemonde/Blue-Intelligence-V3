@@ -22,22 +22,29 @@
     "FR": [
       "gouv.fr",
       "douane.gouv.fr",
-      "service-public.fr"
+      "service-public.fr",
+      "taaf.fr"
     ],
     "NC": [
       "gouv.nc",
       "douane.gouv.nc",
-      "service-public.nc"
+      "service-public.nc",
+      "nouvelle-caledonie.gouv.fr",
+      "noumeaport.nc"
     ],
     "PF": [
       "gov.pf",
-      "service-public.pf"
+      "service-public.pf",
+      "polynesie-francaise.gouv.fr",
+      "portdepapeete.pf"
     ],
     "WF": [
       "wallis-et-futuna.gouv.fr"
     ],
     "PM": [
-      "douane975.fr"
+      "douane975.fr",
+      "saint-pierre-et-miquelon.gouv.fr",
+      "saint-pierre-et-miquelon.developpement-durable.gouv.fr"
     ],
     "NL": [
       "government.nl",
@@ -223,13 +230,20 @@
       "gov.tk"
     ],
     "TF": [
-      "taaf.fr"
+      "taaf.fr",
+      "dm.sud-ocean-indien.developpement-durable.gouv.fr"
     ],
     "GF": [
-      "guyane.gouv.fr"
+      "guyane.gouv.fr",
+      "douane.gouv.fr",
+      "guyane.developpement-durable.gouv.fr",
+      "portdeguyane.fr"
     ],
     "GP": [
-      "guadeloupe.gouv.fr"
+      "guadeloupe.gouv.fr",
+      "douane.gouv.fr",
+      "dm.guadeloupe.developpement-durable.gouv.fr",
+      "guadeloupe-portcaraibes.com"
     ],
     "MQ": [
       "martinique.gouv.fr",
@@ -238,16 +252,35 @@
       "martinique.port.fr"
     ],
     "RE": [
-      "reunion.gouv.fr"
+      "reunion.gouv.fr",
+      "douane.gouv.fr",
+      "police-nationale.interieur.gouv.fr",
+      "dm.sud-ocean-indien.developpement-durable.gouv.fr",
+      "reunion.port.fr"
     ],
     "YT": [
       "mayotte.gouv.fr",
-      "legifrance.gouv.fr"
+      "legifrance.gouv.fr",
+      "douane.gouv.fr",
+      "police-nationale.interieur.gouv.fr",
+      "mayotte.developpement-durable.gouv.fr"
     ],
     "LC": [
       "rslpf.com",
       "govt.lc",
       "slaspa.com"
+    ],
+    "BL": [
+      "douane.gouv.fr",
+      "gendarmerie.interieur.gouv.fr",
+      "dm.guadeloupe.developpement-durable.gouv.fr",
+      "portdegustavia.fr"
+    ],
+    "MF": [
+      "douane.gouv.fr",
+      "guadeloupe.gouv.fr",
+      "saint-barth-saint-martin.gouv.fr",
+      "portdemarigot.com"
     ]
   },
   "auto": {
