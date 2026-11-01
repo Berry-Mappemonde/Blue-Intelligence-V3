@@ -1,10 +1,14 @@
 {
-  "about": "Provenance of official domains for the route whitelist (docs/ROUTE-WHITELIST.md). Each zone lists the authorities a foreign yacht deals with on arrival (customs, immigration, maritime authority, port authority), one official URL each, and the source used to identify it. A domain marked added=true was added to poe_exceptions.json manual[whitelist_key] by this audit. Government and port-authority bodies only: no NGO, blog or commercial site. A zone may also give no_authority (role: the official reason no such authority exists there, e.g. no port or customs post) and notes (arrival procedure, exclusions).",
+  "about": "Provenance of official domains for the route whitelist (docs/ROUTE-WHITELIST.md). Each zone lists the authorities a foreign yacht deals with on arrival (customs, immigration, maritime authority, port authority), one official URL each, and the source used to identify it. A domain marked added=true was added by this audit; it now lives where the zone's whitelist is built from: for a polygon curated in territories.json (whitelist_key = its territory code) the record's official_domains or poe_exceptions.json whitelist_mrgid[mrgid], else poe_exceptions.json manual[whitelist_key] (an ISO2). was_missing = the roles the whitelist did not cover before the audit (frozen at audit time; docs/TERRITORY-WHITELIST.md). Government and port-authority bodies only: no NGO, blog or commercial site. A zone may also give no_authority (role: the official reason no such authority exists there, e.g. no port or customs post) and notes (arrival procedure, exclusions).",
   "checked": "2026-11-01",
   "zones": {
     "8416": {
       "zone": "Saint Lucia",
       "whitelist_key": "LC",
+      "was_missing": [
+        "immigration",
+        "port_authority"
+      ],
       "authorities": [
         {
           "role": "customs",
@@ -43,6 +47,11 @@
     "8362": {
       "zone": "Cape Verde",
       "whitelist_key": "CV",
+      "was_missing": [
+        "immigration",
+        "maritime_authority",
+        "port_authority"
+      ],
       "authorities": [
         {
           "role": "customs",
@@ -80,7 +89,12 @@
     },
     "8364": {
       "zone": "Canary Islands",
-      "whitelist_key": "ES",
+      "whitelist_key": "islas_canarias",
+      "was_missing": [
+        "immigration",
+        "maritime_authority",
+        "port_authority"
+      ],
       "authorities": [
         {
           "role": "customs",
@@ -142,7 +156,12 @@
     },
     "33178": {
       "zone": "Martinique",
-      "whitelist_key": "MQ",
+      "whitelist_key": "martinique",
+      "was_missing": [
+        "customs",
+        "maritime_authority",
+        "port_authority"
+      ],
       "authorities": [
         {
           "role": "customs",
@@ -180,7 +199,12 @@
     },
     "33177": {
       "zone": "Guadeloupe",
-      "whitelist_key": "GP",
+      "whitelist_key": "guadeloupe",
+      "was_missing": [
+        "customs",
+        "maritime_authority",
+        "port_authority"
+      ],
       "authorities": [
         {
           "role": "customs",
@@ -219,7 +243,13 @@
     },
     "48952": {
       "zone": "Saint-Barthélemy",
-      "whitelist_key": "BL",
+      "whitelist_key": "saint_barthelemy",
+      "was_missing": [
+        "customs",
+        "immigration",
+        "maritime_authority",
+        "port_authority"
+      ],
       "authorities": [
         {
           "role": "customs",
@@ -258,7 +288,13 @@
     },
     "8495": {
       "zone": "Collectivity of Saint Martin",
-      "whitelist_key": "MF",
+      "whitelist_key": "saint_martin",
+      "was_missing": [
+        "customs",
+        "immigration",
+        "maritime_authority",
+        "port_authority"
+      ],
       "authorities": [
         {
           "role": "customs",
@@ -297,7 +333,12 @@
     },
     "8462": {
       "zone": "French Guiana",
-      "whitelist_key": "GF",
+      "whitelist_key": "guyane",
+      "was_missing": [
+        "customs",
+        "maritime_authority",
+        "port_authority"
+      ],
       "authorities": [
         {
           "role": "customs",
@@ -336,7 +377,12 @@
     },
     "8494": {
       "zone": "Saint-Pierre and Miquelon",
-      "whitelist_key": "PM",
+      "whitelist_key": "saint_pierre_et_miquelon",
+      "was_missing": [
+        "immigration",
+        "maritime_authority",
+        "port_authority"
+      ],
       "authorities": [
         {
           "role": "customs",
@@ -375,7 +421,11 @@
     },
     "8440": {
       "zone": "French Polynesia",
-      "whitelist_key": "PF",
+      "whitelist_key": "polynesie_francaise",
+      "was_missing": [
+        "immigration",
+        "port_authority"
+      ],
       "authorities": [
         {
           "role": "customs",
@@ -414,7 +464,8 @@
     },
     "8454": {
       "zone": "Wallis and Futuna",
-      "whitelist_key": "WF",
+      "whitelist_key": "wallis_et_futuna",
+      "was_missing": [],
       "authorities": [
         {
           "role": "customs",
@@ -445,7 +496,11 @@
     },
     "8312": {
       "zone": "New Caledonia",
-      "whitelist_key": "NC",
+      "whitelist_key": "nouvelle_caledonie",
+      "was_missing": [
+        "immigration",
+        "port_authority"
+      ],
       "authorities": [
         {
           "role": "customs",
@@ -484,7 +539,12 @@
     },
     "48944": {
       "zone": "Mayotte",
-      "whitelist_key": "YT",
+      "whitelist_key": "mayotte",
+      "was_missing": [
+        "customs",
+        "immigration",
+        "maritime_authority"
+      ],
       "authorities": [
         {
           "role": "customs",
@@ -515,7 +575,13 @@
     },
     "8338": {
       "zone": "Réunion",
-      "whitelist_key": "RE",
+      "whitelist_key": "la_reunion",
+      "was_missing": [
+        "customs",
+        "immigration",
+        "maritime_authority",
+        "port_authority"
+      ],
       "authorities": [
         {
           "role": "customs",
@@ -554,7 +620,10 @@
     },
     "48946": {
       "zone": "Ile Tromelin",
-      "whitelist_key": "FR",
+      "whitelist_key": "taaf",
+      "was_missing": [
+        "immigration"
+      ],
       "authorities": [
         {
           "role": "immigration",
@@ -588,7 +657,8 @@
     },
     "8341": {
       "zone": "Europa Island",
-      "whitelist_key": "TF",
+      "whitelist_key": "taaf",
+      "was_missing": [],
       "authorities": [
         {
           "role": "immigration",

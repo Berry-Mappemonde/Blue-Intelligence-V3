@@ -2,7 +2,7 @@
 
 Route (backend/data/route.geojson) x EEZ polygons (backend/data/eez_world_map.geojson),
 then for each crossed EEZ the whitelist the pipeline builds (poe_pipeline.build_whitelist
-with poe_exceptions.json) and, where the zone has been audited
+with the zone's mrgid, territories.json and poe_exceptions.json) and, where the zone has been audited
 (backend/data/whitelist_sources.json), whether every required authority's official URL
 passes url_allowed.
 
@@ -87,16 +87,30 @@ def load_sources() -> dict:
 def whitelist_for(zone: dict, exceptions: dict | None = None) -> list[str]:
     from app.services.poe_pipeline import build_whitelist, load_exceptions
     return build_whitelist(zone["iso2"], zone["sov_iso2"],
-                           exceptions if exceptions is not None else load_exceptions())
+                           exceptions if exceptions is not None else load_exceptions(),
+                           mrgid=zone["mrgid"])
 
 
-def without_added(exceptions: dict, audit: dict) -> dict:
-    """The exceptions as they were before this audit added its domains."""
-    key = audit["whitelist_key"]
-    added = {a["domain"] for a in audit["authorities"] if a.get("added")}
-    manual = {k: list(v) for k, v in (exceptions.get("manual") or {}).items()}
-    manual[key] = [d for d in manual.get(key, []) if d not in added]
-    return {**exceptions, "manual": manual}
+def whitelist_key(zone: dict) -> str | None:
+    """Territory code for a polygon curated in territories.json, else the ISO2 used."""
+    from app.services.territory_ref import territory_for_mrgid
+    terr = territory_for_mrgid(zone["mrgid"])
+    return terr.get("code") if terr else (zone["iso2"] or zone["sov_iso2"])
+
+
+def listed_domains(zone: dict, exceptions: dict) -> set[str]:
+    """Domains listed by hand for the zone (not PSL labels): the territory record's
+    official_domains, whitelist_mrgid[mrgid] and, when the sovereign runs entry, the
+    sovereign's manual list; for any other zone, manual[iso2 or sov_iso2]."""
+    from app.services.territory_ref import sovereign_runs_entry, territory_for_mrgid
+    terr = territory_for_mrgid(zone["mrgid"])
+    if not terr:
+        return set((exceptions.get("manual") or {}).get(zone["iso2"] or zone["sov_iso2"], []))
+    out = set(terr.get("official_domains") or [])
+    out |= set((exceptions.get("whitelist_mrgid") or {}).get(str(zone["mrgid"]), []))
+    if sovereign_runs_entry(terr):
+        out |= set((exceptions.get("manual") or {}).get(terr.get("sovereign_iso2"), []))
+    return out
 
 
 def missing_roles(audit: dict, whitelist: list[str]) -> list[str]:
@@ -116,9 +130,9 @@ def rows() -> list[dict]:
     for z in route_zones():
         wl = whitelist_for(z, exceptions)
         audit = audits.get(str(z["mrgid"]))
-        row = {**z, "key": z["iso2"] or z["sov_iso2"], "domains": wl}
+        row = {**z, "key": whitelist_key(z), "domains": wl}
         if audit:
-            before = missing_roles(audit, whitelist_for(z, without_added(exceptions, audit)))
+            before = audit.get("was_missing") or []
             now = missing_roles(audit, wl)
             row["gap"] = "yes" if now else "no"
             row["note"] = ("audited; was missing " + ", ".join(ROLE_LABELS[r] for r in before)
@@ -146,16 +160,21 @@ def render(table: list[dict] | None = None) -> str:
         "",
         "EEZs crossed by the Berry-Mappemonde route (`backend/data/route.geojson` x",
         "`backend/data/eez_world_map.geojson`) and the official domains the PoE whitelist",
-        "accepts for each (`poe_pipeline.build_whitelist`: government labels of the zone's",
-        "ISO2 from the Public Suffix List, plus `poe_exceptions.json` manual / auto entries;",
-        "matched by host with `url_allowed`). A zone uses its own ISO2 when it has one, else",
-        "the sovereign's (`iso2 or sov_iso2`): Martinique (MQ) does not inherit France's list.",
+        "accepts for each (`poe_pipeline.build_whitelist`, matched by host with `url_allowed`;",
+        "design in `docs/TERRITORY-WHITELIST.md`). A polygon curated in",
+        "`backend/data/territories.json` (key = territory code) gets the record's",
+        "`official_domains` plus `poe_exceptions.json` `whitelist_mrgid[mrgid]`, and the",
+        "sovereign's national labels only when the record sets `sovereign_runs_entry`",
+        "(Mayotte and Martinique yes, New Caledonia and the TAAF no). Any other zone",
+        "(key = ISO2) gets the government labels of its own ISO2, else the sovereign's",
+        "(`iso2 or sov_iso2`), from the Public Suffix List plus `poe_exceptions.json`",
+        "manual / auto entries.",
         "",
         "**Gap**: `yes` when an audited authority (customs, immigration, maritime authority,",
         "port authority) has no matching domain, or the whitelist is empty; `no` when all",
         "audited authorities match; `not checked` when the zone has not been audited yet.",
         f"Audited on {sources.get('checked')}: the pilot zones and the French overseas",
-        "zones on the route. Sources per domain are below and in",
+        "zones on the route; \"was missing\" is frozen at audit time. Sources per domain are below and in",
         "`backend/data/whitelist_sources.json`. A role with no authority in a zone (no port,",
         "no customs post) is listed under \"no authority\" with the official text that says so.",
         "",
@@ -189,8 +208,10 @@ def render(table: list[dict] | None = None) -> str:
         "- Audit the `not checked` zones the same way (one authority per role, official",
         "  source each). Zones with an empty whitelist come first: Bonaire, Saba,",
         "  Sint-Eustatius, Western Sahara.",
-        "- Ile Tromelin and Matthew and Hunter Islands have no ISO2 of their own and use",
-        "  France's list (`FR`): a domain added for them is official for mainland France too.",
+        "- Add Bonaire, Saba and Sint-Eustatius (Caribbean Netherlands, BQ) to",
+        "  `territories.json` once the customs and immigration bodies there are sourced;",
+        "  Sint Maarten, Aruba, Curaçao, Cook Islands, Niue, Greenland and the Faroes are",
+        "  self-governing and are never attached to a sovereign (`never_attach_to_sovereign`).",
         "",
     ]
     return "\n".join(lines)

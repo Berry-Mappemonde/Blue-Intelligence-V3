@@ -890,7 +890,8 @@ async def judge_one(doc: dict, zone: dict, settings: dict, log,
         return out
 
     exc = load_exceptions()
-    whitelist = build_whitelist(zone.get("iso2"), zone.get("sov_iso2"), exc)
+    whitelist = build_whitelist(zone.get("iso2"), zone.get("sov_iso2"), exc,
+                                mrgid=zone.get("mrgid"))
     key = tf_api_key(settings) or (os.environ.get("TINYFISH_API_KEY") or "")
     texts = []
     blocked_official = []
