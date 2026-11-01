@@ -130,7 +130,13 @@
     ],
     "ES": [
       "gob.es",
-      "agenciatributaria.es"
+      "agenciatributaria.es",
+      "policia.es",
+      "salvamentomaritimo.es",
+      "puertos.es",
+      "palmasport.es",
+      "puertosdetenerife.org",
+      "puertoscanarios.es"
     ],
     "PT": [
       "gov.pt",
@@ -173,7 +179,10 @@
     ],
     "CV": [
       "governo.cv",
-      "gov.cv"
+      "gov.cv",
+      "policianacional.cv",
+      "imp.cv",
+      "enapor.cv"
     ],
     "GQ": [
       "gov.gq"
@@ -223,7 +232,10 @@
       "guadeloupe.gouv.fr"
     ],
     "MQ": [
-      "martinique.gouv.fr"
+      "martinique.gouv.fr",
+      "douane.gouv.fr",
+      "martinique.developpement-durable.gouv.fr",
+      "martinique.port.fr"
     ],
     "RE": [
       "reunion.gouv.fr"
@@ -231,6 +243,11 @@
     "YT": [
       "mayotte.gouv.fr",
       "legifrance.gouv.fr"
+    ],
+    "LC": [
+      "rslpf.com",
+      "govt.lc",
+      "slaspa.com"
     ]
   },
   "auto": {
