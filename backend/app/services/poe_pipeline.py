@@ -3055,15 +3055,63 @@ def judge_texts(zone: dict, docs: list[dict], raw: str, used_sources: list[dict]
     return out[:poe_judge.MAX_TEXTS]
 
 
-def _take_judge_call() -> bool:
-    """One call from the zone's share of the run cap for the judge. A refusal does not
-    mark the extraction ``capped``: the readers already read what they were given."""
+def _take_one_call_quietly() -> bool:
+    """One call from the zone's share. A refusal does not mark the extraction ``capped``."""
     state = _zone_extract.get()
     was_capped = (state or {}).get("capped", False)
     granted = _take_extract_calls(1) > 0
     if state is not None and not granted:
         state["capped"] = was_capped
     return granted
+
+
+def has_official_text(raw: str, used_sources: list[dict]) -> bool:
+    """True when the collected text holds at least one official source block, the input
+    the judge reads later (same filter as evidence_store.build_records)."""
+    from app.agents.evaluator import is_official_source
+    return any(d.get("text") and is_official_source([d.get("url") or ""])
+               for d in evidence_store.documents_from_context(raw, used_sources))
+
+
+def _reserve_judge_call(raw: str, used_sources: list[dict], log) -> bool:
+    """Run mode, before extraction: set one call of the zone's share aside for the judge,
+    so the readers can never use it. Only when the judge would run (rule on, not
+    SAMPLE_MODE) and the zone has official text. The call is counted as used; the judge
+    consumes it (``_take_judge_call``), otherwise ``_release_judge_call`` gives it back."""
+    from app.core.run_rules import get_rule
+    state = _zone_extract.get()
+    if state is None:
+        return False
+    if state.get("judge_reserved"):
+        return True
+    if not bool(get_rule("formalities.judge_in_runs", True)):
+        return False
+    if (os.environ.get("SAMPLE_MODE") or "").strip().lower() == "true":
+        return False
+    if not has_official_text(raw, used_sources):
+        return False
+    if not _take_one_call_quietly():
+        log("juge Nemotron: aucun appel libre à réserver dans la part de la ZEE")
+        return False
+    state["judge_reserved"] = True
+    log("juge Nemotron: 1 appel réservé sur la part de la ZEE avant l'extraction")
+    return True
+
+
+def _release_judge_call() -> None:
+    """Give back a reserved judge call the judge did not use (skipped, or zone error)."""
+    state = _zone_extract.get()
+    if state is not None and state.pop("judge_reserved", False):
+        _return_extract_calls(1)
+
+
+def _take_judge_call() -> bool:
+    """The judge's call: the one reserved before extraction, else one from what is left
+    of the zone's share. A refusal does not mark the extraction ``capped``."""
+    state = _zone_extract.get()
+    if state is not None and state.pop("judge_reserved", False):
+        return True
+    return _take_one_call_quietly()
 
 
 def _judge_timeout_s() -> float:
@@ -3080,8 +3128,9 @@ async def _judge_zone_run(zone: dict, docs: list[dict], raw: str, used_sources: 
     """Run mode only: NemotronJudge on this zone's ports, then the C-level again.
 
     One judge call per zone (agents.poe_judge.ask, output of parse_judgments), on the
-    official snippets already fetched. The call is taken from the zone's share of
-    ``formalities.extract_max_llm_calls`` and, through the generator, lands on the run's
+    official snippets already fetched. The call was reserved from the zone's share of
+    ``formalities.extract_max_llm_calls`` before extraction (``_reserve_judge_call``),
+    else taken from what is left, and, through the generator, lands on the run's
     Token Factory USD ledger. Skipped, with the reason recorded (log, ``judge`` run event,
     ``poe_run_zones.judge``), when ``formalities.judge_in_runs`` is false, the cap is
     reached, there is no official text, no time is left, or the judge has no answer.
@@ -3092,6 +3141,7 @@ async def _judge_zone_run(zone: dict, docs: list[dict], raw: str, used_sources: 
     from app.core.run_rules import get_rule
 
     def done(summary: dict) -> dict:
+        _release_judge_call()  # no-op when the judge used its reserved call
         state = _zone_extract.get()
         if state is not None:
             state["judge"] = summary
@@ -3301,6 +3351,10 @@ async def generate_zone_poe(db, mrgid: int, logger=None, force: bool = False,
                    raw_chars=raw_chars, final_chars=len(context), llm_chars=sent_chars,
                    catalog_n=len(raw_catalog))
 
+        # Run mode: the judge's call is set aside before the readers can use the share.
+        if run is not None and _reserve_judge_call(raw, used_sources, log):
+            await emit(rec, "judge_call_reserved")
+
         # 4. Extraction + geocoding + spatial validation
         docs = await _extract_and_geocode(zone, context, used_sources, log, rec, run,
                                           catalog_text=raw, settings=settings)
@@ -3358,6 +3412,7 @@ async def generate_zone_poe(db, mrgid: int, logger=None, force: bool = False,
                    duration_s=round(time.time() - t0, 1))
         raise
     finally:
+        _release_judge_call()  # zone ended before the judge used its reserved call
         _budget.close()
         llm_context_chars.reset(_ctx_token)
         allow_tinyfish_fetch.reset(_tf_token)

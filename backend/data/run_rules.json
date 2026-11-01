@@ -1928,11 +1928,12 @@
       "unit": "bool",
       "interval": null,
       "vary": true,
-      "principle": "Juge Nemotron (agents/poe_judge.py) par ZEE dans les runs, après l'extraction, sur les extraits officiels déjà collectés. Verdict poe + extrait vérifié : C2 ; not_poe : plafond C1 (PLAN-V3 §5). Un appel par ZEE, compté dans formalities.extract_max_llm_calls et le budget USD du run ; part épuisée : juge sauté, raison consignée. Niveaux écrits dans poe_run_ports seulement.",
+      "principle": "Juge Nemotron (agents/poe_judge.py) par ZEE dans les runs, après l'extraction, sur les extraits officiels déjà collectés. Verdict poe + extrait vérifié : C2 ; not_poe : plafond C1 (PLAN-V3 §5). Un appel par ZEE, compté dans formalities.extract_max_llm_calls et le budget USD du run, réservé sur la part de la ZEE avant l'extraction quand elle a un texte officiel (les lecteurs ne peuvent pas le prendre ; rendu au run si le juge ne tourne pas) ; aucun appel libre : juge sauté, raison consignée. Niveaux écrits dans poe_run_ports seulement.",
       "cdc": "PLAN-V3.md §5",
       "code": [
         "app/services/poe_pipeline.py:_judge_zone_run",
-        "app/agents/poe_judge.py:ask"
+        "app/agents/poe_judge.py:ask",
+        "app/services/poe_pipeline.py:_reserve_judge_call"
       ],
       "title": {
         "fr": "Juge Nemotron dans les runs",
