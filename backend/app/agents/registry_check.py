@@ -389,12 +389,24 @@ def _domain(url: str) -> str:
     return host[4:] if host.startswith("www.") else host
 
 
+def _official_url(url: str, whitelist: list[str] | None) -> bool:
+    """Official for this zone: on the zone's PoE whitelist when one is given
+    (poe_pipeline.build_whitelist, scoped per polygon: douane.gouv.fr is not New
+    Caledonia's), else the naming heuristic is_official_source()."""
+    if whitelist is None:
+        return is_official_source([url])
+    from app.services.poe_pipeline import url_allowed
+    return url_allowed(url, whitelist)
+
+
 def official_source_evidence(port: dict, source_texts: dict[str, str] | None,
-                             alternates: tuple = ()) -> list[dict]:
+                             alternates: tuple = (), *,
+                             whitelist: list[str] | None = None) -> list[dict]:
     """Evidence from text fetched now: official URLs whose text designates the port.
 
     Candidate URLs are the port's source_urls (else every fetched document). A URL counts
-    only if is_official_source() accepts it AND its text names the port (or an alternate)
+    only if it is official for the zone (_official_url: on ``whitelist`` when given, else
+    is_official_source()) AND its text names the port (or an alternate)
     near an entry term, outside an address (see entry_mention). Text that was not fetched
     never counts. Each item: {url, domain, name_found, entry_term, snippet, evidence_source}.
     """
@@ -404,7 +416,7 @@ def official_source_evidence(port: dict, source_texts: dict[str, str] | None,
     out = []
     for url in port.get("source_urls") or list(source_texts):
         text = source_texts.get(url)
-        if not text or not is_official_source([url]):
+        if not text or not _official_url(url, whitelist):
             continue
         mention = entry_mention(text, variants)
         if mention:
@@ -414,7 +426,8 @@ def official_source_evidence(port: dict, source_texts: dict[str, str] | None,
     return out
 
 
-def stored_snippet_evidence(port: dict, records: list[dict] | None, alternates: tuple = ()) -> list[dict]:
+def stored_snippet_evidence(port: dict, records: list[dict] | None, alternates: tuple = (), *,
+                            whitelist: list[str] | None = None) -> list[dict]:
     """Evidence from stored records (an earlier fetch): the same check, run on each snippet.
 
     Records are those of the port's zone; one applies when its port_key is one of the
@@ -427,7 +440,7 @@ def stored_snippet_evidence(port: dict, records: list[dict] | None, alternates: 
     out = []
     for record in records:
         url = record.get("url") or ""
-        if record.get("port_key") not in keys or not is_official_source([url]):
+        if record.get("port_key") not in keys or not _official_url(url, whitelist):
             continue
         mention = entry_mention(record.get("snippet"), variants)
         if mention:
@@ -594,11 +607,14 @@ def fetch_for_zone(zone: dict | str | None, ports: list[dict], run_id: str,
 
 def annotate(ports: list[dict], registry: dict, run_id: str,
              source_texts: dict[str, str] | None = None,
-             stored_records: list[dict] | None = None) -> tuple[list[dict], dict]:
+             stored_records: list[dict] | None = None, *,
+             whitelist: list[str] | None = None) -> tuple[list[dict], dict]:
     """Tier copies of ports and trace one registry_check event per port.
 
     Official evidence comes from source_texts (fetched now) or stored_records (stored
     snippets of the zone, see app/adapters/evidence_store.py), each passing the same check.
+    ``whitelist`` (the zone's poe_pipeline.build_whitelist) scopes "official" to the zone;
+    without it the naming heuristic is_official_source() applies.
 
     Each port gets ``registry`` {tier, label, validation, matches, official_evidence,
     coord_mismatch, first_port_of_entry, reasons}, plus the backward-compatible
@@ -615,8 +631,9 @@ def annotate(ports: list[dict], registry: dict, run_id: str,
         alternates = tuple(n for e in entries for n in _entry_names(e)
                            if any(_entry_code(e) == m["code"] and e.get("source") == m["source"]
                                   for m in matches))
-        official = _merge_evidence(official_source_evidence(port, source_texts, alternates),
-                                   stored_snippet_evidence(port, stored_records, alternates))
+        official = _merge_evidence(
+            official_source_evidence(port, source_texts, alternates, whitelist=whitelist),
+            stored_snippet_evidence(port, stored_records, alternates, whitelist=whitelist))
         tier = tier_for(official, matches)
         fpoe = next((m["first_port_of_entry"] for m in matches if m.get("first_port_of_entry")), None)
         port["registry"] = dict(
@@ -646,7 +663,8 @@ def annotate(ports: list[dict], registry: dict, run_id: str,
 def check_ports(ports: list[dict], zone: dict | str | None, run_id: str,
                 live_failed: bool = False,
                 source_texts: dict[str, str] | None = None,
-                stored_records: list[dict] | None = None) -> tuple[list[dict], dict]:
+                stored_records: list[dict] | None = None, *,
+                whitelist: list[str] | None = None) -> tuple[list[dict], dict]:
     """fetch_for_zone + annotate: the registry check step of the run pipeline."""
     return annotate(ports, fetch_for_zone(zone, ports, run_id, live_failed), run_id,
-                    source_texts, stored_records)
+                    source_texts, stored_records, whitelist=whitelist)

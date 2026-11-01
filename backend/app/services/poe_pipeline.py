@@ -24,6 +24,7 @@ Architecture:
 """
 import asyncio
 import fcntl
+import functools
 import json
 import os
 import re
@@ -434,7 +435,7 @@ _exceptions_thread_lock = threading.Lock()
 
 _EXCEPTION_BUCKETS = (
     "manual", "auto", "seed_urls", "search_hints",
-    "seed_urls_mrgid", "blacklist_urls_mrgid", "blacklist_domains_mrgid",
+    "whitelist_mrgid", "auto_mrgid", "seed_urls_mrgid", "blacklist_urls_mrgid", "blacklist_domains_mrgid",
 )
 
 
@@ -692,7 +693,7 @@ def remember_seed_urls(zone: dict, urls: list[str], exceptions: dict | None = No
     for u in urls:
         if not u or not str(u).startswith("http") or u in bucket:
             continue
-        if not url_allowed(u, build_whitelist(zone.get("iso2"), zone.get("sov_iso2"), exc)):
+        if not url_allowed(u, zone_whitelist(zone, exc)):
             if not OFFICIAL_TOKENS.search(domain_of(u) or ""):
                 continue
         if len(bucket) >= max_per_country:
@@ -824,40 +825,101 @@ def _preferred_gov_label(iso2: str) -> str:
     return "gov"
 
 
-def build_whitelist(iso2: str | None, sov_iso2: str | None, exceptions: dict | None = None) -> list[str]:
-    """State domains of countries that have an EEZ (a hint, no longer a gate).
+def _national_labels(cc: str | None, exc: dict, maritime: set[str]) -> set[str]:
+    """One country's State domains: its PSL government label(s) plus the
+    poe_exceptions.json manual / auto entries under its ISO2."""
+    out: set[str] = set()
+    if not cc:
+        return out
+    up = cc.upper()
+    if maritime and up not in maritime:
+        return out
+    low = cc.lower()
+    hits = []
+    for lbl in GOV_LABELS:
+        cand = f"{lbl}.{low}"
+        if _is_public_suffix(cand):
+            hits.append(cand)
+    if len(hits) >= 3:
+        pref = f"{_preferred_gov_label(up)}.{low}"
+        if pref in hits:
+            out.add(pref)
+        elif f"gov.{low}" in hits:
+            out.add(f"gov.{low}")
+        else:
+            out.add(hits[0])
+    else:
+        out.update(hits)
+    for bucket in ("manual", "auto"):
+        for dom in (exc.get(bucket) or {}).get(up, []):
+            out.add(dom.lower())
+    return out
 
-    A wildcard PSL suffix (Nepal, Jamaica…) no longer produces the 7 patterns:
-    we keep the usual label (gov / gouv / gob). Landlocked countries are
-    ignored — even if NP or SK is passed by mistake."""
+
+def _mrgid_key(mrgid) -> str | None:
+    try:
+        mid = int(mrgid)
+    except (TypeError, ValueError):
+        return None
+    return str(mid) if mid > 0 else None
+
+
+def build_whitelist(iso2: str | None, sov_iso2: str | None, exceptions: dict | None = None,
+                    mrgid: int | str | None = None) -> list[str]:
+    """State domains accepted as official for one zone (docs/TERRITORY-WHITELIST.md).
+
+    A polygon curated in territories.json (``mrgid`` mapped there) gets who actually
+    manages and publishes its ports of entry: the record's ``official_domains`` plus the
+    per-polygon ``whitelist_mrgid`` / ``auto_mrgid`` buckets of poe_exceptions.json. The
+    sovereign's national labels (PSL government label + manual / auto of the sovereign's
+    ISO2) are added only when the record says ``sovereign_runs_entry`` (default false):
+    Mayotte gets France's gouv.fr, New Caledonia does not.
+
+    Any other zone is unchanged: the national labels of ``iso2 or sov_iso2``. A wildcard
+    PSL suffix (Nepal, Jamaica…) keeps the usual label (gov / gouv / gob); landlocked
+    countries are ignored, even if NP or SK is passed by mistake."""
     exc = exceptions or load_exceptions()
     maritime = eez_iso2_set()
-    out: set[str] = set()
-    primary = iso2 or sov_iso2
-    for cc in {c for c in (primary,) if c}:
-        up = cc.upper()
-        if maritime and up not in maritime:
-            continue
-        low = cc.lower()
-        hits = []
-        for lbl in GOV_LABELS:
-            cand = f"{lbl}.{low}"
-            if _is_public_suffix(cand):
-                hits.append(cand)
-        if len(hits) >= 3:
-            pref = f"{_preferred_gov_label(up)}.{low}"
-            if pref in hits:
-                out.add(pref)
-            elif f"gov.{low}" in hits:
-                out.add(f"gov.{low}")
-            else:
-                out.add(hits[0])
-        else:
-            out.update(hits)
-        for bucket in ("manual", "auto"):
-            for dom in (exc.get(bucket) or {}).get(up, []):
+    from app.services.territory_ref import sovereign_runs_entry, territory_for_mrgid
+    terr = territory_for_mrgid(mrgid) if mrgid is not None else {}
+    if terr:
+        key = _mrgid_key(mrgid)
+        out = {str(d).lower().lstrip(".") for d in terr.get("official_domains") or [] if d}
+        for bucket in ("whitelist_mrgid", "auto_mrgid"):
+            for dom in (exc.get(bucket) or {}).get(key, []):
                 out.add(dom.lower())
-    return sorted(out)
+        if sovereign_runs_entry(terr):
+            out |= _national_labels(terr.get("sovereign_iso2") or sov_iso2, exc, maritime)
+        return sorted(out)
+    return sorted(_national_labels(iso2 or sov_iso2, exc, maritime))
+
+
+def zone_whitelist(zone: dict | None, exceptions: dict | None = None) -> list[str]:
+    """build_whitelist for a zone record (iso2, sov_iso2, mrgid)."""
+    zone = zone or {}
+    return build_whitelist(zone.get("iso2"), zone.get("sov_iso2"), exceptions,
+                           mrgid=zone.get("mrgid"))
+
+
+def registry_whitelist(zone: dict | None) -> list[str] | None:
+    """Whitelist registry_check uses for "official": the polygon's own for a curated
+    territory, None (naming heuristic, unchanged) for any other zone."""
+    from app.services.territory_ref import territory_for_mrgid
+    zone = zone or {}
+    if not territory_for_mrgid(zone.get("mrgid")):
+        return None
+    return zone_whitelist(zone)
+
+
+def learned_domain_bucket(zone: dict | None) -> tuple[str, str]:
+    """Where a domain learned for this zone is stored: ("auto_mrgid", mrgid) for a
+    curated polygon (so it stays on that polygon), else ("auto", iso2) as before."""
+    from app.services.territory_ref import territory_for_mrgid
+    zone = zone or {}
+    key = _mrgid_key(zone.get("mrgid"))
+    if key and territory_for_mrgid(key):
+        return "auto_mrgid", key
+    return "auto", (zone.get("iso2") or "").upper()
 
 
 def bind_official_reader(whitelist: list[str]):
@@ -984,7 +1046,7 @@ async def build_referential(db, state, force: bool = False):
                 gj, bbox, anchor = await asyncio.to_thread(_work)
                 iso2 = iso2_of(props.get("iso_ter1"))
                 sov2 = iso2_of(props.get("iso_sov1"))
-                wl = build_whitelist(iso2, sov2, exceptions)
+                wl = build_whitelist(iso2, sov2, exceptions, mrgid=mrgid)
                 base_doc = {
                     "mrgid": int(mrgid),
                     "geoname": props.get("geoname"),
@@ -1176,14 +1238,18 @@ async def validate_ports_zetaris(zone: dict | str, run_id: str, settings: dict |
 
 
 async def cross_reference_zetaris(ports: list[dict], zone: dict, zetaris_result: dict,
-                                  source_texts: dict[str, str] | None = None) -> list[dict]:
+                                  source_texts: dict[str, str] | None = None,
+                                  whitelist: list[str] | None = None) -> list[dict]:
     """Tier each port (see app.agents.registry_check): official-source evidence needs the
     fetched text of an official URL to name the port (source_texts, {url: text}); registry
     evidence is a same-country UN/LOCODE / WPI name match within 25 km. zetaris_validation
-    is "official" for tiers 1-2 only. Traces one registry_check per port.
+    is "official" for tiers 1-2 only. Traces one registry_check per port. ``whitelist``
+    (the zone's build_whitelist) scopes "official" to this polygon.
     """
     run_id = zetaris_result.get("run_id") or f"poe-{zone.get('mrgid', 'zone')}-{uuid.uuid4().hex[:8]}"
-    ports, _ = await asyncio.to_thread(registry_check.annotate, ports, zetaris_result, run_id, source_texts)
+    ports, _ = await asyncio.to_thread(
+        functools.partial(registry_check.annotate, whitelist=whitelist),
+        ports, zetaris_result, run_id, source_texts)
     return ports
 
 
@@ -1200,14 +1266,18 @@ def _pipeline_run_id(rec, zone: dict) -> str:
 async def extract_ports_llm(context: str, zone: dict, log, rec=None,
                             catalog_text: str | None = None,
                             settings: dict | None = None) -> list[dict]:
-    """Extract (see ``_extract_ports_core``; long raw text in batches), then cross-reference Zetaris."""
+    """Extract (see ``_extract_ports_core``; long raw text in batches), then cross-reference Zetaris.
+
+    For a polygon curated in territories.json, official evidence is scoped to the
+    polygon's whitelist (``registry_whitelist``); other zones keep the naming heuristic."""
     ports = await _extract_ports_core(context, zone, log, rec=rec,
                                       catalog_text=catalog_text, settings=settings)
     run_id = _pipeline_run_id(rec, zone)
     zetaris_result = await validate_ports_zetaris(zone, run_id, settings, candidates=ports)
     # Fetched documents, as the "[SOURCE: url]" blocks of the raw collected text.
     source_texts = registry_check.source_texts_from_context(catalog_text or context)
-    ports = await cross_reference_zetaris(ports, zone, {**zetaris_result, "run_id": run_id}, source_texts)
+    ports = await cross_reference_zetaris(ports, zone, {**zetaris_result, "run_id": run_id}, source_texts,
+                                          whitelist=registry_whitelist(zone))
     official = [p for p in ports if p.get("zetaris_validation") == "official"]
     tiers = {t: [p["name"] for p in ports if p["registry"]["tier"] == t] for t in registry_check.TIER_LABELS}
     log(f"Zetaris registries ({zetaris_result['mode']}, {zetaris_result['country_iso2'] or 'bbox'}): "
@@ -2418,8 +2488,8 @@ async def _find_sources(zone: dict, whitelist: list[str], exceptions: dict, log,
     if not official and rejected:
         boot = bootstrap_national_hits(rejected, zone)
         if boot:
-            auto = exceptions.setdefault("auto", {}).setdefault(
-                (zone.get("iso2") or "").upper(), [])
+            bucket, key = learned_domain_bucket(zone)
+            auto = exceptions.setdefault(bucket, {}).setdefault(key, [])
             for c in boot:
                 if c["domain"] not in auto:
                     auto.append(c["domain"])
@@ -2727,7 +2797,7 @@ async def _extract_and_geocode(zone: dict, context: str, used_sources: list[dict
     mrgid = int(zone["mrgid"])
     name = zone.get("name") or zone.get("geoname")
     if whitelist is None:
-        whitelist = build_whitelist(zone.get("iso2"), zone.get("sov_iso2"))
+        whitelist = zone_whitelist(zone)
     ports = await extract_ports_llm(context, zone, log, rec=rec,
                                    catalog_text=catalog_text, settings=settings)
     listing_ports: list[dict] = []
@@ -3296,7 +3366,7 @@ async def generate_zone_poe(db, mrgid: int, logger=None, force: bool = False,
     except Exception:
         settings = {}
     exceptions = load_exceptions()
-    whitelist = build_whitelist(zone.get("iso2"), zone.get("sov_iso2"), exceptions)
+    whitelist = zone_whitelist(zone, exceptions)
     variant = normalize_variant(getattr(run, "variant", None) if run is not None else "tinyfish")
     from app.core.extract import allow_tinyfish_fetch
     _tf_token = allow_tinyfish_fetch.set(variant == "tinyfish")

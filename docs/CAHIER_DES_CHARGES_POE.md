@@ -119,7 +119,7 @@ Bottom-Up answers **two things**: *“This already-known place, is it really a r
 We start from the **VLIZ polygon**, not from the aggregated country, and not from a port name.
 
 1. Take **this** VLIZ polygon (territory name, polygon ISO2, sovereign, geometry, `mrgid`).
-2. Build the **whitelist** of State domains (ISO2 of the polygon **and** of the sovereign: Mayotte `YT` + `FR`).
+2. Build the **whitelist** of State domains of **this** polygon: for a polygon curated in `territories.json`, whoever manages and publishes its ports of entry (`official_domains` + `whitelist_mrgid`), plus the sovereign's national labels only when the record sets `sovereign_runs_entry` (Mayotte yes, New Caledonia no); otherwise the ISO2 of the polygon, else the sovereign's. No automatic inheritance (`docs/TERRITORY-WHITELIST.md`).
 3. **Search** with the name of the **polygon** (`search_polygon_name`: `France hexagone` ≠ `Mayotte` ≠ `Saba`), not only the sovereign. Multilingual queries, SearXNG and/or TinyFish Search (`location` = polygon ISO2), official net, grounded search last.
 4. **Download** the pages (HTTP, Readability, Chromium render, out-of-process PDF). Discard anti-bot interstitials.
 5. **Extract** the names (table/decree parser first; otherwise LLM ∥ NER; Claude as second reader if the budget is open). A **national** decree may list several polygons: we read the entire list.

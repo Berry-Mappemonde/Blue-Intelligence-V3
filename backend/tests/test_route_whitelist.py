@@ -46,7 +46,7 @@ def exceptions():
 
 def _wl(mrgid, exceptions):
     _, iso2, sov2 = PILOTS[mrgid]
-    return build_whitelist(iso2, sov2, exceptions)
+    return build_whitelist(iso2, sov2, exceptions, mrgid=mrgid)
 
 
 def test_every_pilot_zone_is_audited(sources):
@@ -75,19 +75,18 @@ def test_pilot_authorities_pass_url_allowed(mrgid, sources, exceptions):
 
 
 @pytest.mark.parametrize("mrgid", sorted(PILOTS))
-def test_added_domains_are_in_the_whitelist_data_and_were_missing(mrgid, sources, exceptions):
+def test_added_domains_are_listed_for_the_zone(mrgid, sources, exceptions):
     audit = sources[str(mrgid)]
-    manual = exceptions["manual"][audit["whitelist_key"]]
-    before = build_whitelist(PILOTS[mrgid][1], PILOTS[mrgid][2],
-                             report.without_added(exceptions, audit))
+    zone = {"mrgid": mrgid, "iso2": PILOTS[mrgid][1], "sov_iso2": PILOTS[mrgid][2]}
+    assert audit["whitelist_key"] == report.whitelist_key(zone)
+    listed = report.listed_domains(zone, exceptions)
+    # was_missing is frozen at audit time (the whitelist before the audit's additions).
+    assert set(audit["was_missing"]) <= ROLES
     for a in audit["authorities"]:
         host = urlsplit(a["url"]).hostname or ""
         assert host == a["domain"] or host.endswith("." + a["domain"]), a
         if a["added"]:
-            assert a["domain"] in manual
-            assert not url_allowed(a["url"], before), f"{a['domain']} was already covered"
-        else:
-            assert url_allowed(a["url"], before), f"{a['domain']} marked as already listed"
+            assert a["domain"] in listed, (a["domain"], sorted(listed))
 
 
 def test_every_entry_has_an_official_url_and_a_source(sources):
@@ -102,33 +101,33 @@ def test_every_entry_has_an_official_url_and_a_source(sources):
 
 
 def test_new_entries_do_not_open_lookalike_hosts(exceptions):
-    lc = build_whitelist("LC", "LC", exceptions)
-    mq = build_whitelist("MQ", "FR", exceptions)
-    es = build_whitelist(None, "ES", exceptions)
+    lc = build_whitelist("LC", "LC", exceptions, mrgid=8416)
+    canaries = build_whitelist(None, "ES", exceptions, mrgid=8364)
     assert url_allowed("https://storage.slaspa.com/contentPages/view/port-castries", lc)
     assert not url_allowed("https://slaspa.com.example.org/", lc)
     assert not url_allowed("https://notslaspa.com/", lc)
     assert not url_allowed("https://www.noonsite.com/place/st-lucia", lc)
+    assert url_allowed("https://www.palmasport.es/en/who-are-we/", canaries)
+    assert not url_allowed("https://palmasport.es.fake.com/", canaries)
+    # Martinique: a DROM, France's national services run entry (sovereign_runs_entry).
+    mq = build_whitelist("MQ", "FR", exceptions, mrgid=33178)
     assert url_allowed("https://www.douane.gouv.fr/fiche/navigation-dans-les-departements-doutre-mer", mq)
-    # MQ gets the customs and DM hosts, not all of gouv.fr.
-    assert not url_allowed("https://www.education.gouv.fr/", mq)
-    assert not url_allowed("https://dm.guadeloupe.developpement-durable.gouv.fr/", mq)
-    assert url_allowed("https://www.palmasport.es/en/who-are-we/", es)
-    assert not url_allowed("https://palmasport.es.fake.com/", es)
-    # Overseas zones get the national service's host, not its whole parent domain.
-    re_ = build_whitelist("RE", "FR", exceptions)
-    assert url_allowed("https://www.police-nationale.interieur.gouv.fr/x", re_)
-    assert not url_allowed("https://www.interieur.gouv.fr/", re_)
-    assert not url_allowed("https://www.education.gouv.fr/", re_)
-    bl = build_whitelist("BL", "FR", exceptions)
+    assert url_allowed("https://martinique.port.fr/", mq)
+    assert not url_allowed("https://martinique.port.fr.example.com/", mq)
+    # Saint-Barthélemy (COM): its curated domains and bucket, not all of gouv.fr.
+    bl = build_whitelist("BL", "FR", exceptions, mrgid=48952)
     assert url_allowed("https://portdegustavia.fr/port-plaisance-gustavia/formalites-port-plaisance", bl)
-    assert not url_allowed("https://www.comstbarth.fr/", bl)  # unverifiable JS shell, not listed
-    nc = build_whitelist("NC", "FR", exceptions)
+    assert url_allowed("https://www.comstbarth.fr/", bl)  # territories.json official_domains
+    assert not url_allowed("https://www.education.gouv.fr/", bl)
+    nc = build_whitelist("NC", "FR", exceptions, mrgid=8312)
     assert url_allowed("https://noumeaport.nc/la-capitainerie/la-presentation/", nc)
     assert not url_allowed("https://noumeaport.nc.example.com/", nc)
-    # Tromelin uses France's list: taaf.fr is now official for mainland France too.
-    assert url_allowed("https://taaf.fr/acceder-aux-territoires/demande-de-visa/",
-                       build_whitelist(None, "FR", exceptions))
+    assert not url_allowed("https://www.interieur.gouv.fr/", nc)
+    # taaf.fr is official for Tromelin, no longer for mainland France.
+    taaf = "https://taaf.fr/acceder-aux-territoires/demande-de-visa/"
+    assert url_allowed(taaf, build_whitelist(None, "FR", exceptions, mrgid=48946))
+    assert not url_allowed(taaf, build_whitelist("FR", "FR", exceptions, mrgid=5677))
+    assert not url_allowed(taaf, build_whitelist(None, "FR", exceptions))
 
 
 def test_route_crosses_the_pilot_zones():

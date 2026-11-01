@@ -251,7 +251,7 @@ def test_example_hints_stay_on_the_polygon():
     assert "annexe I" in yt and "PPF" not in yt
     assert "pleasure craft" in gb and "Mayotte" not in gb
     assert poe.zone_search_lang(EXAMPLE_ZONES[21803]) is None
-    assert "legifrance.gouv.fr" in poe.build_whitelist("YT", "FR")
+    assert "legifrance.gouv.fr" in poe.build_whitelist("YT", "FR", mrgid=48944)
     assert "sintmaartengov.org" in poe.build_whitelist("SX", "NL")
     assert "government.nl" not in poe.build_whitelist("SX", "NL")
     qsx = poe.localized_query(EXAMPLE_ZONES[21803]) or ""
