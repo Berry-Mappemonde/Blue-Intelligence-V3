@@ -1,0 +1,182 @@
+{
+  "about": "Provenance of official domains for the route whitelist (docs/ROUTE-WHITELIST.md). Each zone lists the authorities a foreign yacht deals with on arrival (customs, immigration, maritime authority, port authority), one official URL each, and the source used to identify it. A domain marked added=true was added to poe_exceptions.json manual[whitelist_key] by this audit. Government and port-authority bodies only: no NGO, blog or commercial site.",
+  "checked": "2026-11-01",
+  "zones": {
+    "8416": {
+      "zone": "Saint Lucia",
+      "whitelist_key": "LC",
+      "authorities": [
+        {
+          "role": "customs",
+          "name": "Saint Lucia Customs & Excise Department (Ministry of Finance)",
+          "url": "https://www.customs.gov.lc/",
+          "domain": "gov.lc",
+          "added": false,
+          "source": "https://www.finance.gov.lc/departments/view/47"
+        },
+        {
+          "role": "immigration",
+          "name": "Immigration Department, Royal Saint Lucia Police Force",
+          "url": "https://www.rslpf.com/",
+          "domain": "rslpf.com",
+          "added": true,
+          "source": "https://externalaffairs.gov.lc/visiting-saint-lucia/"
+        },
+        {
+          "role": "immigration",
+          "name": "Government of Saint Lucia, Online Immigration & Customs Portal",
+          "url": "https://travelslu.govt.lc/en",
+          "domain": "govt.lc",
+          "added": true,
+          "source": "https://www.govt.lc/news/saint-lucia-introduces-a-more-seamless-entry-process-with-online-ed-form"
+        },
+        {
+          "role": "port_authority",
+          "name": "Saint Lucia Air and Sea Ports Authority (SLASPA), incl. Maritime Affairs",
+          "url": "https://storage.slaspa.com/contentPages/view/maritime-affairs",
+          "domain": "slaspa.com",
+          "added": true,
+          "source": "https://www.govt.lc/news/slaspa-online-appointment-system"
+        }
+      ]
+    },
+    "8362": {
+      "zone": "Cape Verde",
+      "whitelist_key": "CV",
+      "authorities": [
+        {
+          "role": "customs",
+          "name": "Direção Nacional de Receitas do Estado (Alfândegas), Ministério das Finanças",
+          "url": "https://www.mf.gov.cv/web/dnre",
+          "domain": "gov.cv",
+          "added": false,
+          "source": "https://www.mf.gov.cv/web/dnre/estrutura-organica"
+        },
+        {
+          "role": "immigration",
+          "name": "Direção de Estrangeiros e Fronteiras (DEF), Polícia Nacional",
+          "url": "http://def.policianacional.cv/dnn/VisaIS/VisaIS_Informacao",
+          "domain": "policianacional.cv",
+          "added": true,
+          "source": "https://aai.gov.cv/cat-geral/24-imigrantes/entrada-permanencia-e-saida-de-cabo-verde"
+        },
+        {
+          "role": "maritime_authority",
+          "name": "Instituto Marítimo e Portuário (IMP), Ministério do Mar",
+          "url": "https://www.imp.cv/",
+          "domain": "imp.cv",
+          "added": true,
+          "source": "https://www.governo.cv/primeiro-ministro-em-s-nicolau-jose-ulisses-correia-e-silva-inaugura-delegacao-maritima-do-imp-e-reforca-aposta-na-economia-do-mar/"
+        },
+        {
+          "role": "port_authority",
+          "name": "ENAPOR - Portos de Cabo Verde (state-owned port authority)",
+          "url": "https://www.enapor.cv/en_US/page/empresa",
+          "domain": "enapor.cv",
+          "added": true,
+          "source": "https://leap.unep.org/en/countries/cv/national-legislation/resolution-no-422014-approving-ports-general-concession-contract"
+        }
+      ]
+    },
+    "8364": {
+      "zone": "Canary Islands",
+      "whitelist_key": "ES",
+      "authorities": [
+        {
+          "role": "customs",
+          "name": "Agencia Estatal de Administración Tributaria - Departamento de Aduanas e Impuestos Especiales",
+          "url": "https://www.agenciatributaria.es/",
+          "domain": "agenciatributaria.es",
+          "added": false,
+          "source": "https://www.boe.es/buscar/act.php?id=BOE-A-2021-591"
+        },
+        {
+          "role": "immigration",
+          "name": "Policía Nacional - Comisaría General de Extranjería y Fronteras",
+          "url": "https://www.policia.es/_es/tupolicia_conocenos.php",
+          "domain": "policia.es",
+          "added": true,
+          "source": "https://www.interior.gob.es/opencms/es/detalle/articulo/Ignacio-Cosido-visita-CEFRONT-el-nuevo-Centro-Nacional-de-Coordinacion-de-Puestos-Fronterizos-de-la-Policia-Nacional/"
+        },
+        {
+          "role": "maritime_authority",
+          "name": "Sociedad de Salvamento y Seguridad Marítima (SASEMAR), Ministerio de Transportes",
+          "url": "https://www.salvamentomaritimo.es/conocenos",
+          "domain": "salvamentomaritimo.es",
+          "added": true,
+          "source": "https://sede.transportes.gob.es/grupo-transportes/sociedad-salvamento-seguridad-maritima-sasemar"
+        },
+        {
+          "role": "maritime_authority",
+          "name": "Puertos del Estado (state port system)",
+          "url": "https://www.puertos.es/en",
+          "domain": "puertos.es",
+          "added": true,
+          "source": "https://www.puertosdetenerife.org/en/port-authority-of-santa-cruz-de-tenerife/"
+        },
+        {
+          "role": "port_authority",
+          "name": "Autoridad Portuaria de Las Palmas (Las Palmas, Arrecife, Puerto del Rosario, Arinaga, Salinetas)",
+          "url": "https://www.palmasport.es/en/who-are-we/",
+          "domain": "palmasport.es",
+          "added": true,
+          "source": "https://www.puertos.es/system/files/2025-09/Memoria%20Anual%202024%20AP%20Las%20Palmas.pdf"
+        },
+        {
+          "role": "port_authority",
+          "name": "Autoridad Portuaria de Santa Cruz de Tenerife",
+          "url": "https://www.puertosdetenerife.org/en/port-authority-of-santa-cruz-de-tenerife/",
+          "domain": "puertosdetenerife.org",
+          "added": true,
+          "source": "https://www.puertos.es/en"
+        },
+        {
+          "role": "port_authority",
+          "name": "Puertos Canarios (regional ports and marinas, Gobierno de Canarias, Ley 14/2003)",
+          "url": "https://puertoscanarios.es/en/presentacion-en/",
+          "domain": "puertoscanarios.es",
+          "added": true,
+          "source": "https://www3.gobiernodecanarias.org/noticias/hemeroteca/ente-publico-empresarial-puertos-canarios-inicia-actividad/"
+        }
+      ]
+    },
+    "33178": {
+      "zone": "Martinique",
+      "whitelist_key": "MQ",
+      "authorities": [
+        {
+          "role": "customs",
+          "name": "Douane - Direction interrégionale Antilles-Guyane (clearance, entry/exit form)",
+          "url": "https://www.douane.gouv.fr/particuliers/vous-etes-en-outre-mer/martinique-preparer-son-arrivee-ou-son-retour-sur-le-territoire",
+          "domain": "douane.gouv.fr",
+          "added": true,
+          "source": "https://www.martinique.gouv.fr/Services-de-l-Etat/Finances-publiques-impots-et-douanes/Direction-interregionale-des-Douanes-Antilles-Guyane/Nouvelles-formalites-de-clearance-dans-les-iles-des-Antilles-francaises"
+        },
+        {
+          "role": "immigration",
+          "name": "Préfecture de la Martinique (services de l'État, contrôle aux frontières)",
+          "url": "https://www.martinique.gouv.fr/",
+          "domain": "martinique.gouv.fr",
+          "added": false,
+          "source": "https://www.douane.gouv.fr/particuliers/vous-naviguez/vous-naviguez-en-provenance-ou-destination-dun-pays-non-membre-de"
+        },
+        {
+          "role": "maritime_authority",
+          "name": "Direction de la mer de la Martinique (DM)",
+          "url": "https://www.dm.martinique.developpement-durable.gouv.fr/formalites-de-clearance-a707.html",
+          "domain": "martinique.developpement-durable.gouv.fr",
+          "added": true,
+          "source": "https://www.martinique.gouv.fr/Services-de-l-Etat/Mer-littoral-et-securite-maritime/DM/Formulaires-et-documentation-a-telecharger/Plaisance"
+        },
+        {
+          "role": "port_authority",
+          "name": "Grand Port Maritime de la Martinique (EPIC since 2013)",
+          "url": "https://www.martinique.port.fr/autorite_portuaire.aspx",
+          "domain": "martinique.port.fr",
+          "added": true,
+          "source": "https://atlantic-maritime-strategy.ec.europa.eu/en/partners/grand-port-maritime-de-la-martinique-martinique-hub-cara%C3%AFbe"
+        }
+      ]
+    }
+  }
+}
