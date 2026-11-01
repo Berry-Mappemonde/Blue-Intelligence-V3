@@ -15,6 +15,11 @@ not on the port document, because the run pipeline and /api/poe/verify read port
 Zetaris. ``lookup`` reads Mongo, or the snapshots in backend/data/sample/official_pages/
 in SAMPLE_MODE or when Mongo is unreachable; any other failure means no evidence, so a
 lookup can never make a port official on its own.
+
+A versioned run never writes ``poe_evidence``: ``store(db, records, run_id=...)`` puts
+the run's records in ``poe_run_evidence`` with their ``run_id`` (unique on run_id +
+mrgid + port_key + url). Live reads (``lookup``, /api/poe/verify) read
+``poe_evidence`` only, so run records never reach them.
 """
 from __future__ import annotations
 
@@ -28,6 +33,7 @@ from app.agents.evaluator import is_official_source
 from app.core import paths
 
 COLLECTION = "poe_evidence"
+RUN_COLLECTION = "poe_run_evidence"  # records written by a versioned run, with run_id
 MAX_PER_PORT = 3
 MONGO_TIMEOUT_MS = 2000
 SAMPLE_PAGES_DIR = paths.SAMPLE_DATA_DIR / "official_pages"
@@ -77,18 +83,32 @@ def documents_from_context(text: str | None, used_sources: list[dict]) -> list[d
             for url, body in registry_check.source_texts_from_context(text).items()]
 
 
-async def store(db, records: list[dict]) -> int:
-    """Upsert records (one per mrgid + port_key + url) and keep the newest MAX_PER_PORT per port."""
+async def store(db, records: list[dict], *, run_id: str | None = None) -> int:
+    """Upsert records (one per mrgid + port_key + url) and keep the newest MAX_PER_PORT per port.
+
+    With ``run_id`` (a versioned run) the records go to ``poe_run_evidence``, carry the
+    run_id and are keyed and pruned within that run; the shared ``poe_evidence`` is
+    never touched.
+    """
     if not records:
         return 0
-    coll = db[COLLECTION]
-    await coll.create_index([("mrgid", 1), ("port_key", 1), ("url", 1)], unique=True,
-                            name="mrgid_port_key_url")
+    if run_id is not None and not (isinstance(run_id, str) and run_id.strip()):
+        raise ValueError("run_id must be a non-empty string")
+    scope = {"run_id": run_id} if run_id else {}
+    if run_id:
+        coll = db[RUN_COLLECTION]
+        await coll.create_index([("run_id", 1), ("mrgid", 1), ("port_key", 1), ("url", 1)],
+                                unique=True, name="run_mrgid_port_key_url")
+    else:
+        coll = db[COLLECTION]
+        await coll.create_index([("mrgid", 1), ("port_key", 1), ("url", 1)], unique=True,
+                                name="mrgid_port_key_url")
     for record in records:
-        doc = {k: record.get(k) for k in RECORD_FIELDS}
-        await coll.update_one({k: doc[k] for k in ("mrgid", "port_key", "url")}, {"$set": doc}, upsert=True)
+        doc = {**{k: record.get(k) for k in RECORD_FIELDS}, **scope}
+        key = {**scope, **{k: doc[k] for k in ("mrgid", "port_key", "url")}}
+        await coll.update_one(key, {"$set": doc}, upsert=True)
     for mrgid, key in {(r["mrgid"], r["port_key"]) for r in records}:
-        stale = await coll.find({"mrgid": mrgid, "port_key": key}, {"_id": 1}) \
+        stale = await coll.find({**scope, "mrgid": mrgid, "port_key": key}, {"_id": 1}) \
             .sort("fetched_at", -1).skip(MAX_PER_PORT).to_list(100)
         if stale:
             await coll.delete_many({"_id": {"$in": [d["_id"] for d in stale]}})
@@ -117,7 +137,9 @@ def _mongo_records(mrgid: int) -> list[dict]:
                          socketTimeoutMS=MONGO_TIMEOUT_MS)
     try:
         coll = client[os.environ.get("DB_NAME") or "bi_local"][COLLECTION]
-        return list(coll.find({"mrgid": int(mrgid)}, {"_id": 0}).limit(500))
+        # A record written by a run is never live evidence.
+        return list(coll.find({"mrgid": int(mrgid), "run_id": {"$exists": False}},
+                              {"_id": 0}).limit(500))
     finally:
         client.close()
 

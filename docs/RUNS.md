@@ -2,8 +2,22 @@
 
 A run is one PoE generation pass over a set of EEZ zones. Mongo stays the
 source of truth (`poe_runs`, `poe_run_zones`, `poe_run_ports`,
-`poe_run_events`); live collections such as `poe_ports` are never written.
+`poe_run_events`, `poe_run_evidence`); live collections such as `poe_ports`
+are never written.
 Code: `backend/app/services/unified_runs.py`, `run_artifacts.py`, `poe_runs.py`.
+
+**What a run shares with live data.**
+
+- Evidence: official snippets found during a run go to `poe_run_evidence`,
+  each record with its `run_id` (unique on run_id + mrgid + port_key + url).
+  The shared `poe_evidence` is never written by a run. Live reads
+  (`evidence_store.lookup`, `/api/poe/verify`) read `poe_evidence` only and
+  skip any record that carries a `run_id`.
+- Geocoding cache: `geocode_cache` stays shared between runs and live
+  generation. It is a cache keyed on provider + query + country + limit
+  (Nominatim / GeoNames answers), not run output: a run may add entries and
+  reuse entries written by earlier runs or by live generation. Clearing it
+  only costs geocoder calls (Nominatim at most 1 request / 1.1 s).
 
 Each run also has a folder `backend/data/runs/<run_id>/` (`BI_RUNS_DIR` overrides the root):
 
@@ -13,6 +27,12 @@ Each run also has a folder `backend/data/runs/<run_id>/` (`BI_RUNS_DIR` override
   Each line is flushed and fsynced. A line torn by a crash is ignored with a
   warning when the trace is read.
 - `manifest.json`: rewritten atomically (temp file + rename) at start and at end.
+- `learned_exceptions.jsonl`: what zones learned during the run, one line per
+  zone and kind (`seed_urls`: official URLs that produced a catalogue; `auto`:
+  bootstrapped State domains), with `mrgid` and `iso2`. Outside a run these go
+  to `backend/data/poe_exceptions.json`; a run never writes that tracked file
+  (or any tracked file), so learned hints are not reused by later zones of the
+  same run. Promote them by hand after review if wanted.
 
 ## Start
 

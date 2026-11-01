@@ -32,11 +32,12 @@ GEO_OK = {"geocode_agree": True, "geocode_agreement_km": 0.2, "spatial_kind": "i
 def _docs():
     # Fort-de-France: one LLM reader -> C1, lifted to C2 by a verified "poe" (geocoders
     # 1.5 km apart, so it stops at C2).
-    # Le Marin: catalogue + agreeing geo -> C3, capped to C1 by "not_poe".
+    # Le Marin: LLM∩NER + agreeing geo -> C3, capped to C1 by "not_poe".
     return [
         {"name": "Fort-de-France", "source_urls": [URL], "extraction_engine": "llm",
          "confidence": 55, **GEO_OK, "geocode_agreement_km": 1.5},  # geo short of C3
-        {"name": "Le Marin", "source_urls": [URL], "extraction_engine": "catalog",
+        {"name": "Le Marin", "source_urls": [URL], "extraction_engine": "llm",
+         "extraction_agreement": True,
          "confidence": 80, **GEO_OK},
     ]
 
@@ -404,6 +405,7 @@ def _generate_harness(monkeypatch, extract_wants):
                 "judge": (poe._zone_extract.get() or {}).get("judge")}
 
     async def evidence(*args, **kwargs):
+        seen["evidence_run"] = kwargs.get("run")
         return 0
 
     class _Zones:
@@ -448,6 +450,8 @@ def test_generate_zone_judges_a_zone_whose_extraction_uses_the_whole_share(
     levels = {d["name"]: d["confidence_level"] for d in seen["docs"]}
     assert levels == {"Fort-de-France": "C2", "Le Marin": "C1"}
     assert tokenfactory.calls_taken("run-gen") == 4
+    # Evidence records are stored for this run (poe_run_evidence), not the shared collection.
+    assert seen["evidence_run"] is run
 
 
 def test_generate_zone_gives_the_reservation_back_on_error(monkeypatch):

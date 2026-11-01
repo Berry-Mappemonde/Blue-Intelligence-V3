@@ -641,6 +641,44 @@ def list_url_bonus(url: str) -> float:
     return score
 
 
+# Versioned run in progress for this zone (generate_zone_poe), else None. While set,
+# what the pipeline learns (seed URLs, bootstrapped State domains) goes to the run's
+# artifact folder, never to the tracked backend/data/poe_exceptions.json.
+_learning_run: ContextVar[str | None] = ContextVar("learning_run", default=None)
+LEARNED_NAME = "learned_exceptions.jsonl"
+_learned_lock = threading.Lock()
+
+
+def _record_learned(run_id: str, kind: str, zone: dict, values: list[str]) -> None:
+    """Append one line to runs/<run_id>/learned_exceptions.jsonl (gitignored run
+    folder, BI_RUNS_DIR overrides). Never raises: losing a hint must not fail a zone."""
+    from app.services import run_artifacts
+    line = json.dumps({"ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                       "kind": kind, "mrgid": zone.get("mrgid"),
+                       "iso2": polygon_iso2(zone) or None, "values": list(values)},
+                      ensure_ascii=False)
+    try:
+        path = run_artifacts.run_dir(run_id) / LEARNED_NAME
+        with _learned_lock:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with open(path, "a", encoding="utf-8") as fh:
+                fh.write(line + "\n")
+                fh.flush()
+    except Exception:
+        pass
+
+
+def _persist_learned(exc: dict, kind: str, zone: dict, values: list[str]) -> str:
+    """Keep what a zone learned: the run artifact in run mode, else poe_exceptions.json.
+    Returns where it went ("run" or "exceptions")."""
+    run_id = _learning_run.get()
+    if run_id:
+        _record_learned(run_id, kind, zone, values)
+        return "run"
+    save_exceptions(exc)
+    return "exceptions"
+
+
 def remember_seed_urls(zone: dict, urls: list[str], exceptions: dict | None = None,
                        persist: bool = True, max_per_country: int = 4) -> list[str]:
     """Remember official URLs that produced a catalog — the next EEZ of
@@ -662,7 +700,7 @@ def remember_seed_urls(zone: dict, urls: list[str], exceptions: dict | None = No
         bucket.append(u)
         added.append(u)
     if added and persist:
-        save_exceptions(exc)
+        _persist_learned(exc, "seed_urls", zone, added)
     return added
 
 
@@ -2385,8 +2423,9 @@ async def _find_sources(zone: dict, whitelist: list[str], exceptions: dict, log,
             for c in boot:
                 if c["domain"] not in auto:
                     auto.append(c["domain"])
-            save_exceptions(exceptions)
-            log(f"bootstrapping: {[c['domain'] for c in boot]} ajoutés à exceptions.json (auto)")
+            where = _persist_learned(exceptions, "auto", zone, [c["domain"] for c in boot])
+            log(f"bootstrapping: {[c['domain'] for c in boot]} ajoutés "
+                + ("aux artefacts du run (auto)" if where == "run" else "à exceptions.json (auto)"))
             await emit(rec, "bootstrap", domains=[c["domain"] for c in boot])
             official = boot
 
@@ -3195,13 +3234,17 @@ async def _judge_zone_run(zone: dict, docs: list[dict], raw: str, used_sources: 
 
 
 async def _store_evidence(db, zone: dict, docs: list[dict], raw: str,
-                          used_sources: list[dict], log, rec=None) -> int:
-    """Build evidence records from the collected official text and store them; never fails."""
+                          used_sources: list[dict], log, rec=None, run=None) -> int:
+    """Build evidence records from the collected official text and store them; never fails.
+
+    In run mode the records go to the run-scoped ``poe_run_evidence`` with the run_id,
+    never to the shared ``poe_evidence`` that live reads use."""
+    run_id = getattr(run, "run_id", None) if run is not None else None
     try:
         records = await asyncio.to_thread(lambda: evidence_store.build_records(
             zone.get("mrgid"), [d.get("name") for d in docs or []],
             evidence_store.documents_from_context(raw, used_sources)))
-        stored = await evidence_store.store(db, records)
+        stored = await evidence_store.store(db, records, run_id=run_id)
     except Exception as e:  # noqa: BLE001 — evidence is optional, generation must finish
         log(f"evidence: non stockée ({type(e).__name__}: {str(e)[:100]})")
         return 0
@@ -3258,6 +3301,7 @@ async def generate_zone_poe(db, mrgid: int, logger=None, force: bool = False,
     _tf_token = allow_tinyfish_fetch.set(variant == "tinyfish")
     _official_token = bind_official_reader(whitelist)
     _ctx_token = llm_context_chars.set(LLM_CONTEXT_CHARS)
+    _learn_token = _learning_run.set(run.run_id if run is not None else None)
     _budget = ExitStack()
     _budget.enter_context(zone_extract_budget())
     log(f"=== {name} (mrgid {mrgid}) — variant={variant} whitelist: {', '.join(whitelist[:8]) or 'vide'}")
@@ -3393,7 +3437,7 @@ async def generate_zone_poe(db, mrgid: int, logger=None, force: bool = False,
 
         # Official evidence records from the fetched text (never model output), stored for
         # the run pipeline and /api/poe/verify, which read ports from Zetaris.
-        await _store_evidence(db, zone, docs, raw, used_sources, log, rec)
+        await _store_evidence(db, zone, docs, raw, used_sources, log, rec, run=run)
 
         # 5. Write: confidence lives on each port, no longer a zone buffer.
         status = "ia" if docs else "erreur"
@@ -3414,6 +3458,7 @@ async def generate_zone_poe(db, mrgid: int, logger=None, force: bool = False,
     finally:
         _release_judge_call()  # zone ended before the judge used its reserved call
         _budget.close()
+        _learning_run.reset(_learn_token)
         llm_context_chars.reset(_ctx_token)
         allow_tinyfish_fetch.reset(_tf_token)
         from app.core.extract import official_url_fn
