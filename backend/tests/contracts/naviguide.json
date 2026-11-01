@@ -1,0 +1,2778 @@
+{
+ "about": "Response shape of the Blue Intelligence routes NAVIGUIDE (naviguide.fr) calls, with the query parameters its code sends, recorded on the production branch with the seeded offline harness (tests/contracts/naviguide_harness.py; app.main.app with ADMIN_KEY set as in production). A recorded key or feature property must not be removed, renamed or change JSON type, and the status must not change; new keys are allowed.",
+ "recorded_from": "feat/integrate-poe-pipeline@c811ab3",
+ "types": "string | number | boolean | null | object | array",
+ "routes": {
+  "poe_ports": {
+   "path": "/api/poe/ports",
+   "query": {
+    "mrgid": "{mrgid}"
+   },
+   "admin_key": false,
+   "status": 200,
+   "shape": {
+    "top": {
+     "type": "string",
+     "attribution": "string",
+     "features": "array"
+    },
+    "nested": {},
+    "features": {
+     "count_nonzero": true,
+     "geometry_types": [
+      "Point"
+     ],
+     "properties": {
+      "city": [
+       "string"
+      ],
+      "confidence": [
+       "number"
+      ],
+      "confidence_parts": [
+       "object"
+      ],
+      "confidence_reasons": [
+       "array"
+      ],
+      "country_iso2": [
+       "string"
+      ],
+      "distance_km": [
+       "number"
+      ],
+      "extracted_at": [
+       "string"
+      ],
+      "geocode_source": [
+       "string"
+      ],
+      "id": [
+       "string"
+      ],
+      "mrgid": [
+       "number"
+      ],
+      "name": [
+       "string"
+      ],
+      "note": [
+       "string"
+      ],
+      "osm_confidence": [
+       "null"
+      ],
+      "osm_tags": [
+       "null"
+      ],
+      "reasons_en": [
+       "array"
+      ],
+      "source_urls": [
+       "array"
+      ],
+      "spatial_anomaly": [
+       "null"
+      ],
+      "spatial_kind": [
+       "null"
+      ],
+      "url_bu": [
+       "null"
+      ],
+      "validated": [
+       "boolean"
+      ],
+      "zone_name": [
+       "string"
+      ]
+     }
+    }
+   }
+  },
+  "poe_zones_geojson": {
+   "path": "/api/poe/zones/geojson",
+   "query": {},
+   "admin_key": false,
+   "status": 200,
+   "shape": {
+    "top": {
+     "type": "string",
+     "attribution": "string",
+     "features": "array"
+    },
+    "nested": {},
+    "features": {
+     "count_nonzero": true,
+     "geometry_types": [
+      "MultiPolygon",
+      "Polygon"
+     ],
+     "properties": {
+      "geoname": [
+       "string"
+      ],
+      "iso2": [
+       "null",
+       "string"
+      ],
+      "mrgid": [
+       "number"
+      ],
+      "name": [
+       "string"
+      ],
+      "pol_type": [
+       "string"
+      ],
+      "sovereign": [
+       "string"
+      ]
+     }
+    }
+   }
+  },
+  "export_poe": {
+   "path": "/api/export/poe.geojson",
+   "query": {},
+   "admin_key": false,
+   "status": 200,
+   "shape": {
+    "top": {
+     "type": "string",
+     "attribution": "string",
+     "features": "array",
+     "metadata": "object"
+    },
+    "nested": {
+     "metadata": {
+      "dataset": "string",
+      "version": "string",
+      "generated_at": "string",
+      "count": "number",
+      "content_sha256": "string",
+      "generator": "string",
+      "disclaimer": "string",
+      "disclaimer_fr": "string",
+      "license": "string"
+     }
+    },
+    "features": {
+     "count_nonzero": true,
+     "geometry_types": [
+      "Point"
+     ],
+     "properties": {
+      "city": [
+       "null",
+       "string"
+      ],
+      "confidence": [
+       "number"
+      ],
+      "confidence_parts": [
+       "object"
+      ],
+      "confidence_reasons": [
+       "array"
+      ],
+      "country_iso2": [
+       "null",
+       "string"
+      ],
+      "distance_km": [
+       "number"
+      ],
+      "extracted_at": [
+       "string"
+      ],
+      "geocode_source": [
+       "string"
+      ],
+      "id": [
+       "string"
+      ],
+      "mrgid": [
+       "number"
+      ],
+      "name": [
+       "string"
+      ],
+      "note": [
+       "null",
+       "string"
+      ],
+      "osm_confidence": [
+       "null"
+      ],
+      "osm_tags": [
+       "null"
+      ],
+      "reasons_en": [
+       "array"
+      ],
+      "source_urls": [
+       "array"
+      ],
+      "spatial_anomaly": [
+       "null"
+      ],
+      "spatial_kind": [
+       "null"
+      ],
+      "url_bu": [
+       "null"
+      ],
+      "validated": [
+       "boolean"
+      ],
+      "zone_name": [
+       "string"
+      ]
+     }
+    }
+   }
+  },
+  "export_projects": {
+   "path": "/api/export/geojson",
+   "query": {},
+   "admin_key": false,
+   "status": 200,
+   "shape": {
+    "top": {
+     "type": "string",
+     "features": "array",
+     "metadata": "object"
+    },
+    "nested": {
+     "metadata": {
+      "dataset": "string",
+      "version": "string",
+      "generated_at": "string",
+      "count": "number",
+      "content_sha256": "string",
+      "generator": "string",
+      "disclaimer": "string",
+      "disclaimer_fr": "string",
+      "license": "string"
+     }
+    },
+    "features": {
+     "count_nonzero": true,
+     "geometry_types": [
+      "Point"
+     ],
+     "properties": {
+      "category": [
+       "null",
+       "string"
+      ],
+      "category_group": [
+       "string"
+      ],
+      "description": [
+       "string"
+      ],
+      "funder": [
+       "string"
+      ],
+      "id": [
+       "string"
+      ],
+      "image": [
+       "null",
+       "string"
+      ],
+      "location": [
+       "null",
+       "string"
+      ],
+      "s_ocean": [
+       "number"
+      ],
+      "snapped": [
+       "boolean"
+      ],
+      "title": [
+       "string"
+      ],
+      "url": [
+       "string"
+      ]
+     }
+    }
+   }
+  },
+  "export_science": {
+   "path": "/api/export/science.geojson",
+   "query": {},
+   "admin_key": false,
+   "status": 200,
+   "shape": {
+    "top": {
+     "type": "string",
+     "features": "array",
+     "attribution": "string"
+    },
+    "nested": {},
+    "features": {
+     "count_nonzero": true,
+     "geometry_types": [
+      "Point"
+     ],
+     "properties": {
+      "abstract": [
+       "string"
+      ],
+      "bbox": [
+       "array"
+      ],
+      "cycle": [
+       "number"
+      ],
+      "date": [
+       "string"
+      ],
+      "doi": [
+       "string"
+      ],
+      "end": [
+       "string"
+      ],
+      "error_m": [
+       "number"
+      ],
+      "fetched_at": [
+       "string"
+      ],
+      "id": [
+       "string"
+      ],
+      "kind": [
+       "string"
+      ],
+      "lat": [
+       "number"
+      ],
+      "lon": [
+       "number"
+      ],
+      "method": [
+       "string"
+      ],
+      "name": [
+       "string"
+      ],
+      "ocean": [
+       "string"
+      ],
+      "profile_date": [
+       "string"
+      ],
+      "provider": [
+       "string"
+      ],
+      "ship": [
+       "null"
+      ],
+      "source": [
+       "string"
+      ],
+      "start": [
+       "string"
+      ],
+      "url": [
+       "string"
+      ],
+      "wmo": [
+       "string"
+      ]
+     }
+    }
+   }
+  },
+  "export_marinas": {
+   "path": "/api/export/marinas.geojson",
+   "query": {},
+   "admin_key": false,
+   "status": 200,
+   "shape": {
+    "top": {
+     "type": "string",
+     "features": "array",
+     "attribution": "string",
+     "metadata": "object"
+    },
+    "nested": {
+     "metadata": {
+      "dataset": "string",
+      "version": "string",
+      "generated_at": "string",
+      "count": "number",
+      "content_sha256": "string",
+      "generator": "string",
+      "disclaimer": "string",
+      "disclaimer_fr": "string",
+      "license": "string"
+     }
+    },
+    "features": {
+     "count_nonzero": true,
+     "geometry_types": [
+      "Point"
+     ],
+     "properties": {
+      "fetched_at": [
+       "string"
+      ],
+      "has_google_place": [
+       "boolean"
+      ],
+      "id": [
+       "string"
+      ],
+      "image": [
+       "string"
+      ],
+      "maps_place_url": [
+       "string"
+      ],
+      "maps_url": [
+       "string"
+      ],
+      "name": [
+       "string"
+      ],
+      "osm_id": [
+       "string"
+      ],
+      "source": [
+       "string"
+      ],
+      "website": [
+       "string"
+      ],
+      "website_source": [
+       "string"
+      ],
+      "website_status": [
+       "string"
+      ]
+     }
+    }
+   }
+  },
+  "export_capitaineries": {
+   "path": "/api/export/capitaineries.geojson",
+   "query": {},
+   "admin_key": false,
+   "status": 200,
+   "shape": {
+    "top": {
+     "type": "string",
+     "features": "array",
+     "attribution": "string",
+     "metadata": "object"
+    },
+    "nested": {
+     "metadata": {
+      "dataset": "string",
+      "version": "string",
+      "generated_at": "string",
+      "count": "number",
+      "content_sha256": "string",
+      "generator": "string",
+      "disclaimer": "string",
+      "disclaimer_fr": "string",
+      "license": "string"
+     }
+    },
+    "features": {
+     "count_nonzero": true,
+     "geometry_types": [
+      "Point"
+     ],
+     "properties": {
+      "canal_vhf": [
+       "string"
+      ],
+      "fetched_at": [
+       "string"
+      ],
+      "id": [
+       "string"
+      ],
+      "kind": [
+       "string"
+      ],
+      "maps_url": [
+       "string"
+      ],
+      "name": [
+       "string"
+      ],
+      "noaa_id": [
+       "null"
+      ],
+      "osm_id": [
+       "string"
+      ],
+      "shom_id": [
+       "string"
+      ],
+      "source": [
+       "string"
+      ],
+      "sources": [
+       "array"
+      ],
+      "telephone": [
+       "string"
+      ],
+      "website": [
+       "string"
+      ]
+     }
+    }
+   }
+  },
+  "export_amp": {
+   "path": "/api/export/amp.geojson",
+   "query": {},
+   "admin_key": false,
+   "status": 200,
+   "shape": {
+    "top": {
+     "type": "string",
+     "features": "array",
+     "name": "string",
+     "note": "string",
+     "metadata": "object"
+    },
+    "nested": {
+     "metadata": {
+      "dataset": "string",
+      "version": "string",
+      "generated_at": "string",
+      "count": "number",
+      "content_sha256": "string",
+      "generator": "string",
+      "disclaimer": "string",
+      "disclaimer_fr": "string",
+      "license": "string"
+     }
+    },
+    "features": {
+     "count_nonzero": true,
+     "geometry_types": [
+      "Point"
+     ],
+     "properties": {
+      "category_name": [
+       "string"
+      ],
+      "country": [
+       "string"
+      ],
+      "designation": [
+       "string"
+      ],
+      "enriched_at": [
+       "string"
+      ],
+      "entry": [
+       "number"
+      ],
+      "fetched_at": [
+       "string"
+      ],
+      "gov_level": [
+       "string"
+      ],
+      "id": [
+       "string"
+      ],
+      "iucn_cat": [
+       "string"
+      ],
+      "lat": [
+       "number"
+      ],
+      "lfp": [
+       "number"
+      ],
+      "lon": [
+       "number"
+      ],
+      "manager_url": [
+       "string"
+      ],
+      "managing_authority": [
+       "string"
+      ],
+      "name": [
+       "string"
+      ],
+      "purpose": [
+       "string"
+      ],
+      "site_id": [
+       "string"
+      ],
+      "speed": [
+       "number"
+      ],
+      "state": [
+       "string"
+      ],
+      "visit_url": [
+       "string"
+      ],
+      "visit_url_source": [
+       "string"
+      ],
+      "visit_url_status": [
+       "string"
+      ],
+      "wdpa_id": [
+       "string"
+      ],
+      "year_est": [
+       "number"
+      ]
+     }
+    }
+   }
+  },
+  "export_route": {
+   "path": "/api/export/route.geojson",
+   "query": {},
+   "admin_key": false,
+   "status": 200,
+   "shape": {
+    "top": {
+     "type": "string",
+     "name": "string",
+     "features": "array",
+     "metadata": "object"
+    },
+    "nested": {
+     "metadata": {
+      "dataset": "string",
+      "version": "string",
+      "generated_at": "string",
+      "count": "number",
+      "content_sha256": "string",
+      "generator": "string",
+      "disclaimer": "string",
+      "disclaimer_fr": "string",
+      "license": "string"
+     }
+    },
+    "features": {
+     "count_nonzero": true,
+     "geometry_types": [
+      "LineString",
+      "Point"
+     ],
+     "properties": {
+      "antimeridian_part": [
+       "number"
+      ],
+      "from": [
+       "string"
+      ],
+      "name": [
+       "string"
+      ],
+      "point_type": [
+       "string"
+      ],
+      "to": [
+       "string"
+      ],
+      "type": [
+       "string"
+      ]
+     }
+    }
+   }
+  },
+  "export_anchorages": {
+   "path": "/api/export/anchorages.geojson",
+   "query": {},
+   "admin_key": false,
+   "status": 200,
+   "shape": {
+    "top": {
+     "type": "string",
+     "features": "array",
+     "metadata": "object"
+    },
+    "nested": {
+     "metadata": {
+      "dataset": "string",
+      "version": "string",
+      "generated_at": "string",
+      "count": "number",
+      "content_sha256": "string",
+      "generator": "string",
+      "disclaimer": "string",
+      "disclaimer_fr": "string",
+      "license": "string"
+     }
+    },
+    "features": {
+     "count_nonzero": true,
+     "geometry_types": [
+      "Point"
+     ],
+     "properties": {
+      "anchorage_type": [
+       "string"
+      ],
+      "fetched_at": [
+       "string"
+      ],
+      "id": [
+       "string"
+      ],
+      "name": [
+       "string"
+      ],
+      "nearest_waypoint": [
+       "object"
+      ],
+      "osm_id": [
+       "string"
+      ],
+      "priority": [
+       "number"
+      ],
+      "source": [
+       "string"
+      ],
+      "stale": [
+       "boolean"
+      ],
+      "tags": [
+       "object"
+      ]
+     }
+    }
+   }
+  },
+  "export_noaa_aids": {
+   "path": "/api/export/noaa-aids.geojson",
+   "query": {},
+   "admin_key": false,
+   "status": 200,
+   "shape": {
+    "top": {
+     "type": "string",
+     "features": "array",
+     "metadata": "object"
+    },
+    "nested": {
+     "metadata": {
+      "dataset": "string",
+      "version": "string",
+      "generated_at": "string",
+      "count": "number",
+      "content_sha256": "string",
+      "generator": "string",
+      "disclaimer": "string",
+      "disclaimer_fr": "string",
+      "license": "string"
+     }
+    },
+    "features": {
+     "count_nonzero": true,
+     "geometry_types": [
+      "Point"
+     ],
+     "properties": {
+      "id": [
+       "string"
+      ],
+      "kind": [
+       "string"
+      ],
+      "name": [
+       "string"
+      ],
+      "service": [
+       "string"
+      ],
+      "source": [
+       "string"
+      ]
+     }
+    }
+   }
+  },
+  "marinas": {
+   "path": "/api/marinas",
+   "query": {},
+   "admin_key": false,
+   "status": 200,
+   "shape": {
+    "top": {
+     "type": "string",
+     "features": "array",
+     "attribution": "string"
+    },
+    "nested": {},
+    "features": {
+     "count_nonzero": true,
+     "geometry_types": [
+      "Point"
+     ],
+     "properties": {
+      "fetched_at": [
+       "string"
+      ],
+      "has_google_place": [
+       "boolean"
+      ],
+      "id": [
+       "string"
+      ],
+      "image": [
+       "string"
+      ],
+      "maps_place_url": [
+       "string"
+      ],
+      "maps_url": [
+       "string"
+      ],
+      "name": [
+       "string"
+      ],
+      "osm_id": [
+       "string"
+      ],
+      "source": [
+       "string"
+      ],
+      "website": [
+       "string"
+      ],
+      "website_source": [
+       "string"
+      ],
+      "website_status": [
+       "string"
+      ]
+     }
+    }
+   }
+  },
+  "capitaineries": {
+   "path": "/api/capitaineries",
+   "query": {},
+   "admin_key": false,
+   "status": 200,
+   "shape": {
+    "top": {
+     "type": "string",
+     "features": "array",
+     "attribution": "string"
+    },
+    "nested": {},
+    "features": {
+     "count_nonzero": true,
+     "geometry_types": [
+      "Point"
+     ],
+     "properties": {
+      "canal_vhf": [
+       "string"
+      ],
+      "fetched_at": [
+       "string"
+      ],
+      "id": [
+       "string"
+      ],
+      "kind": [
+       "string"
+      ],
+      "maps_url": [
+       "string"
+      ],
+      "name": [
+       "string"
+      ],
+      "noaa_id": [
+       "null"
+      ],
+      "osm_id": [
+       "string"
+      ],
+      "shom_id": [
+       "string"
+      ],
+      "source": [
+       "string"
+      ],
+      "sources": [
+       "array"
+      ],
+      "telephone": [
+       "string"
+      ],
+      "website": [
+       "string"
+      ]
+     }
+    }
+   }
+  },
+  "anchorages": {
+   "path": "/api/anchorages",
+   "query": {},
+   "admin_key": false,
+   "status": 200,
+   "shape": {
+    "top": {
+     "type": "string",
+     "features": "array"
+    },
+    "nested": {},
+    "features": {
+     "count_nonzero": true,
+     "geometry_types": [
+      "Point"
+     ],
+     "properties": {
+      "anchorage_type": [
+       "string"
+      ],
+      "fetched_at": [
+       "string"
+      ],
+      "id": [
+       "string"
+      ],
+      "name": [
+       "string"
+      ],
+      "nearest_waypoint": [
+       "object"
+      ],
+      "osm_id": [
+       "string"
+      ],
+      "priority": [
+       "number"
+      ],
+      "source": [
+       "string"
+      ],
+      "stale": [
+       "boolean"
+      ],
+      "tags": [
+       "object"
+      ]
+     }
+    }
+   }
+  },
+  "noaa_aids": {
+   "path": "/api/noaa/aids",
+   "query": {
+    "bbox": "-74.3,40.3,-73.6,40.9"
+   },
+   "admin_key": false,
+   "status": 200,
+   "shape": {
+    "top": {
+     "type": "string",
+     "features": "array",
+     "metadata": "object"
+    },
+    "nested": {
+     "metadata": {
+      "dataset": "string",
+      "version": "string",
+      "generated_at": "string",
+      "count": "number",
+      "content_sha256": "string",
+      "generator": "string",
+      "disclaimer": "string",
+      "disclaimer_fr": "string",
+      "license": "string"
+     }
+    },
+    "features": {
+     "count_nonzero": true,
+     "geometry_types": [
+      "Point"
+     ],
+     "properties": {
+      "id": [
+       "string"
+      ],
+      "kind": [
+       "string"
+      ],
+      "name": [
+       "string"
+      ],
+      "service": [
+       "string"
+      ],
+      "source": [
+       "string"
+      ]
+     }
+    }
+   }
+  },
+  "depth": {
+   "path": "/api/depth",
+   "query": {
+    "lat": 14.6,
+    "lon": -61.07
+   },
+   "admin_key": false,
+   "status": 200,
+   "shape": {
+    "top": {
+     "lat": "number",
+     "lon": "number",
+     "depth_m": "number",
+     "on_land": "boolean",
+     "source": "string",
+     "cached": "boolean"
+    },
+    "nested": {}
+   }
+  },
+  "amp": {
+   "path": "/api/amp",
+   "query": {
+    "bbox": "-61.3,14.3,-60.8,14.9"
+   },
+   "admin_key": false,
+   "status": 200,
+   "shape": {
+    "top": {
+     "type": "string",
+     "features": "array",
+     "hint": "null",
+     "source": "string",
+     "truncated": "boolean",
+     "fetched": "number",
+     "error": "null"
+    },
+    "nested": {},
+    "features": {
+     "count_nonzero": true,
+     "geometry_types": [
+      "Polygon"
+     ],
+     "properties": {
+      "category_name": [
+       "string"
+      ],
+      "country": [
+       "string"
+      ],
+      "designation": [
+       "string"
+      ],
+      "enriched_at": [
+       "string"
+      ],
+      "entry": [
+       "number"
+      ],
+      "fetched_at": [
+       "string"
+      ],
+      "gov_level": [
+       "string"
+      ],
+      "id": [
+       "string"
+      ],
+      "iucn_cat": [
+       "string"
+      ],
+      "lat": [
+       "number"
+      ],
+      "lfp": [
+       "number"
+      ],
+      "lon": [
+       "number"
+      ],
+      "manager_url": [
+       "string"
+      ],
+      "managing_authority": [
+       "string"
+      ],
+      "name": [
+       "string"
+      ],
+      "purpose": [
+       "string"
+      ],
+      "site_id": [
+       "string"
+      ],
+      "speed": [
+       "number"
+      ],
+      "state": [
+       "string"
+      ],
+      "visit_url": [
+       "string"
+      ],
+      "visit_url_source": [
+       "string"
+      ],
+      "visit_url_status": [
+       "string"
+      ],
+      "wdpa_id": [
+       "string"
+      ],
+      "year_est": [
+       "number"
+      ]
+     }
+    }
+   }
+  },
+  "amp_stats": {
+   "path": "/api/amp/stats",
+   "query": {},
+   "admin_key": false,
+   "status": 200,
+   "shape": {
+    "top": {
+     "mode": "string",
+     "total": "number",
+     "with_manager_url": "number",
+     "with_visit_url": "number",
+     "visit_coverage": "number",
+     "items_mapped": "number"
+    },
+    "nested": {}
+   }
+  },
+  "amp_nogo": {
+   "path": "/api/amp/nogo",
+   "query": {},
+   "admin_key": false,
+   "status": 200,
+   "shape": {
+    "top": {
+     "type": "string",
+     "features": "array",
+     "name": "string",
+     "note": "string",
+     "count": "number"
+    },
+    "nested": {},
+    "features": {
+     "count_nonzero": true,
+     "geometry_types": [
+      "Polygon"
+     ],
+     "properties": {
+      "category_name": [
+       "string"
+      ],
+      "country": [
+       "string"
+      ],
+      "designation": [
+       "string"
+      ],
+      "enriched_at": [
+       "string"
+      ],
+      "entry": [
+       "number"
+      ],
+      "fetched_at": [
+       "string"
+      ],
+      "gov_level": [
+       "string"
+      ],
+      "id": [
+       "string"
+      ],
+      "iucn_cat": [
+       "string"
+      ],
+      "lat": [
+       "number"
+      ],
+      "lfp": [
+       "number"
+      ],
+      "lon": [
+       "number"
+      ],
+      "manager_url": [
+       "string"
+      ],
+      "managing_authority": [
+       "string"
+      ],
+      "name": [
+       "string"
+      ],
+      "purpose": [
+       "string"
+      ],
+      "site_id": [
+       "string"
+      ],
+      "speed": [
+       "number"
+      ],
+      "state": [
+       "string"
+      ],
+      "visit_url": [
+       "string"
+      ],
+      "visit_url_source": [
+       "string"
+      ],
+      "visit_url_status": [
+       "string"
+      ],
+      "wdpa_id": [
+       "string"
+      ],
+      "year_est": [
+       "number"
+      ]
+     }
+    }
+   }
+  },
+  "amp_site": {
+   "path": "/api/amp/sites/amp-1",
+   "query": {},
+   "admin_key": false,
+   "status": 200,
+   "shape": {
+    "top": {
+     "kind": "string",
+     "id": "string",
+     "site_id": "string",
+     "name": "string",
+     "country": "string",
+     "state": "string",
+     "designation": "string",
+     "category_name": "string",
+     "iucn_cat": "string",
+     "purpose": "string",
+     "lfp": "number",
+     "entry": "number",
+     "speed": "number",
+     "managing_authority": "string",
+     "gov_level": "string",
+     "wdpa_id": "string",
+     "year_est": "number",
+     "manager_url": "string",
+     "visit_url": "string",
+     "visit_url_status": "string",
+     "visit_url_source": "string",
+     "lat": "number",
+     "lon": "number",
+     "fetched_at": "string",
+     "enriched_at": "string",
+     "wrote_amp_sites": "boolean"
+    },
+    "nested": {}
+   }
+  },
+  "review_fiche_eez": {
+   "path": "/api/review/fiche",
+   "query": {
+    "kind": "eez",
+    "id": "{mrgid}"
+   },
+   "admin_key": true,
+   "status": 200,
+   "shape": {
+    "top": {
+     "kind": "string",
+     "run_id": "string",
+     "id": "string",
+     "fiche": "object",
+     "comment": "string",
+     "comment_updated_at": "null",
+     "pre_gold": "boolean",
+     "gold_on": "boolean",
+     "choices": "object",
+     "gold_ready": "boolean",
+     "wrote_projects": "boolean",
+     "wrote_poe_ports": "boolean",
+     "wrote_marinas": "boolean",
+     "wrote_capitaineries": "boolean",
+     "wrote_amp_sites": "boolean"
+    },
+    "nested": {
+     "fiche": {
+      "mrgid": "number",
+      "name": "string",
+      "label": "string",
+      "qualifier": "null",
+      "qualifier_key": "null",
+      "disambiguated": "boolean",
+      "geoname": "string",
+      "sovereign": "string",
+      "iso2": "string",
+      "sov_iso2": "null",
+      "pol_type": "string",
+      "area_km2": "null",
+      "bbox": "array",
+      "anchor": "array",
+      "status": "string",
+      "poe_count": "number",
+      "generated_at": "null",
+      "stale": "boolean",
+      "last_error": "null",
+      "unclos": "null",
+      "sources_official": "null",
+      "confidence_avg": "null",
+      "sources": "array",
+      "whitelist": "array",
+      "url_td": "null",
+      "sources_td": "array",
+      "sources_bu": "array",
+      "sources_td_total": "number",
+      "sources_bu_total": "number",
+      "urls": "array",
+      "kind": "string",
+      "ports": "array",
+      "wrote_poe_ports": "boolean",
+      "crawled": "boolean",
+      "fiche_scope": "string",
+      "review_kind": "string",
+      "id": "string"
+     },
+     "choices": {
+      "td": "object",
+      "ports": "object",
+      "bu": "object",
+      "urls": "object",
+      "sites": "object",
+      "fields": "object",
+      "visit": "object",
+      "identity": "null",
+      "gps": "null",
+      "overlay": "null",
+      "no_visit": "boolean",
+      "gps_edit": "object"
+     }
+    }
+   }
+  },
+  "review_fiche_eez_no_key": {
+   "path": "/api/review/fiche",
+   "query": {
+    "kind": "eez",
+    "id": "{mrgid}"
+   },
+   "admin_key": false,
+   "status": 401,
+   "shape": {
+    "top": {
+     "detail": "string"
+    },
+    "nested": {}
+   }
+  },
+  "review_fiche_amp": {
+   "path": "/api/review/fiche",
+   "query": {
+    "kind": "amp",
+    "id": "amp-1"
+   },
+   "admin_key": true,
+   "status": 200,
+   "shape": {
+    "top": {
+     "kind": "string",
+     "run_id": "string",
+     "id": "string",
+     "fiche": "object",
+     "comment": "string",
+     "comment_updated_at": "null",
+     "pre_gold": "boolean",
+     "gold_on": "boolean",
+     "choices": "object",
+     "gold_ready": "boolean",
+     "wrote_projects": "boolean",
+     "wrote_poe_ports": "boolean",
+     "wrote_marinas": "boolean",
+     "wrote_capitaineries": "boolean",
+     "wrote_amp_sites": "boolean"
+    },
+    "nested": {
+     "fiche": {
+      "kind": "string",
+      "review_kind": "string",
+      "id": "string",
+      "site_id": "string",
+      "name": "string",
+      "country": "string",
+      "state": "string",
+      "designation": "string",
+      "category_name": "string",
+      "iucn_cat": "string",
+      "purpose": "string",
+      "lfp": "number",
+      "entry": "number",
+      "speed": "number",
+      "managing_authority": "string",
+      "gov_level": "string",
+      "wdpa_id": "string",
+      "year_est": "number",
+      "manager_url": "string",
+      "visit_url": "string",
+      "visit_url_status": "string",
+      "visit_url_source": "string",
+      "lat": "number",
+      "lon": "number",
+      "fetched_at": "string",
+      "enriched_at": "string",
+      "visit_candidates": "array",
+      "wrote_amp_sites": "boolean"
+     },
+     "choices": {
+      "td": "object",
+      "ports": "object",
+      "bu": "object",
+      "urls": "object",
+      "sites": "object",
+      "fields": "object",
+      "visit": "object",
+      "identity": "null",
+      "gps": "null",
+      "overlay": "null",
+      "no_visit": "boolean",
+      "gps_edit": "object"
+     }
+    }
+   }
+  },
+  "review_fiche_amp_no_key": {
+   "path": "/api/review/fiche",
+   "query": {
+    "kind": "amp",
+    "id": "amp-1"
+   },
+   "admin_key": false,
+   "status": 401,
+   "shape": {
+    "top": {
+     "detail": "string"
+    },
+    "nested": {}
+   }
+  },
+  "climatology_meta": {
+   "path": "/api/climatology/meta",
+   "query": {},
+   "admin_key": false,
+   "status": 200,
+   "shape": {
+    "top": {
+     "kind": "string",
+     "month": "number",
+     "period": "string",
+     "periods": "object",
+     "provenance": "object",
+     "source_ids": "array",
+     "doi": "object",
+     "snapshot": "object",
+     "attribution": "object",
+     "disclaimer": "string",
+     "disclaimer_fr": "string",
+     "review": "boolean",
+     "products": "object"
+    },
+    "nested": {
+     "periods": {
+      "wind": "string",
+      "wave": "string",
+      "current": "string",
+      "cyclone": "string"
+     },
+     "provenance": {
+      "wind": "string",
+      "wind_average": "string",
+      "wave": "string",
+      "current": "string",
+      "cyclone": "string"
+     },
+     "doi": {
+      "wind": "string",
+      "wave": "string",
+      "current": "string"
+     },
+     "snapshot": {
+      "wind": "boolean",
+      "wave": "boolean",
+      "current": "boolean",
+      "cyclones": "boolean",
+      "wind_stat": "string",
+      "wave_stat": "string"
+     },
+     "attribution": {
+      "cmems": "string",
+      "ibtracs": "string"
+     },
+     "products": {
+      "wind": "object",
+      "wave": "object",
+      "current": "object",
+      "cyclone": "object"
+     }
+    }
+   }
+  },
+  "climatology_point": {
+   "path": "/api/climatology/point",
+   "query": {
+    "lat": 14.6,
+    "lon": -61.0,
+    "month": 1
+   },
+   "admin_key": false,
+   "status": 200,
+   "shape": {
+    "top": {
+     "kind": "string",
+     "month": "number",
+     "period": "string",
+     "provenance": "object",
+     "periods": "object",
+     "coordinates": "object",
+     "snapshot": "object",
+     "disclaimer": "string",
+     "disclaimer_fr": "string",
+     "wind_atlas": "null",
+     "wave": "null",
+     "current": "null",
+     "cyclone": "object"
+    },
+    "nested": {
+     "provenance": {
+      "wind": "string",
+      "wind_average": "string",
+      "wave": "string",
+      "current": "string",
+      "cyclone": "string"
+     },
+     "periods": {
+      "wind": "string",
+      "wave": "string",
+      "current": "string",
+      "cyclone": "string"
+     },
+     "coordinates": {
+      "latitude": "number",
+      "longitude": "number",
+      "cell_selection": "string"
+     },
+     "snapshot": {
+      "wind": "boolean",
+      "wave": "boolean",
+      "current": "boolean",
+      "cyclones": "boolean",
+      "wind_stat": "string",
+      "wave_stat": "string"
+     },
+     "cyclone": {
+      "tracks_in_month": "number",
+      "nearby": "number",
+      "crossings_if_leg": "null"
+     }
+    }
+   }
+  },
+  "climatology_point_dest": {
+   "path": "/api/climatology/point",
+   "query": {
+    "lat": 14.6,
+    "lon": -61.0,
+    "month": 1,
+    "dest_lat": 16.2,
+    "dest_lon": -61.5
+   },
+   "admin_key": false,
+   "status": 200,
+   "shape": {
+    "top": {
+     "kind": "string",
+     "month": "number",
+     "period": "string",
+     "provenance": "object",
+     "periods": "object",
+     "coordinates": "object",
+     "snapshot": "object",
+     "disclaimer": "string",
+     "disclaimer_fr": "string",
+     "wind_atlas": "null",
+     "wave": "null",
+     "current": "null",
+     "cyclone": "object"
+    },
+    "nested": {
+     "provenance": {
+      "wind": "string",
+      "wind_average": "string",
+      "wave": "string",
+      "current": "string",
+      "cyclone": "string"
+     },
+     "periods": {
+      "wind": "string",
+      "wave": "string",
+      "current": "string",
+      "cyclone": "string"
+     },
+     "coordinates": {
+      "latitude": "number",
+      "longitude": "number",
+      "cell_selection": "string"
+     },
+     "snapshot": {
+      "wind": "boolean",
+      "wave": "boolean",
+      "current": "boolean",
+      "cyclones": "boolean",
+      "wind_stat": "string",
+      "wave_stat": "string"
+     },
+     "cyclone": {
+      "tracks_in_month": "number",
+      "nearby": "number",
+      "crossings_if_leg": "object"
+     }
+    }
+   }
+  },
+  "climatology_point_day": {
+   "path": "/api/climatology/point",
+   "query": {
+    "lat": 14.6,
+    "lon": -61.0,
+    "month": 9,
+    "day": 15
+   },
+   "admin_key": false,
+   "status": 200,
+   "shape": {
+    "top": {
+     "kind": "string",
+     "month": "number",
+     "period": "string",
+     "provenance": "object",
+     "periods": "object",
+     "coordinates": "object",
+     "snapshot": "object",
+     "disclaimer": "string",
+     "disclaimer_fr": "string",
+     "wind_atlas": "null",
+     "wave": "null",
+     "current": "null",
+     "cyclone": "object"
+    },
+    "nested": {
+     "provenance": {
+      "wind": "string",
+      "wind_average": "string",
+      "wave": "string",
+      "current": "string",
+      "cyclone": "string"
+     },
+     "periods": {
+      "wind": "string",
+      "wave": "string",
+      "current": "string",
+      "cyclone": "string"
+     },
+     "coordinates": {
+      "latitude": "number",
+      "longitude": "number",
+      "cell_selection": "string"
+     },
+     "snapshot": {
+      "wind": "boolean",
+      "wave": "boolean",
+      "current": "boolean",
+      "cyclones": "boolean",
+      "wind_stat": "string",
+      "wave_stat": "string"
+     },
+     "cyclone": {
+      "tracks_in_month": "number",
+      "nearby": "number",
+      "crossings_if_leg": "null"
+     }
+    }
+   }
+  },
+  "climatology_point_dest_day": {
+   "path": "/api/climatology/point",
+   "query": {
+    "lat": 14.6,
+    "lon": -61.0,
+    "month": 9,
+    "day": 15,
+    "dest_lat": 16.2,
+    "dest_lon": -61.5
+   },
+   "admin_key": false,
+   "status": 200,
+   "shape": {
+    "top": {
+     "kind": "string",
+     "month": "number",
+     "period": "string",
+     "provenance": "object",
+     "periods": "object",
+     "coordinates": "object",
+     "snapshot": "object",
+     "disclaimer": "string",
+     "disclaimer_fr": "string",
+     "wind_atlas": "null",
+     "wave": "null",
+     "current": "null",
+     "cyclone": "object"
+    },
+    "nested": {
+     "provenance": {
+      "wind": "string",
+      "wind_average": "string",
+      "wave": "string",
+      "current": "string",
+      "cyclone": "string"
+     },
+     "periods": {
+      "wind": "string",
+      "wave": "string",
+      "current": "string",
+      "cyclone": "string"
+     },
+     "coordinates": {
+      "latitude": "number",
+      "longitude": "number",
+      "cell_selection": "string"
+     },
+     "snapshot": {
+      "wind": "boolean",
+      "wave": "boolean",
+      "current": "boolean",
+      "cyclones": "boolean",
+      "wind_stat": "string",
+      "wave_stat": "string"
+     },
+     "cyclone": {
+      "tracks_in_month": "number",
+      "nearby": "number",
+      "crossings_if_leg": "object"
+     }
+    }
+   }
+  },
+  "climatology_crossings": {
+   "path": "/api/climatology/crossings",
+   "query": {
+    "lat1": 14.6,
+    "lon1": -61.0,
+    "lat2": 16.2,
+    "lon2": -61.5,
+    "month": 9
+   },
+   "admin_key": false,
+   "status": 200,
+   "shape": {
+    "top": {
+     "kind": "string",
+     "count": "number",
+     "storms": "array",
+     "month": "number",
+     "dayrange": "number",
+     "radius_nm": "number",
+     "period": "string",
+     "source": "string",
+     "snapshot_present": "boolean"
+    },
+    "nested": {}
+   }
+  },
+  "climatology_crossings_day": {
+   "path": "/api/climatology/crossings",
+   "query": {
+    "lat1": 14.6,
+    "lon1": -61.0,
+    "lat2": 16.2,
+    "lon2": -61.5,
+    "month": 9,
+    "day": 15
+   },
+   "admin_key": false,
+   "status": 200,
+   "shape": {
+    "top": {
+     "kind": "string",
+     "count": "number",
+     "storms": "array",
+     "month": "number",
+     "dayrange": "number",
+     "radius_nm": "number",
+     "period": "string",
+     "source": "string",
+     "snapshot_present": "boolean"
+    },
+    "nested": {}
+   }
+  },
+  "climatology_wind": {
+   "path": "/api/climatology/wind.geojson",
+   "query": {
+    "month": 1
+   },
+   "admin_key": false,
+   "status": 200,
+   "shape": {
+    "top": {
+     "type": "string",
+     "features": "array",
+     "attribution": "string",
+     "metadata": "object"
+    },
+    "nested": {
+     "metadata": {
+      "dataset": "string",
+      "version": "string",
+      "generated_at": "string",
+      "count": "number",
+      "content_sha256": "string",
+      "generator": "string",
+      "disclaimer": "string",
+      "disclaimer_fr": "string",
+      "license": "string",
+      "period": "string",
+      "month": "number",
+      "source_ids": "array",
+      "doi": "string",
+      "kind": "string",
+      "grid_spacing_deg": "number",
+      "snapshot_present": "boolean",
+      "stat": "string"
+     }
+    },
+    "features": {
+     "count_nonzero": true,
+     "geometry_types": [
+      "Point"
+     ],
+     "properties": {
+      "calm_pct": [
+       "number"
+      ],
+      "directions_from": [
+       "array"
+      ],
+      "gale_pct": [
+       "number"
+      ],
+      "kind": [
+       "string"
+      ],
+      "month": [
+       "number"
+      ],
+      "sample_count": [
+       "number"
+      ],
+      "stat": [
+       "string"
+      ],
+      "vector_mean_from_deg": [
+       "number"
+      ],
+      "vector_mean_knots": [
+       "number"
+      ],
+      "wind_direction_from_deg": [
+       "number"
+      ],
+      "wind_speed_knots": [
+       "number"
+      ]
+     }
+    }
+   }
+  },
+  "climatology_wind_fallback": {
+   "path": "/api/climatology/wind.geojson",
+   "query": {
+    "month": 1,
+    "spacing_deg": 4
+   },
+   "admin_key": false,
+   "status": 200,
+   "shape": {
+    "top": {
+     "type": "string",
+     "features": "array",
+     "attribution": "string",
+     "metadata": "object"
+    },
+    "nested": {
+     "metadata": {
+      "dataset": "string",
+      "version": "string",
+      "generated_at": "string",
+      "count": "number",
+      "content_sha256": "string",
+      "generator": "string",
+      "disclaimer": "string",
+      "disclaimer_fr": "string",
+      "license": "string",
+      "period": "string",
+      "month": "number",
+      "source_ids": "array",
+      "doi": "string",
+      "kind": "string",
+      "grid_spacing_deg": "number",
+      "snapshot_present": "boolean",
+      "stat": "string"
+     }
+    },
+    "features": {
+     "count_nonzero": true,
+     "geometry_types": [
+      "Point"
+     ],
+     "properties": {
+      "calm_pct": [
+       "number"
+      ],
+      "directions_from": [
+       "array"
+      ],
+      "gale_pct": [
+       "number"
+      ],
+      "kind": [
+       "string"
+      ],
+      "month": [
+       "number"
+      ],
+      "sample_count": [
+       "number"
+      ],
+      "stat": [
+       "string"
+      ],
+      "vector_mean_from_deg": [
+       "number"
+      ],
+      "vector_mean_knots": [
+       "number"
+      ],
+      "wind_direction_from_deg": [
+       "number"
+      ],
+      "wind_speed_knots": [
+       "number"
+      ]
+     }
+    }
+   }
+  },
+  "climatology_current": {
+   "path": "/api/climatology/current.geojson",
+   "query": {
+    "month": 1
+   },
+   "admin_key": false,
+   "status": 200,
+   "shape": {
+    "top": {
+     "type": "string",
+     "features": "array",
+     "attribution": "string",
+     "metadata": "object"
+    },
+    "nested": {
+     "metadata": {
+      "dataset": "string",
+      "version": "string",
+      "generated_at": "string",
+      "count": "number",
+      "content_sha256": "string",
+      "generator": "string",
+      "disclaimer": "string",
+      "disclaimer_fr": "string",
+      "license": "string",
+      "period": "string",
+      "month": "number",
+      "source_ids": "array",
+      "doi": "string",
+      "kind": "string",
+      "grid_spacing_deg": "number",
+      "snapshot_present": "boolean"
+     }
+    },
+    "features": {
+     "count_nonzero": true,
+     "geometry_types": [
+      "Point"
+     ],
+     "properties": {
+      "below_threshold": [
+       "boolean"
+      ],
+      "direction_to_deg": [
+       "number"
+      ],
+      "kind": [
+       "string"
+      ],
+      "month": [
+       "number"
+      ],
+      "speed_knots": [
+       "number"
+      ]
+     }
+    }
+   }
+  },
+  "climatology_current_fallback": {
+   "path": "/api/climatology/current.geojson",
+   "query": {
+    "month": 1,
+    "spacing_deg": 4
+   },
+   "admin_key": false,
+   "status": 200,
+   "shape": {
+    "top": {
+     "type": "string",
+     "features": "array",
+     "attribution": "string",
+     "metadata": "object"
+    },
+    "nested": {
+     "metadata": {
+      "dataset": "string",
+      "version": "string",
+      "generated_at": "string",
+      "count": "number",
+      "content_sha256": "string",
+      "generator": "string",
+      "disclaimer": "string",
+      "disclaimer_fr": "string",
+      "license": "string",
+      "period": "string",
+      "month": "number",
+      "source_ids": "array",
+      "doi": "string",
+      "kind": "string",
+      "grid_spacing_deg": "number",
+      "snapshot_present": "boolean"
+     }
+    },
+    "features": {
+     "count_nonzero": true,
+     "geometry_types": [
+      "Point"
+     ],
+     "properties": {
+      "below_threshold": [
+       "boolean"
+      ],
+      "direction_to_deg": [
+       "number"
+      ],
+      "kind": [
+       "string"
+      ],
+      "month": [
+       "number"
+      ],
+      "speed_knots": [
+       "number"
+      ]
+     }
+    }
+   }
+  },
+  "climatology_cyclones": {
+   "path": "/api/climatology/cyclones.geojson",
+   "query": {
+    "month": 1
+   },
+   "admin_key": false,
+   "status": 200,
+   "shape": {
+    "top": {
+     "type": "string",
+     "features": "array",
+     "attribution": "string",
+     "metadata": "object"
+    },
+    "nested": {
+     "metadata": {
+      "dataset": "string",
+      "version": "string",
+      "generated_at": "string",
+      "count": "number",
+      "content_sha256": "string",
+      "generator": "string",
+      "disclaimer": "string",
+      "disclaimer_fr": "string",
+      "license": "string",
+      "period": "string",
+      "month": "number",
+      "source_ids": "array",
+      "kind": "string",
+      "snapshot_present": "boolean",
+      "wind_note": "string"
+     }
+    },
+    "features": {
+     "count_nonzero": true,
+     "geometry_types": [
+      "LineString"
+     ],
+     "properties": {
+      "basin": [
+       "string"
+      ],
+      "color": [
+       "string"
+      ],
+      "kind": [
+       "string"
+      ],
+      "max_wind_kn": [
+       "number"
+      ],
+      "month": [
+       "number"
+      ],
+      "name": [
+       "string"
+      ],
+      "season": [
+       "number"
+      ],
+      "sid": [
+       "string"
+      ],
+      "url": [
+       "string"
+      ],
+      "wind_source": [
+       "string"
+      ]
+     }
+    }
+   }
+  },
+  "climatology_cyclones_fallback": {
+   "path": "/api/climatology/cyclones.geojson",
+   "query": {
+    "month": 1,
+    "spacing_deg": 4
+   },
+   "admin_key": false,
+   "status": 200,
+   "shape": {
+    "top": {
+     "type": "string",
+     "features": "array",
+     "attribution": "string",
+     "metadata": "object"
+    },
+    "nested": {
+     "metadata": {
+      "dataset": "string",
+      "version": "string",
+      "generated_at": "string",
+      "count": "number",
+      "content_sha256": "string",
+      "generator": "string",
+      "disclaimer": "string",
+      "disclaimer_fr": "string",
+      "license": "string",
+      "period": "string",
+      "month": "number",
+      "source_ids": "array",
+      "kind": "string",
+      "snapshot_present": "boolean",
+      "wind_note": "string"
+     }
+    },
+    "features": {
+     "count_nonzero": true,
+     "geometry_types": [
+      "LineString"
+     ],
+     "properties": {
+      "basin": [
+       "string"
+      ],
+      "color": [
+       "string"
+      ],
+      "kind": [
+       "string"
+      ],
+      "max_wind_kn": [
+       "number"
+      ],
+      "month": [
+       "number"
+      ],
+      "name": [
+       "string"
+      ],
+      "season": [
+       "number"
+      ],
+      "sid": [
+       "string"
+      ],
+      "url": [
+       "string"
+      ],
+      "wind_source": [
+       "string"
+      ]
+     }
+    }
+   }
+  },
+  "climatology_wave_p50": {
+   "path": "/api/climatology/wave.geojson",
+   "query": {
+    "month": 1,
+    "stat": "p50"
+   },
+   "admin_key": false,
+   "status": 200,
+   "shape": {
+    "top": {
+     "type": "string",
+     "features": "array",
+     "attribution": "string",
+     "metadata": "object"
+    },
+    "nested": {
+     "metadata": {
+      "dataset": "string",
+      "version": "string",
+      "generated_at": "string",
+      "count": "number",
+      "content_sha256": "string",
+      "generator": "string",
+      "disclaimer": "string",
+      "disclaimer_fr": "string",
+      "license": "string",
+      "period": "string",
+      "month": "number",
+      "source_ids": "array",
+      "doi": "string",
+      "kind": "string",
+      "grid_spacing_deg": "number",
+      "snapshot_present": "boolean",
+      "stat": "string",
+      "snapshot_stat": "string"
+     }
+    },
+    "features": {
+     "count_nonzero": true,
+     "geometry_types": [
+      "Point"
+     ],
+     "properties": {
+      "dir_deg": [
+       "number"
+      ],
+      "hs_m": [
+       "number"
+      ],
+      "kind": [
+       "string"
+      ],
+      "month": [
+       "number"
+      ],
+      "period_s": [
+       "number"
+      ],
+      "stat": [
+       "string"
+      ]
+     }
+    }
+   }
+  },
+  "climatology_wave_p50_fallback": {
+   "path": "/api/climatology/wave.geojson",
+   "query": {
+    "month": 1,
+    "stat": "p50",
+    "spacing_deg": 4
+   },
+   "admin_key": false,
+   "status": 200,
+   "shape": {
+    "top": {
+     "type": "string",
+     "features": "array",
+     "attribution": "string",
+     "metadata": "object"
+    },
+    "nested": {
+     "metadata": {
+      "dataset": "string",
+      "version": "string",
+      "generated_at": "string",
+      "count": "number",
+      "content_sha256": "string",
+      "generator": "string",
+      "disclaimer": "string",
+      "disclaimer_fr": "string",
+      "license": "string",
+      "period": "string",
+      "month": "number",
+      "source_ids": "array",
+      "doi": "string",
+      "kind": "string",
+      "grid_spacing_deg": "number",
+      "snapshot_present": "boolean",
+      "stat": "string",
+      "snapshot_stat": "string"
+     }
+    },
+    "features": {
+     "count_nonzero": true,
+     "geometry_types": [
+      "Point"
+     ],
+     "properties": {
+      "dir_deg": [
+       "number"
+      ],
+      "hs_m": [
+       "number"
+      ],
+      "kind": [
+       "string"
+      ],
+      "month": [
+       "number"
+      ],
+      "period_s": [
+       "number"
+      ],
+      "stat": [
+       "string"
+      ]
+     }
+    }
+   }
+  },
+  "climatology_wave_p90": {
+   "path": "/api/climatology/wave.geojson",
+   "query": {
+    "month": 1,
+    "stat": "p90"
+   },
+   "admin_key": false,
+   "status": 200,
+   "shape": {
+    "top": {
+     "type": "string",
+     "features": "array",
+     "attribution": "string",
+     "metadata": "object"
+    },
+    "nested": {
+     "metadata": {
+      "dataset": "string",
+      "version": "string",
+      "generated_at": "string",
+      "count": "number",
+      "content_sha256": "string",
+      "generator": "string",
+      "disclaimer": "string",
+      "disclaimer_fr": "string",
+      "license": "string",
+      "period": "string",
+      "month": "number",
+      "source_ids": "array",
+      "doi": "string",
+      "kind": "string",
+      "grid_spacing_deg": "number",
+      "snapshot_present": "boolean",
+      "stat": "string",
+      "snapshot_stat": "string"
+     }
+    },
+    "features": {
+     "count_nonzero": true,
+     "geometry_types": [
+      "Point"
+     ],
+     "properties": {
+      "dir_deg": [
+       "number"
+      ],
+      "hs_m": [
+       "number"
+      ],
+      "kind": [
+       "string"
+      ],
+      "month": [
+       "number"
+      ],
+      "period_s": [
+       "number"
+      ],
+      "stat": [
+       "string"
+      ]
+     }
+    }
+   }
+  },
+  "climatology_wave_p90_fallback": {
+   "path": "/api/climatology/wave.geojson",
+   "query": {
+    "month": 1,
+    "stat": "p90",
+    "spacing_deg": 4
+   },
+   "admin_key": false,
+   "status": 200,
+   "shape": {
+    "top": {
+     "type": "string",
+     "features": "array",
+     "attribution": "string",
+     "metadata": "object"
+    },
+    "nested": {
+     "metadata": {
+      "dataset": "string",
+      "version": "string",
+      "generated_at": "string",
+      "count": "number",
+      "content_sha256": "string",
+      "generator": "string",
+      "disclaimer": "string",
+      "disclaimer_fr": "string",
+      "license": "string",
+      "period": "string",
+      "month": "number",
+      "source_ids": "array",
+      "doi": "string",
+      "kind": "string",
+      "grid_spacing_deg": "number",
+      "snapshot_present": "boolean",
+      "stat": "string",
+      "snapshot_stat": "string"
+     }
+    },
+    "features": {
+     "count_nonzero": true,
+     "geometry_types": [
+      "Point"
+     ],
+     "properties": {
+      "dir_deg": [
+       "number"
+      ],
+      "hs_m": [
+       "number"
+      ],
+      "kind": [
+       "string"
+      ],
+      "month": [
+       "number"
+      ],
+      "period_s": [
+       "number"
+      ],
+      "stat": [
+       "string"
+      ]
+     }
+    }
+   }
+  },
+  "climatology_wave_mean": {
+   "path": "/api/climatology/wave.geojson",
+   "query": {
+    "month": 1,
+    "stat": "mean"
+   },
+   "admin_key": false,
+   "status": 200,
+   "shape": {
+    "top": {
+     "type": "string",
+     "features": "array",
+     "attribution": "string",
+     "metadata": "object"
+    },
+    "nested": {
+     "metadata": {
+      "dataset": "string",
+      "version": "string",
+      "generated_at": "string",
+      "count": "number",
+      "content_sha256": "string",
+      "generator": "string",
+      "disclaimer": "string",
+      "disclaimer_fr": "string",
+      "license": "string",
+      "period": "string",
+      "month": "number",
+      "source_ids": "array",
+      "doi": "string",
+      "kind": "string",
+      "grid_spacing_deg": "number",
+      "snapshot_present": "boolean",
+      "stat": "string",
+      "snapshot_stat": "string"
+     }
+    },
+    "features": {
+     "count_nonzero": false,
+     "geometry_types": [],
+     "properties": {}
+    }
+   }
+  },
+  "climatology_wave_mean_fallback": {
+   "path": "/api/climatology/wave.geojson",
+   "query": {
+    "month": 1,
+    "stat": "mean",
+    "spacing_deg": 4
+   },
+   "admin_key": false,
+   "status": 200,
+   "shape": {
+    "top": {
+     "type": "string",
+     "features": "array",
+     "attribution": "string",
+     "metadata": "object"
+    },
+    "nested": {
+     "metadata": {
+      "dataset": "string",
+      "version": "string",
+      "generated_at": "string",
+      "count": "number",
+      "content_sha256": "string",
+      "generator": "string",
+      "disclaimer": "string",
+      "disclaimer_fr": "string",
+      "license": "string",
+      "period": "string",
+      "month": "number",
+      "source_ids": "array",
+      "doi": "string",
+      "kind": "string",
+      "grid_spacing_deg": "number",
+      "snapshot_present": "boolean",
+      "stat": "string",
+      "snapshot_stat": "string"
+     }
+    },
+    "features": {
+     "count_nonzero": false,
+     "geometry_types": [],
+     "properties": {}
+    }
+   }
+  },
+  "climatology_wind_tile": {
+   "path": "/api/climatology/wind/tiles/2/1/1.json",
+   "query": {
+    "month": 1
+   },
+   "admin_key": false,
+   "status": 200,
+   "shape": {
+    "top": {
+     "type": "string",
+     "features": "array"
+    },
+    "nested": {},
+    "features": {
+     "count_nonzero": true,
+     "geometry_types": [
+      "Point"
+     ],
+     "properties": {
+      "calm_pct": [
+       "number"
+      ],
+      "dir_from_deg": [
+       "number"
+      ],
+      "gale_pct": [
+       "number"
+      ],
+      "speed_knots": [
+       "number"
+      ]
+     }
+    }
+   }
+  },
+  "climatology_current_tile": {
+   "path": "/api/climatology/current/tiles/2/1/1.json",
+   "query": {
+    "month": 1
+   },
+   "admin_key": false,
+   "status": 200,
+   "shape": {
+    "top": {
+     "type": "string",
+     "features": "array"
+    },
+    "nested": {},
+    "features": {
+     "count_nonzero": true,
+     "geometry_types": [
+      "Point"
+     ],
+     "properties": {
+      "direction_to_deg": [
+       "number"
+      ],
+      "speed_knots": [
+       "number"
+      ]
+     }
+    }
+   }
+  },
+  "climatology_wave_tile_p50": {
+   "path": "/api/climatology/wave/tiles/2/1/1.json",
+   "query": {
+    "month": 1,
+    "stat": "p50"
+   },
+   "admin_key": false,
+   "status": 200,
+   "shape": {
+    "top": {
+     "type": "string",
+     "features": "array"
+    },
+    "nested": {},
+    "features": {
+     "count_nonzero": true,
+     "geometry_types": [
+      "Point"
+     ],
+     "properties": {
+      "dir": [
+       "number"
+      ],
+      "hs_m": [
+       "number"
+      ],
+      "stat": [
+       "string"
+      ]
+     }
+    }
+   }
+  },
+  "climatology_wave_tile_p90": {
+   "path": "/api/climatology/wave/tiles/2/1/1.json",
+   "query": {
+    "month": 1,
+    "stat": "p90"
+   },
+   "admin_key": false,
+   "status": 200,
+   "shape": {
+    "top": {
+     "type": "string",
+     "features": "array"
+    },
+    "nested": {},
+    "features": {
+     "count_nonzero": true,
+     "geometry_types": [
+      "Point"
+     ],
+     "properties": {
+      "dir": [
+       "number"
+      ],
+      "hs_m": [
+       "number"
+      ],
+      "stat": [
+       "string"
+      ]
+     }
+    }
+   }
+  },
+  "climatology_wave_tile_mean": {
+   "path": "/api/climatology/wave/tiles/2/1/1.json",
+   "query": {
+    "month": 1,
+    "stat": "mean"
+   },
+   "admin_key": false,
+   "status": 200,
+   "shape": {
+    "top": {
+     "type": "string",
+     "features": "array"
+    },
+    "nested": {},
+    "features": {
+     "count_nonzero": false,
+     "geometry_types": [],
+     "properties": {}
+    }
+   }
+  }
+ }
+}

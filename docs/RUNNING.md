@@ -28,7 +28,7 @@ and the sample breakdown below changes.
 The full `backend/requirements.txt` is for the wider Blue Intelligence API. It
 pins `torch==2.13.0+cpu`, which needs
 `--extra-index-url https://download.pytorch.org/whl/cpu` on Linux and has no macOS
-wheel. The pipeline never imports torch. For the tests, also `pip install pytest==9.1.1`.
+wheel. The pipeline never imports torch. For the tests, also `pip install pytest==9.1.1` (the full test set uses `backend/requirements-dev.txt`).
 
 ## 2. Sample mode (no credentials)
 

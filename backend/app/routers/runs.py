@@ -1,11 +1,11 @@
 """
 app.routers.runs — Versioned PoE pipeline runs (several in parallel).
 
-POST /api/runs                         unified entry: start or resume (P0-4)
-GET  /api/runs/{id}/manifest           data/runs/<id>/manifest.json
-POST /api/runs/{id}/export             GeoJSON + manifest export (+ optional upload)
-POST /api/runs/{id}/upload             retry the upload of an existing, verified export
-POST /api/poe/runs                     start (or resume) a run — wrapper of /api/runs
+POST /api/v3/runs                      unified entry: start or resume (P0-4)
+GET  /api/v3/runs/{id}/manifest        data/runs/<id>/manifest.json
+POST /api/v3/runs/{id}/export          GeoJSON + manifest export (+ optional upload)
+POST /api/v3/runs/{id}/upload          retry the upload of an existing, verified export
+POST /api/poe/runs                     start (or resume) a run — wrapper of /api/v3/runs
 POST /api/poe/runs/multi               deprecated: v1 + v2 + tinyfish in parallel
 GET  /api/poe/runs                     list of runs
 GET  /api/poe/runs/searxng             search-engine health
@@ -244,9 +244,9 @@ async def poe_run_start(body: RunBody | None = None):
 async def poe_run_multi(body: MultiRunBody | None = None):
     """Deprecated (P0-4): launch the requested variants in parallel.
 
-    Still works; each run goes through the unified runner. Use POST /api/runs.
+    Still works; each run goes through the unified runner. Use POST /api/v3/runs.
     """
-    logger.warning("POST /api/poe/runs/multi is deprecated — use POST /api/runs")
+    logger.warning("POST /api/poe/runs/multi is deprecated — use POST /api/v3/runs")
     body = body or MultiRunBody()
     started = []
     errors = []
@@ -271,7 +271,7 @@ async def poe_run_multi(body: MultiRunBody | None = None):
         raise HTTPException(409, {"detail": "aucun run démarré", "errors": errors})
     return {"status": "started", "runs": started, "errors": errors,
             "active_run_ids": _active_ids(),
-            "deprecated": "use POST /api/runs"}
+            "deprecated": "use POST /api/v3/runs"}
 
 
 @router.get("/poe/runs/code-fingerprint")
@@ -835,7 +835,7 @@ class UnifiedRunBody(BaseModel):
     rules: dict | None = None
 
 
-@router.post("/runs", status_code=202)
+@router.post("/v3/runs", status_code=202)
 async def unified_run_start(body: UnifiedRunBody | None = None):
     """Single entry point (P0-4): new run, or resume of an existing run_id."""
     body = body or UnifiedRunBody()
@@ -867,7 +867,7 @@ async def unified_run_start(body: UnifiedRunBody | None = None):
             "layer": "poe", "variant": variant}
 
 
-@router.get("/runs/{run_id}/manifest")
+@router.get("/v3/runs/{run_id}/manifest")
 async def unified_run_manifest(run_id: str):
     from app.services import run_artifacts
     try:
@@ -880,7 +880,7 @@ async def unified_run_manifest(run_id: str):
     return doc
 
 
-@router.post("/runs/{run_id}/export")
+@router.post("/v3/runs/{run_id}/export")
 async def unified_run_export(run_id: str):
     """Export a finished run (GeoJSON + manifest). Upload only if enabled."""
     try:
@@ -891,7 +891,7 @@ async def unified_run_export(run_id: str):
         raise HTTPException(400, str(e)) from e
 
 
-@router.post("/runs/{run_id}/upload")
+@router.post("/v3/runs/{run_id}/upload")
 async def unified_run_upload(run_id: str):
     """Upload an existing export again (after a failed upload); never re-exports.
     The export is checked against its manifest hashes first."""

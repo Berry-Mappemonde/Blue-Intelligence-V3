@@ -34,9 +34,17 @@ Each run also has a folder `backend/data/runs/<run_id>/` (`BI_RUNS_DIR` override
   (or any tracked file), so learned hints are not reused by later zones of the
   same run. Promote them by hand after review if wanted.
 
+## API paths
+
+The unified-run endpoints live under `/api/v3/runs` (they were `/api/runs` before
+the NAVIGUIDE contract work, never in production): `POST /api/v3/runs`,
+`GET /api/v3/runs/<run_id>/manifest`, `POST /api/v3/runs/<run_id>/export`,
+`POST /api/v3/runs/<run_id>/upload`. `/api/...` routes read by NAVIGUIDE are a
+contract (`docs/NAVIGUIDE-CONTRACT.md`) and are not changed by runs.
+
 ## Start
 
-- API: `POST /api/runs` with `{"layer": "poe", "zones": [...], "limit": 0, "variant": "tinyfish"}`.
+- API: `POST /api/v3/runs` with `{"layer": "poe", "zones": [...], "limit": 0, "variant": "tinyfish"}`.
   `POST /api/poe/runs` is a wrapper of the same entry; `/api/poe/runs/multi` is deprecated.
 - Python: `unified_runs.start_run(db, state, layer="poe", ...)`.
 
@@ -46,7 +54,7 @@ endpoints but write the same trace and manifest.
 
 ## Resume
 
-- API: `POST /api/runs` with `{"run_id": "...", "resume": true}`.
+- API: `POST /api/v3/runs` with `{"run_id": "...", "resume": true}`.
 - CLI: `python backend/run.py --resume <run_id>` (needs `MONGO_URL` / `DB_NAME`
   of the database holding the run; summary JSON on stdout, logs on stderr).
 
@@ -119,7 +127,7 @@ as partial.
 
 ## Export
 
-- API: `POST /api/runs/<run_id>/export`. CLI: `python backend/run.py --export <run_id>`.
+- API: `POST /api/v3/runs/<run_id>/export`. CLI: `python backend/run.py --export <run_id>`.
 
 Only `done` or `cancelled` runs can be exported. Output goes to
 `backend/data/exports/<run_id>/` (`BI_EXPORT_DIR` overrides the root):
@@ -166,7 +174,7 @@ last. Credentials come from boto3's standard chain; the code never reads them.
 
 A failed upload does not fail the export: it is recorded on the run
 (`exports[].uploaded: false`, `upload_error`). Retry it without re-exporting
-with `POST /api/runs/<run_id>/upload` or `python backend/run.py --upload <run_id>`:
+with `POST /api/v3/runs/<run_id>/upload` or `python backend/run.py --upload <run_id>`:
 the folder is first checked against its manifest (sizes, SHA-256, no extra
 file, manifest hash recorded on the run), and refused (409 / exit 2) if it
 does not match. Each attempt is recorded under `poe_runs.uploads`.
