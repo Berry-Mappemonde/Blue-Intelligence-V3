@@ -25,7 +25,7 @@ ecdsa==0.19.2
 email-validator==2.3.0
 fastapi==0.110.1
 fastuuid==0.14.0
-filelock==3.32.3
+filelock==4.2.4
 frozenlist==1.8.0
 fsspec==2026.7.0
 global-land-mask==1.0.0
