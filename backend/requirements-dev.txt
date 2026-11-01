@@ -1,0 +1,16 @@
+# Test and development dependencies. Production installs requirements.txt only.
+# pip install -r requirements-dev.txt   (includes requirements.txt)
+-r requirements.txt
+
+# pytest and the CI shard / parallel plugins
+execnet==2.1.2
+iniconfig==2.3.0
+pluggy==1.6.0
+pytest==9.1.1
+pytest-split==0.11.0
+pytest-xdist==3.8.0
+
+# in-memory Mongo for the offline contract tests (tests/contracts/naviguide_harness.py)
+mongomock==4.3.0
+mongomock-motor==0.0.36
+sentinels==1.1.1

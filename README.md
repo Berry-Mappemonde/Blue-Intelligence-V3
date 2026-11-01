@@ -243,9 +243,12 @@ cd backend && .venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8001
 cd frontend && REACT_APP_BACKEND_URL=http://127.0.0.1:8001 npm start
 ```
 
-Tests:
+Tests need the test dependencies in `backend/requirements-dev.txt` (it includes
+`requirements.txt` and adds pytest, its CI plugins and the in-memory Mongo used by the
+offline contract tests). Production installs `requirements.txt` only, never the dev file.
 
 ```bash
+cd backend && .venv/bin/pip install -r requirements-dev.txt
 cd backend && .venv/bin/python -m pytest tests -q      # needs MongoDB and the API running
 cd frontend && npm test                                # Jest
 ```
