@@ -125,6 +125,8 @@ def rows() -> list[dict]:
                            if before else "audited")
             if now:
                 row["note"] += "; still missing " + ", ".join(ROLE_LABELS[r] for r in now)
+            if audit.get("no_authority"):
+                row["note"] += "; no " + ", ".join(ROLE_LABELS[r] for r in audit["no_authority"])
         elif not wl:
             row["gap"], row["note"] = "yes", "empty whitelist"
         else:
@@ -152,8 +154,10 @@ def render(table: list[dict] | None = None) -> str:
         "**Gap**: `yes` when an audited authority (customs, immigration, maritime authority,",
         "port authority) has no matching domain, or the whitelist is empty; `no` when all",
         "audited authorities match; `not checked` when the zone has not been audited yet.",
-        f"Audited on {sources.get('checked')}: the pilot zones. Sources per domain are below",
-        "and in `backend/data/whitelist_sources.json`.",
+        f"Audited on {sources.get('checked')}: the pilot zones and the French overseas",
+        "zones on the route. Sources per domain are below and in",
+        "`backend/data/whitelist_sources.json`. A role with no authority in a zone (no port,",
+        "no customs post) is listed under \"no authority\" with the official text that says so.",
         "",
         f"{len(table)} zones: {n['yes']} gap, {n['no']} no gap, {n['not checked']} not checked.",
         "",
@@ -174,15 +178,19 @@ def render(table: list[dict] | None = None) -> str:
                          f"| {'yes' if a.get('added') else 'already listed'} "
                          f"| {a['url']} | {a['source']} |")
         lines.append("")
+        for role, reason in (audit.get("no_authority") or {}).items():
+            lines.append(f"No {ROLE_LABELS[role]} authority: {reason}")
+            lines.append("")
+        if audit.get("notes"):
+            lines += [f"Notes: {audit['notes']}", ""]
     lines += [
         "## Next",
         "",
         "- Audit the `not checked` zones the same way (one authority per role, official",
-        "  source each). Zones with an empty whitelist come first: Collectivity of Saint",
-        "  Martin, Saint-Barthélemy, Bonaire, Saba, Sint-Eustatius, Western Sahara.",
-        "- Other French overseas zones (Guadeloupe, French Guiana, Réunion, Mayotte,",
-        "  Saint-Martin, Saint-Barthélemy) have the same pattern as Martinique: their own",
-        "  ISO2 means `douane.gouv.fr` is not in their whitelist.",
+        "  source each). Zones with an empty whitelist come first: Bonaire, Saba,",
+        "  Sint-Eustatius, Western Sahara.",
+        "- Ile Tromelin and Matthew and Hunter Islands have no ISO2 of their own and use",
+        "  France's list (`FR`): a domain added for them is official for mainland France too.",
         "",
     ]
     return "\n".join(lines)

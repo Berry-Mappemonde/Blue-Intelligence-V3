@@ -1,5 +1,5 @@
 {
-  "about": "Provenance of official domains for the route whitelist (docs/ROUTE-WHITELIST.md). Each zone lists the authorities a foreign yacht deals with on arrival (customs, immigration, maritime authority, port authority), one official URL each, and the source used to identify it. A domain marked added=true was added to poe_exceptions.json manual[whitelist_key] by this audit. Government and port-authority bodies only: no NGO, blog or commercial site.",
+  "about": "Provenance of official domains for the route whitelist (docs/ROUTE-WHITELIST.md). Each zone lists the authorities a foreign yacht deals with on arrival (customs, immigration, maritime authority, port authority), one official URL each, and the source used to identify it. A domain marked added=true was added to poe_exceptions.json manual[whitelist_key] by this audit. Government and port-authority bodies only: no NGO, blog or commercial site. A zone may also give no_authority (role: the official reason no such authority exists there, e.g. no port or customs post) and notes (arrival procedure, exclusions).",
   "checked": "2026-11-01",
   "zones": {
     "8416": {
@@ -177,6 +177,448 @@
           "source": "https://atlantic-maritime-strategy.ec.europa.eu/en/partners/grand-port-maritime-de-la-martinique-martinique-hub-cara%C3%AFbe"
         }
       ]
+    },
+    "33177": {
+      "zone": "Guadeloupe",
+      "whitelist_key": "GP",
+      "authorities": [
+        {
+          "role": "customs",
+          "name": "Direction régionale des douanes et droits indirects de Guadeloupe (DGDDI, Direction interrégionale Antilles-Guyane)",
+          "url": "https://www.douane.gouv.fr/fiche/navigation-dans-les-departements-doutre-mer",
+          "domain": "douane.gouv.fr",
+          "added": true,
+          "source": "https://www.guadeloupe.gouv.fr/Services-de-l-Etat/Organisation-des-services-de-l-Etat/Economie-finances-publiques-travail-et-emploi/Direction-regionale-des-douanes"
+        },
+        {
+          "role": "immigration",
+          "name": "Service territorial de la police aux frontières (STPAF), DTPN de la Guadeloupe",
+          "url": "https://www.guadeloupe.gouv.fr/Services-de-l-Etat/Organisation-des-services-de-l-Etat/Securite-et-protection-des-personnes/Direction-departementale-de-la-police-nationale-DDPN",
+          "domain": "guadeloupe.gouv.fr",
+          "added": false,
+          "source": "https://questions.assemblee-nationale.fr/q16/16-4457QE.htm"
+        },
+        {
+          "role": "maritime_authority",
+          "name": "Direction de la mer de la Guadeloupe (DM)",
+          "url": "https://www.dm.guadeloupe.developpement-durable.gouv.fr/plaisanciers-r156.html",
+          "domain": "dm.guadeloupe.developpement-durable.gouv.fr",
+          "added": true,
+          "source": "https://www.guadeloupe.gouv.fr/Services-de-l-Etat/Organisation-des-services-de-l-Etat/Mer-et-littoral/Direction-de-la-Mer-DM"
+        },
+        {
+          "role": "port_authority",
+          "name": "Grand Port Maritime de la Guadeloupe (Guadeloupe Port Caraïbes, incl. Bas-du-Fort marina)",
+          "url": "https://guadeloupe-portcaraibes.com/nos-sites-portuaires/",
+          "domain": "guadeloupe-portcaraibes.com",
+          "added": true,
+          "source": "https://www.boamp.fr/telechargements/FILES/PDF/2024/06/24-75282.pdf"
+        }
+      ],
+      "notes": "Clearance is mandatory (arrêté préfectoral of 5 August 2024, Antilles), filed online at demarche.numerique.gouv.fr and handled by customs at approved clearance points."
+    },
+    "48952": {
+      "zone": "Saint-Barthélemy",
+      "whitelist_key": "BL",
+      "authorities": [
+        {
+          "role": "customs",
+          "name": "Direction régionale des douanes et droits indirects de Guadeloupe (DGDDI), competent for Saint-Barthélemy",
+          "url": "https://www.douane.gouv.fr/fiche/cas-particuliers-de-lile-de-saint-martin-et-de-lile-de-saint-barthelemy",
+          "domain": "douane.gouv.fr",
+          "added": true,
+          "source": "https://demarche.numerique.gouv.fr/commencer/declaration-clearance-antilles"
+        },
+        {
+          "role": "immigration",
+          "name": "Gendarmerie nationale, brigade de Saint-Barthélemy (Gustavia)",
+          "url": "https://www.gendarmerie.interieur.gouv.fr/contact/trouver-ma-gendarmerie/brigade-de-saint-barthelemy",
+          "domain": "gendarmerie.interieur.gouv.fr",
+          "added": true,
+          "source": "https://portdegustavia.fr/port-plaisance-gustavia/formalites-port-plaisance"
+        },
+        {
+          "role": "maritime_authority",
+          "name": "Direction de la mer de la Guadeloupe, unité territoriale de Saint-Martin / Saint-Barthélemy",
+          "url": "https://www.dm.guadeloupe.developpement-durable.gouv.fr/les-adresses-de-la-direction-de-la-mer-de-a77.html",
+          "domain": "dm.guadeloupe.developpement-durable.gouv.fr",
+          "added": true,
+          "source": "https://www.saint-barth-saint-martin.gouv.fr/Services-de-l-Etat/Services-deconcentres-de-l-Etat-Unites-territoriales/UT-DM-Direction-de-la-Mer"
+        },
+        {
+          "role": "port_authority",
+          "name": "Port de Gustavia (capitainerie, Collectivité de Saint-Barthélemy)",
+          "url": "https://portdegustavia.fr/port-plaisance-gustavia/formalites-port-plaisance",
+          "domain": "portdegustavia.fr",
+          "added": true,
+          "source": "https://www.douane.gouv.fr/sites/default/files/2026-01/30/liste-points-clearance-agrees-mise-a-jour.pdf"
+        }
+      ],
+      "notes": "OCT outside the EU customs territory and Schengen since 2012; yacht clearance is French State customs (DR Guadeloupe), at the Gustavia capitainerie, the only approved clearance point. No separate customs service of the Collectivité found on an official page (comstbarth.fr serves an empty JavaScript shell). The gendarmerie page answers 403 to automated fetches."
+    },
+    "8495": {
+      "zone": "Collectivity of Saint Martin",
+      "whitelist_key": "MF",
+      "authorities": [
+        {
+          "role": "customs",
+          "name": "Direction régionale des douanes et droits indirects de Guadeloupe (DGDDI), competent for Saint-Martin",
+          "url": "https://www.douane.gouv.fr/fiche/navigation-dans-les-departements-doutre-mer",
+          "domain": "douane.gouv.fr",
+          "added": true,
+          "source": "https://demarche.numerique.gouv.fr/commencer/declaration-clearance-antilles"
+        },
+        {
+          "role": "immigration",
+          "name": "Police aux frontières (STPAF of the DTPN de la Guadeloupe, competent for Saint-Martin)",
+          "url": "https://www.guadeloupe.gouv.fr/Services-de-l-Etat/Organisation-des-services-de-l-Etat/Securite-et-protection-des-personnes/Direction-departementale-de-la-police-nationale-DDPN",
+          "domain": "guadeloupe.gouv.fr",
+          "added": true,
+          "source": "https://questions.assemblee-nationale.fr/q16/16-4457QE.htm"
+        },
+        {
+          "role": "maritime_authority",
+          "name": "Direction de la mer de la Guadeloupe, unité territoriale de Saint-Martin / Saint-Barthélemy (Concordia)",
+          "url": "https://www.saint-barth-saint-martin.gouv.fr/Services-de-l-Etat/Services-deconcentres-de-l-Etat-Unites-territoriales/UT-DM-Direction-de-la-Mer",
+          "domain": "saint-barth-saint-martin.gouv.fr",
+          "added": true,
+          "source": "https://www.dm.guadeloupe.developpement-durable.gouv.fr/les-adresses-de-la-direction-de-la-mer-de-a77.html"
+        },
+        {
+          "role": "port_authority",
+          "name": "Établissement portuaire de Saint-Martin (port de Galisbay / Marigot, Collectivité)",
+          "url": "https://www.portdemarigot.com/clearances",
+          "domain": "portdemarigot.com",
+          "added": true,
+          "source": "https://www.com-saint-martin.fr/institutions_satellites"
+        }
+      ],
+      "notes": "French side only; outside Schengen. Marina Fort Louis and Anse Marcel are approved clearance points but marina operators, not authorities: not listed."
+    },
+    "8462": {
+      "zone": "French Guiana",
+      "whitelist_key": "GF",
+      "authorities": [
+        {
+          "role": "customs",
+          "name": "Direction régionale des douanes et droits indirects de Guyane (DGDDI)",
+          "url": "https://www.douane.gouv.fr/particuliers/vous-etes-en-outre-mer/guyane-preparer-son-arrivee-ou-son-retour-sur-le-territoire",
+          "domain": "douane.gouv.fr",
+          "added": true,
+          "source": "https://www.guyane.gouv.fr/Services-de-l-Etat/Finances-publiques/Direction-Regionale-des-Douanes-et-Droits-Indirects"
+        },
+        {
+          "role": "immigration",
+          "name": "Police aux frontières, DTPN de Guyane",
+          "url": "https://www.guyane.gouv.fr/Services-de-l-Etat/Securite-et-Defense/Police-Nationale",
+          "domain": "guyane.gouv.fr",
+          "added": false,
+          "source": "https://www.senat.fr/rap/r19-337/r19-33712.html"
+        },
+        {
+          "role": "maritime_authority",
+          "name": "Direction générale des territoires et de la mer (DGTM) de Guyane (former Direction de la mer)",
+          "url": "https://www.guyane.developpement-durable.gouv.fr/navigation-de-plaisance-en-zone-maritime-r1014.html",
+          "domain": "guyane.developpement-durable.gouv.fr",
+          "added": true,
+          "source": "https://www.guyane.gouv.fr/Services-de-l-Etat/Organisation-des-services-de-l-Etat/La-DGTM-direction-generale-des-territoires-et-de-la-mer"
+        },
+        {
+          "role": "port_authority",
+          "name": "Grand Port Maritime de la Guyane (Dégrad-des-Cannes)",
+          "url": "https://portdeguyane.fr/capitainerie/",
+          "domain": "portdeguyane.fr",
+          "added": true,
+          "source": "https://questions.assemblee-nationale.fr/dyn/14/questions/QANR5L14QE2763.pdf"
+        }
+      ],
+      "notes": "Not covered by the Antilles online clearance (arrêté of 5 August 2024); the customs list of approved clearance points has a Guyane section."
+    },
+    "8494": {
+      "zone": "Saint-Pierre and Miquelon",
+      "whitelist_key": "PM",
+      "authorities": [
+        {
+          "role": "customs",
+          "name": "Service des Douanes de Saint-Pierre-et-Miquelon (bureaux de Saint-Pierre et de Miquelon)",
+          "url": "https://www.douane975.fr/navigation-maritime/",
+          "domain": "douane975.fr",
+          "added": false,
+          "source": "https://www.saint-pierre-et-miquelon.gouv.fr/Services-de-l-Etat/Les-services-de-l-Etat/Le-Service-des-Douanes"
+        },
+        {
+          "role": "immigration",
+          "name": "Service de la Police aux Frontières de Saint-Pierre-et-Miquelon (Police nationale)",
+          "url": "https://www.saint-pierre-et-miquelon.gouv.fr/Services-de-l-Etat/Les-services-de-l-Etat/La-Police-aux-Frontieres",
+          "domain": "saint-pierre-et-miquelon.gouv.fr",
+          "added": true,
+          "source": "https://www.saint-pierre-et-miquelon.developpement-durable.gouv.fr/IMG/pdf/infos_navigateurs_2017-2.pdf"
+        },
+        {
+          "role": "maritime_authority",
+          "name": "Direction des Territoires, de l'Alimentation et de la Mer (DTAM), Unité Affaires Maritimes",
+          "url": "https://www.saint-pierre-et-miquelon.gouv.fr/Services-de-l-Etat/Les-services-de-l-Etat/La-Direction-des-Territoires-de-l-Alimentation-et-de-la-Mer-DTAM",
+          "domain": "saint-pierre-et-miquelon.gouv.fr",
+          "added": true,
+          "source": "https://www.saint-pierre-et-miquelon.developpement-durable.gouv.fr/informations-pratiques-practical-informations-r150.html"
+        },
+        {
+          "role": "port_authority",
+          "name": "Capitainerie du port de Saint-Pierre-et-Miquelon (commandant de port, DTAM)",
+          "url": "https://www.saint-pierre-et-miquelon.developpement-durable.gouv.fr/informations-pratiques-practical-informations-r150.html",
+          "domain": "saint-pierre-et-miquelon.developpement-durable.gouv.fr",
+          "added": true,
+          "source": "https://www.saint-pierre-et-miquelon.gouv.fr/Services-de-l-Etat/Les-services-de-l-Etat/La-Direction-des-Territoires-de-l-Alimentation-et-de-la-Mer-DTAM"
+        }
+      ],
+      "notes": "Outside Schengen. Préfecture hosts need HTTP/1.1 (HTTP/2 fails)."
+    },
+    "8440": {
+      "zone": "French Polynesia",
+      "whitelist_key": "PF",
+      "authorities": [
+        {
+          "role": "customs",
+          "name": "Direction régionale des douanes de Polynésie française (bureau de douane de Papeete Port)",
+          "url": "https://www.service-public.pf/douane/particuliers/je-navigue/les-formalites-dentrees-et-de-sortie-de-polynesie-francaise-de-navire/",
+          "domain": "service-public.pf",
+          "added": false,
+          "source": "https://www.service-public.pf/dpam/formalites-arrivees-maritimes-pf/"
+        },
+        {
+          "role": "immigration",
+          "name": "Service territorial de la police aux frontières (STPAF), DTPN de Polynésie française",
+          "url": "https://www.polynesie-francaise.gouv.fr/Demarches/Accueil-des-etrangers/Conditions-d-entree-des-etrangers-en-Polynesie-francaise",
+          "domain": "polynesie-francaise.gouv.fr",
+          "added": true,
+          "source": "https://www.service-public.pf/dpam/formalites-arrivees-maritimes-pf/"
+        },
+        {
+          "role": "maritime_authority",
+          "name": "Direction polynésienne des affaires maritimes (DPAM), téléservice ESCALES",
+          "url": "https://www.service-public.pf/dpam/",
+          "domain": "service-public.pf",
+          "added": false,
+          "source": "https://www.service-public.pf/dpam/formalites-arrivees-maritimes-pf/"
+        },
+        {
+          "role": "port_authority",
+          "name": "Port autonome de Papeete (marinas de Papeete, Taina, Vaiare, Uturoa, Apooiti)",
+          "url": "https://www.portdepapeete.pf/plaisance-yachting/marinas/marina-de-papeete/",
+          "domain": "portdepapeete.pf",
+          "added": true,
+          "source": "https://www.service-public.pf/douane/particuliers/je-navigue/les-formalites-dentrees-et-de-sortie-de-polynesie-francaise-de-navire/"
+        }
+      ],
+      "notes": "polynesie-francaise.pref.gouv.fr redirects (301) to polynesie-francaise.gouv.fr. On islands without a customs/PAF office, formalities go to the gendarmerie."
+    },
+    "8454": {
+      "zone": "Wallis and Futuna",
+      "whitelist_key": "WF",
+      "authorities": [
+        {
+          "role": "customs",
+          "name": "Service des Douanes et Contributions diverses de Wallis-et-Futuna (bureaux de Mata-Utu et de Leava)",
+          "url": "https://www.wallis-et-futuna.gouv.fr/Services-de-l-Etat-et-du-Territoire/Les-autres-services-de-l-Etat-et-du-Territoire/Service-des-Douanes-et-Contributions-diverses",
+          "domain": "wallis-et-futuna.gouv.fr",
+          "added": false,
+          "source": "https://www.wallis-et-futuna.gouv.fr/Demarches/Demarches-et-consignes-a-l-attention-des-plaisanciers-et-arrivants-par-voie-maritime"
+        },
+        {
+          "role": "immigration",
+          "name": "Police aux frontières (PAF) de Wallis-et-Futuna",
+          "url": "https://www.wallis-et-futuna.gouv.fr/Services-de-l-Etat-et-du-Territoire/Les-autres-services-de-l-Etat-et-du-Territoire/Police-aux-frontieres-PAF",
+          "domain": "wallis-et-futuna.gouv.fr",
+          "added": false,
+          "source": "https://www.wallis-et-futuna.gouv.fr/Demarches/Demarches-et-consignes-a-l-attention-des-plaisanciers-et-arrivants-par-voie-maritime"
+        },
+        {
+          "role": "maritime_authority",
+          "name": "Service des Affaires Maritimes, Ports, Phares et Balises (SAMPPB), incl. capitainerie of Mata-Utu, Halalo and Leava",
+          "url": "https://www.wallis-et-futuna.gouv.fr/Services-de-l-Etat-et-du-Territoire/Les-autres-services-de-l-Etat-et-du-Territoire/Service-des-Affaires-Maritimes-Ports-Phares-et-Balises",
+          "domain": "wallis-et-futuna.gouv.fr",
+          "added": false,
+          "source": "https://www.wallis-et-futuna.gouv.fr/Demarches/Demarches-et-consignes-a-l-attention-des-plaisanciers-et-arrivants-par-voie-maritime"
+        }
+      ],
+      "notes": "All authorities are on the already listed wallis-et-futuna.gouv.fr. douane.wf (named by the préfecture) did not answer: not added."
+    },
+    "8312": {
+      "zone": "New Caledonia",
+      "whitelist_key": "NC",
+      "authorities": [
+        {
+          "role": "customs",
+          "name": "Direction régionale des douanes de Nouvelle-Calédonie (bureau de douane de Nouméa Port)",
+          "url": "https://douane.gouv.nc/particuliers/formalites-douanieres-pour-les-navires-de-plaisance",
+          "domain": "douane.gouv.nc",
+          "added": false,
+          "source": "https://noumeaport.nc/les-services/douane/"
+        },
+        {
+          "role": "immigration",
+          "name": "Police aux frontières de Nouvelle-Calédonie (DTPN 988, USG Port)",
+          "url": "https://www.nouvelle-caledonie.gouv.fr/Services-de-l-Etat/Securite/PAF-Police-Aux-Frontieres",
+          "domain": "nouvelle-caledonie.gouv.fr",
+          "added": true,
+          "source": "https://noumeaport.nc/les-services/police-air-frontieres/"
+        },
+        {
+          "role": "maritime_authority",
+          "name": "Direction des affaires maritimes de la Nouvelle-Calédonie (DAM NC)",
+          "url": "https://dam.gouv.nc/",
+          "domain": "dam.gouv.nc",
+          "added": false,
+          "source": "https://www.nouvelle-caledonie.gouv.fr/Services-de-l-Etat/Espace-maritime-et-aerien/SAMNC-Service-des-Affaires-Maritimes-de-la-Nouvelle-Caledonie"
+        },
+        {
+          "role": "port_authority",
+          "name": "Port autonome de la Nouvelle-Calédonie (PANC), capitainerie de Nouméa",
+          "url": "https://noumeaport.nc/la-capitainerie/la-presentation/",
+          "domain": "noumeaport.nc",
+          "added": true,
+          "source": "https://drhfpnc.gouv.nc/sites/default/files/atoms/files/0889_panc_cdi_commandant_de_port.docx.pdf"
+        }
+      ],
+      "notes": "Nouméa is the compulsory port of entry. www.noumeaport.nc fails TLS; use the bare host. Port Moselle marina (SODEMO, SEM) excluded as commercial."
+    },
+    "48944": {
+      "zone": "Mayotte",
+      "whitelist_key": "YT",
+      "authorities": [
+        {
+          "role": "customs",
+          "name": "Direction régionale des douanes et droits indirects de Mayotte (DGDDI)",
+          "url": "https://www.douane.gouv.fr/fiche/vous-voyagez-mayotte",
+          "domain": "douane.gouv.fr",
+          "added": true,
+          "source": "https://www.mayotte.gouv.fr/contenu/telechargement/27462/248038/file/recueil-r06-2024-075-recueil-des-actes-administratifs.pdf"
+        },
+        {
+          "role": "immigration",
+          "name": "Police aux frontières (Direction territoriale de la police nationale de Mayotte; DNPAF)",
+          "url": "https://www.police-nationale.interieur.gouv.fr/nous-decouvrir/notre-organisation/organisation/direction-nationale-de-police-aux-frontieres-dnpaf",
+          "domain": "police-nationale.interieur.gouv.fr",
+          "added": true,
+          "source": "https://www.mayotte.gouv.fr/contenu/telechargement/27462/248038/file/recueil-r06-2024-075-recueil-des-actes-administratifs.pdf"
+        },
+        {
+          "role": "maritime_authority",
+          "name": "DEAL de Mayotte (DEALM), Service maritime et littoral",
+          "url": "https://www.mayotte.developpement-durable.gouv.fr/mer-et-littoral-r66.html",
+          "domain": "mayotte.developpement-durable.gouv.fr",
+          "added": true,
+          "source": "https://www.mayotte.gouv.fr/contenu/telechargement/27462/248038/file/recueil-r06-2024-075-recueil-des-actes-administratifs.pdf"
+        }
+      ],
+      "notes": "Arrêté préfectoral n°2024-DEALM-272 (2 April 2024): 48h notice to the Mamoudzou marina harbour master, who informs customs, PAF, PC AEM and DEALM. The marina is run by a CCI concessionaire (mayotte-plaisance.com, commercial): not listed."
+    },
+    "8338": {
+      "zone": "Réunion",
+      "whitelist_key": "RE",
+      "authorities": [
+        {
+          "role": "customs",
+          "name": "Direction régionale des douanes et droits indirects de La Réunion (DGDDI)",
+          "url": "https://www.douane.gouv.fr/fiche/navigation-dans-les-departements-doutre-mer",
+          "domain": "douane.gouv.fr",
+          "added": true,
+          "source": "https://reunion.port.fr/wp-content/uploads/2019/11/20170309-arr%C3%AAt%C3%A9-pr%C3%A9fectoral-n%C2%B0401-relatif-aux-formalit%C3%A9s-dacc%C3%A8s-des-navires-de-plaisance-dans-les-ports-de-la-R%C3%A9union.pdf"
+        },
+        {
+          "role": "immigration",
+          "name": "Police aux frontières (PAF) at La Réunion (DNPAF)",
+          "url": "https://www.police-nationale.interieur.gouv.fr/nous-decouvrir/notre-organisation/organisation/direction-nationale-de-police-aux-frontieres-dnpaf",
+          "domain": "police-nationale.interieur.gouv.fr",
+          "added": true,
+          "source": "https://reunion.port.fr/wp-content/uploads/2019/11/20170309-arr%C3%AAt%C3%A9-pr%C3%A9fectoral-n%C2%B0401-relatif-aux-formalit%C3%A9s-dacc%C3%A8s-des-navires-de-plaisance-dans-les-ports-de-la-R%C3%A9union.pdf"
+        },
+        {
+          "role": "maritime_authority",
+          "name": "Direction de la mer Sud océan Indien (DMSOI)",
+          "url": "https://www.dm.sud-ocean-indien.developpement-durable.gouv.fr/les-missions-de-la-direction-de-la-mer-sud-ocean-a169.html",
+          "domain": "dm.sud-ocean-indien.developpement-durable.gouv.fr",
+          "added": true,
+          "source": "https://www.legifrance.gouv.fr/jorf/article_jo/JORFARTI000026566864"
+        },
+        {
+          "role": "port_authority",
+          "name": "Grand Port Maritime de La Réunion (Port-Réunion), capitainerie at Port Ouest",
+          "url": "https://reunion.port.fr/fr/capitainerie/",
+          "domain": "reunion.port.fr",
+          "added": true,
+          "source": "https://www.legifrance.gouv.fr/jorf/id/JORFTEXT000026447931"
+        }
+      ],
+      "notes": "Arrêté préfectoral n°401 (9 March 2017): first call at Port Ouest (Pointe des Galets), 48h notice to the harbour master, crew aboard 1h for customs/PAF control."
+    },
+    "48946": {
+      "zone": "Ile Tromelin",
+      "whitelist_key": "FR",
+      "authorities": [
+        {
+          "role": "immigration",
+          "name": "Préfet, administrateur supérieur des TAAF (visa agreement; the chef de district can refuse admission)",
+          "url": "https://taaf.fr/acceder-aux-territoires/demande-de-visa/",
+          "domain": "taaf.fr",
+          "added": true,
+          "source": "https://www.legifrance.gouv.fr/codes/section_lc/LEGITEXT000006070158/LEGISCTA000042771428?idSecParent=LEGISCTA000042776979"
+        },
+        {
+          "role": "maritime_authority",
+          "name": "Préfet, administrateur supérieur des TAAF (prior authorisation for access, mooring and landing in the îles Éparses)",
+          "url": "https://taaf.fr/acceder-aux-territoires/demandes-dactivites-et-dacces/acces-et-mouillage-dans-les-eparses/",
+          "domain": "taaf.fr",
+          "added": true,
+          "source": "https://www.legifrance.gouv.fr/codes/section_lc/JORFTEXT000000879815/LEGISCTA000006087726/"
+        },
+        {
+          "role": "maritime_authority",
+          "name": "Direction de la mer Sud océan Indien (DMSOI), competent in the TAAF",
+          "url": "https://www.dm.sud-ocean-indien.developpement-durable.gouv.fr/les-missions-de-la-direction-de-la-mer-sud-ocean-a169.html",
+          "domain": "dm.sud-ocean-indien.developpement-durable.gouv.fr",
+          "added": false,
+          "source": "https://www.legifrance.gouv.fr/jorf/article_jo/JORFARTI000026566897"
+        }
+      ],
+      "no_authority": {
+        "customs": "No port and no customs post; TAAF access texts (Arrêté TAAF n°2022-102) name no customs formality. Landing is impossible (taaf.fr)."
+      },
+      "notes": "Arrêté TAAF n°2022-102: prior authorisation of the préfet, administrateur supérieur des TAAF for landing and mooring; mooring and stay taxes. Whitelist key FR: taaf.fr also becomes official for mainland France."
+    },
+    "8341": {
+      "zone": "Europa Island",
+      "whitelist_key": "TF",
+      "authorities": [
+        {
+          "role": "immigration",
+          "name": "Préfet, administrateur supérieur des TAAF (visa agreement; the chef de district can refuse admission)",
+          "url": "https://taaf.fr/acceder-aux-territoires/demande-de-visa/",
+          "domain": "taaf.fr",
+          "added": false,
+          "source": "https://www.legifrance.gouv.fr/codes/section_lc/LEGITEXT000006070158/LEGISCTA000042771428?idSecParent=LEGISCTA000042776979"
+        },
+        {
+          "role": "maritime_authority",
+          "name": "Préfet, administrateur supérieur des TAAF (prior authorisation for access, mooring and landing in the îles Éparses)",
+          "url": "https://taaf.fr/acceder-aux-territoires/demandes-dactivites-et-dacces/acces-et-mouillage-dans-les-eparses/",
+          "domain": "taaf.fr",
+          "added": false,
+          "source": "https://www.legifrance.gouv.fr/codes/section_lc/JORFTEXT000000879815/LEGISCTA000006087726/"
+        },
+        {
+          "role": "maritime_authority",
+          "name": "Direction de la mer Sud océan Indien (DMSOI), competent in the TAAF",
+          "url": "https://www.dm.sud-ocean-indien.developpement-durable.gouv.fr/les-missions-de-la-direction-de-la-mer-sud-ocean-a169.html",
+          "domain": "dm.sud-ocean-indien.developpement-durable.gouv.fr",
+          "added": true,
+          "source": "https://www.legifrance.gouv.fr/jorf/article_jo/JORFARTI000026566897"
+        }
+      ],
+      "no_authority": {
+        "customs": "No port and no customs post; TAAF access texts (Arrêté TAAF n°2022-102) name no customs formality."
+      },
+      "notes": "Arrêté TAAF n°2022-102 and n°2014-39 (ecotourism, Europa waters): prior authorisation for landing and mooring; a gendarme on site."
     }
   }
 }
