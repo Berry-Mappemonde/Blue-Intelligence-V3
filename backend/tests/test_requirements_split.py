@@ -1,4 +1,5 @@
-"""Production installs requirements.txt only; test libraries live in requirements-dev.txt."""
+"""Production installs requirements.txt only; test libraries and linters live in
+requirements-dev.txt."""
 from __future__ import annotations
 
 import re
@@ -8,6 +9,13 @@ BACKEND = Path(__file__).resolve().parent.parent
 REPO = BACKEND.parent
 TEST_ONLY = {"pytest", "pytest-split", "pytest-xdist", "iniconfig", "pluggy", "execnet",
              "mongomock", "mongomock-motor", "sentinels"}
+LINTERS = {"black", "flake8", "isort", "mypy", "mypy_extensions", "pycodestyle", "pyflakes",
+           "mccabe"}
+DEV_ONLY = TEST_ONLY | LINTERS
+
+
+def _norm(name: str) -> str:
+    return name.strip().lower().replace("-", "_")
 
 
 def _pins(path: Path) -> dict[str, str]:
@@ -16,22 +24,24 @@ def _pins(path: Path) -> dict[str, str]:
         line = line.split("#", 1)[0].strip()
         if line and not line.startswith("-"):
             name, _, version = line.partition("==")
-            out[name.strip().lower()] = version.strip()
+            out[_norm(name)] = version.strip()
     return out
 
 
-def test_production_requirements_have_no_test_library():
+def test_production_requirements_have_no_test_library_or_linter():
     prod = _pins(BACKEND / "requirements.txt")
-    assert not TEST_ONLY & set(prod), sorted(TEST_ONLY & set(prod))
-    assert not {n for n in prod if n.startswith("pytest")}
+    dev_only = {_norm(n) for n in DEV_ONLY}
+    assert not dev_only & set(prod), sorted(dev_only & set(prod))
+    assert not {n for n in prod if n.startswith(("pytest", "flake8", "mypy"))}
 
 
-def test_dev_requirements_include_production_and_pin_the_test_libraries():
+def test_dev_requirements_include_production_and_pin_tests_and_linters():
     text = (BACKEND / "requirements-dev.txt").read_text(encoding="utf-8")
     assert re.search(r"^-r requirements\.txt$", text, re.M)
     dev = _pins(BACKEND / "requirements-dev.txt")
-    assert TEST_ONLY <= set(dev)
-    assert all(dev[n] for n in TEST_ONLY), "every test library is pinned"
+    dev_only = {_norm(n) for n in DEV_ONLY}
+    assert dev_only <= set(dev), sorted(dev_only - set(dev))
+    assert all(dev[n] for n in dev_only), "every dev-only package is pinned"
     assert not set(dev) & set(_pins(BACKEND / "requirements.txt")), "no duplicate pins"
 
 

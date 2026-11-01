@@ -244,8 +244,9 @@ cd frontend && REACT_APP_BACKEND_URL=http://127.0.0.1:8001 npm start
 ```
 
 Tests need the test dependencies in `backend/requirements-dev.txt` (it includes
-`requirements.txt` and adds pytest, its CI plugins and the in-memory Mongo used by the
-offline contract tests). Production installs `requirements.txt` only, never the dev file.
+`requirements.txt` and adds pytest, its CI plugins, the in-memory Mongo used by the
+offline contract tests, and the linters: black, flake8, isort, mypy). Production
+installs `requirements.txt` only, never the dev file.
 
 ```bash
 cd backend && .venv/bin/pip install -r requirements-dev.txt

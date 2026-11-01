@@ -78,12 +78,14 @@ missed these:
 
 ## Notes for NAVIGUIDE
 
-- **`stat=mean` returns no wave features**, on `wave.geojson` and on wave tiles. This is
-  also the case in production. The wave snapshots hold Hs P50/P90 only
-  (`"stat": "p50_p90"`, "Not a P1M mean"), so `mean` yields an empty FeatureCollection.
-  Its top-level shape is recorded, but it has no feature properties to check.
-- **`/review/fiche` is admin-gated in production:** without `X-Admin-Key` it answers 401
-  `{"detail": "Admin key required"}`.
+- **Do not send `stat=mean`:** `wave.geojson` and wave tiles return no features for it,
+  by design. The wave snapshots hold Hs P50/P90 only (`"stat": "p50_p90"`, "Not a P1M
+  mean"). Blue Intelligence does not compute a mean, and does not alias `mean` to `p50`,
+  because that would label P50 as a mean. The empty response stays in the contract as
+  recorded. Use `stat=p50` or `stat=p90`.
+- **Send `X-Admin-Key` on `/review/fiche`:** it is admin-gated in production (`ADMIN_KEY`
+  is set). Without the header, NAVIGUIDE gets 401 `{"detail": "Admin key required"}`.
+  With the right key, the card is returned. Both cases are in the contract.
 
 ## Re-recording
 
