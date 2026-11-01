@@ -76,6 +76,24 @@ once in total, across all resumes: a zone is errored when its last
 runs without a trace). A zone already retried (a `unit_start` line with
 `retry: true`) or that already has ports stored for the run is not retried.
 
+## Judge
+
+In a run, each zone gets one NemotronJudge call (`agents/poe_judge.py`) after
+extraction, on the official snippets the zone already fetched
+(`evidence_store.build_records`). Its verdicts (`parse_judgments` shape) go on
+`port.judge` and feed the C-level (`v3_certify`, PLAN-V3 §5): `poe` with a
+verified excerpt lifts to C2, `not_poe` caps at C1. Ports and levels are written
+to `poe_run_ports` only; live `poe_ports` never gets them.
+
+The call is taken from the zone's share of `formalities.extract_max_llm_calls`
+and, on Token Factory, its spend lands on the run's USD ledger. The judge is
+skipped, with the reason in `poe_run_zones.judge` and a `judge` run event, when
+the share is used up (`formalities.extract_max_llm_calls reached`), when
+`formalities.judge_in_runs` is false (default true), when the zone has no
+official snippet, when no time is left before the zone deadline, or when the
+judge gives no usable answer. A refused judge call does not mark the extraction
+as partial.
+
 ## Export
 
 - API: `POST /api/runs/<run_id>/export`. CLI: `python backend/run.py --export <run_id>`.

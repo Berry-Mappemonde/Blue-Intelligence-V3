@@ -1921,6 +1921,30 @@
       "group": "budget"
     },
     {
+      "id": "formalities.judge_in_runs",
+      "mode": "formalities",
+      "kind": "budget",
+      "value": true,
+      "unit": "bool",
+      "interval": null,
+      "vary": true,
+      "principle": "Juge Nemotron (agents/poe_judge.py) par ZEE dans les runs, après l'extraction, sur les extraits officiels déjà collectés. Verdict poe + extrait vérifié : C2 ; not_poe : plafond C1 (PLAN-V3 §5). Un appel par ZEE, compté dans formalities.extract_max_llm_calls et le budget USD du run ; part épuisée : juge sauté, raison consignée. Niveaux écrits dans poe_run_ports seulement.",
+      "cdc": "PLAN-V3.md §5",
+      "code": [
+        "app/services/poe_pipeline.py:_judge_zone_run",
+        "app/agents/poe_judge.py:ask"
+      ],
+      "title": {
+        "fr": "Juge Nemotron dans les runs",
+        "en": "Nemotron judge in runs"
+      },
+      "help": {
+        "fr": "Un appel de juge par ZEE, pris sur le plafond d'appels du run. Éteint : pas de C2 par le juge.",
+        "en": "One judge call per EEZ, taken from the run's call cap. Off: no judge-based C2."
+      },
+      "group": "budget"
+    },
+    {
       "id": "formalities.extract_deadline_reserve_s",
       "mode": "formalities",
       "kind": "budget",
