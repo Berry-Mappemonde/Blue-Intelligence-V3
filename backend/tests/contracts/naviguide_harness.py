@@ -5,9 +5,10 @@ Used by tests/test_naviguide_contract.py (checks the current code against
 tests/contracts/naviguide.json) and by ``python tests/contracts/naviguide_harness.py
 --record`` (writes that file; run it on the production branch to record the contract).
 
-Offline: Mongo is mongomock-motor, every outbound HTTP request raises, and the two
-routes that fetch remote data (ProtectedSeas for /api/amp, NOAA ENC for the NOAA export)
-read stubs instead.
+Offline: Mongo is mongomock-motor, every outbound HTTP request raises, the remote
+fetches (ProtectedSeas for /api/amp, NOAA ENC for /api/noaa/aids and the NOAA export)
+read stubs, and /api/depth answers from a seeded cache. The app is app.main.app as is
+(every router and the admin gate) with ADMIN_KEY set, as in production.
 
 Shape of a response (``shape_of``):
   {"top": {key: type}, "nested": {key: {subkey: type}},
@@ -29,34 +30,74 @@ CONTRACT_FILE = Path(__file__).with_name("naviguide.json")
 # One sample zone with ports in seed/ports_of_entry.geojson (filled at seed time).
 SAMPLE = {"mrgid": None}
 
-# (id, path, query) — the GET routes NAVIGUIDE reads. "{mrgid}" is filled at seed time.
-ROUTES: list[tuple[str, str, dict]] = [
-    ("poe_ports", "/api/poe/ports", {"mrgid": "{mrgid}"}),
-    ("poe_zones_geojson", "/api/poe/zones/geojson", {}),
-    ("export_poe", "/api/export/poe.geojson", {}),
-    ("export_route", "/api/export/route.geojson", {}),
-    ("export_marinas", "/api/export/marinas.geojson", {}),
-    ("export_anchorages", "/api/export/anchorages.geojson", {}),
-    ("export_capitaineries", "/api/export/capitaineries.geojson", {}),
-    ("export_noaa_aids", "/api/export/noaa-aids.geojson", {}),
-    ("export_amp", "/api/export/amp.geojson", {}),
-    ("export_science", "/api/export/science.geojson", {}),
-    ("marinas", "/api/marinas", {}),
-    ("capitaineries", "/api/capitaineries", {}),
-    ("amp", "/api/amp", {"bbox": "-61.3,14.3,-60.8,14.9"}),  # = AMP_BBOX
-    ("amp_nogo", "/api/amp/nogo", {}),
-    ("amp_stats", "/api/amp/stats", {}),
-    ("amp_site", "/api/amp/sites/amp-1", {}),
-    ("climatology_meta", "/api/climatology/meta", {"month": 1}),
-    ("climatology_point", "/api/climatology/point", {"lat": 14.6, "lon": -61.0, "month": 1}),
+# The GET routes NAVIGUIDE reads, as its code calls them (naviguide.fr). Each entry:
+# (id, path, query, options); "{mrgid}" / "{eez_id}" are filled at seed time;
+# options: {"headers": {...}, "status": expected HTTP status (default 200)}.
+ADMIN_KEY = "contract-admin-key"   # dummy, set like production so the admin gate is on
+ADMIN = {"X-Admin-Key": ADMIN_KEY}
+ROUTES: list[tuple[str, str, dict, dict]] = [
+    # Ports of entry
+    ("poe_ports", "/api/poe/ports", {"mrgid": "{mrgid}"}, {}),
+    ("poe_zones_geojson", "/api/poe/zones/geojson", {}, {}),
+    ("export_poe", "/api/export/poe.geojson", {}, {}),
+    # Exports
+    ("export_projects", "/api/export/geojson", {}, {}),
+    ("export_science", "/api/export/science.geojson", {}, {}),
+    ("export_marinas", "/api/export/marinas.geojson", {}, {}),
+    ("export_capitaineries", "/api/export/capitaineries.geojson", {}, {}),
+    ("export_amp", "/api/export/amp.geojson", {}, {}),
+    ("export_route", "/api/export/route.geojson", {}, {}),
+    ("export_anchorages", "/api/export/anchorages.geojson", {}, {}),
+    ("export_noaa_aids", "/api/export/noaa-aids.geojson", {}, {}),
+    # Layers
+    ("marinas", "/api/marinas", {}, {}),
+    ("capitaineries", "/api/capitaineries", {}, {}),
+    ("anchorages", "/api/anchorages", {}, {}),
+    ("noaa_aids", "/api/noaa/aids", {"bbox": "-74.3,40.3,-73.6,40.9"}, {}),
+    ("depth", "/api/depth", {"lat": 14.6, "lon": -61.07}, {}),
+    # Marine protected areas
+    ("amp", "/api/amp", {"bbox": "-61.3,14.3,-60.8,14.9"}, {}),  # = AMP_BBOX
+    ("amp_stats", "/api/amp/stats", {}, {}),
+    ("amp_nogo", "/api/amp/nogo", {}, {}),
+    ("amp_site", "/api/amp/sites/amp-1", {}, {}),
+    # Review cards: admin-gated in production (ADMIN_KEY set)
+    ("review_fiche_eez", "/api/review/fiche", {"kind": "eez", "id": "{mrgid}"},
+     {"headers": ADMIN}),
+    ("review_fiche_eez_no_key", "/api/review/fiche", {"kind": "eez", "id": "{mrgid}"},
+     {"status": 401}),
+    ("review_fiche_amp", "/api/review/fiche", {"kind": "amp", "id": "amp-1"},
+     {"headers": ADMIN}),
+    ("review_fiche_amp_no_key", "/api/review/fiche", {"kind": "amp", "id": "amp-1"},
+     {"status": 401}),
+    # Climatology
+    ("climatology_meta", "/api/climatology/meta", {}, {}),
+    ("climatology_point", "/api/climatology/point", {"lat": 14.6, "lon": -61.0, "month": 1}, {}),
+    ("climatology_point_dest", "/api/climatology/point",
+     {"lat": 14.6, "lon": -61.0, "month": 1, "dest_lat": 16.2, "dest_lon": -61.5}, {}),
+    ("climatology_point_day", "/api/climatology/point",
+     {"lat": 14.6, "lon": -61.0, "month": 9, "day": 15}, {}),
+    ("climatology_point_dest_day", "/api/climatology/point",
+     {"lat": 14.6, "lon": -61.0, "month": 9, "day": 15, "dest_lat": 16.2, "dest_lon": -61.5}, {}),
     ("climatology_crossings", "/api/climatology/crossings",
-     {"lat1": 14.6, "lon1": -61.0, "lat2": 16.2, "lon2": -61.5, "month": 9}),
-    ("climatology_wind", "/api/climatology/wind.geojson", {"month": 1, "spacing_deg": 4.0}),
-    ("climatology_wave", "/api/climatology/wave.geojson", {"month": 1, "spacing_deg": 4.0}),
-    ("climatology_current", "/api/climatology/current.geojson", {"month": 1, "spacing_deg": 4.0}),
-    ("climatology_cyclones", "/api/climatology/cyclones.geojson", {"month": 9}),
-    ("climatology_wind_tile", "/api/climatology/wind/tiles/2/1/1.json", {"month": 1}),
+     {"lat1": 14.6, "lon1": -61.0, "lat2": 16.2, "lon2": -61.5, "month": 9}, {}),
+    ("climatology_crossings_day", "/api/climatology/crossings",
+     {"lat1": 14.6, "lon1": -61.0, "lat2": 16.2, "lon2": -61.5, "month": 9, "day": 15}, {}),
 ]
+for _kind in ("wind", "current", "cyclones"):
+    ROUTES.append((f"climatology_{_kind}", f"/api/climatology/{_kind}.geojson", {"month": 1}, {}))
+    ROUTES.append((f"climatology_{_kind}_fallback", f"/api/climatology/{_kind}.geojson",
+                   {"month": 1, "spacing_deg": 4}, {}))
+for _stat in ("p50", "p90", "mean"):
+    ROUTES.append((f"climatology_wave_{_stat}", "/api/climatology/wave.geojson",
+                   {"month": 1, "stat": _stat}, {}))
+    ROUTES.append((f"climatology_wave_{_stat}_fallback", "/api/climatology/wave.geojson",
+                   {"month": 1, "stat": _stat, "spacing_deg": 4}, {}))
+for _kind in ("wind", "current"):
+    ROUTES.append((f"climatology_{_kind}_tile", f"/api/climatology/{_kind}/tiles/2/1/1.json",
+                   {"month": 1}, {}))
+for _stat in ("p50", "p90", "mean"):
+    ROUTES.append((f"climatology_wave_tile_{_stat}", "/api/climatology/wave/tiles/2/1/1.json",
+                   {"month": 1, "stat": _stat}, {}))
 ROUTER_MODULES = ("formalities", "misc", "marinas", "capitaineries", "amp", "science",
                   "climatology")
 
@@ -167,8 +208,21 @@ def _seed_docs() -> dict[str, list[dict]]:
         p.setdefault("confidence", 60)
         p.setdefault("confidence_reasons", ["source d'État"])
         p.setdefault("confidence_parts", {"source": 30, "reading": 12, "map": 18, "external": 0})
+    from collections import Counter
+    projects = ci._projects(json.loads((REPO / "seed" / "projects.geojson")
+                                       .read_text(encoding="utf-8")))
+    eez_fc = json.loads((BACKEND / "data" / "eez_world_map.geojson").read_text(encoding="utf-8"))
+    eez_fc = {**eez_fc, "features": [f for f in eez_fc["features"]
+                                     if int(f["properties"]["mrgid"]) == SAMPLE["mrgid"]]}
+    zones = ci._zones(eez_fc, Counter(by_zone))
     tags = {"seamark:type": "harbour", "website": "https://example.org"}
+    from app.services.depth_sample import SOURCE as DEPTH_SOURCE, cache_key
     return {
+        "projects": projects,
+        "eez_zones": zones,
+        "depth_samples": [{"_id": cache_key(14.6, -61.07), "lat": 14.6, "lon": -61.07,
+                           "depth_m": 12.5, "on_land": False, "raw": {"avg": -12.5},
+                           "source": DEPTH_SOURCE, "fetched_at": NOW}],
         "poe_ports": ports,
         "marinas": [
             {"_id": f"marina-{i}", "name": f"Marina {i}", "lat": 14.47 + i / 100, "lon": -60.87,
@@ -236,7 +290,6 @@ def offline_app():
     import importlib
 
     import httpx
-    from fastapi import FastAPI
     from mongomock_motor import AsyncMongoMockClient
 
     import app.db as appdb
@@ -250,7 +303,9 @@ def offline_app():
         patched.append((obj, name, getattr(obj, name)))
         setattr(obj, name, value)
 
-    modules = [importlib.import_module(f"app.routers.{m}") for m in ROUTER_MODULES]
+    for m in ROUTER_MODULES:
+        importlib.import_module(f"app.routers.{m}")
+    main = importlib.import_module("app.main")
     patch(appdb, "db", fake_db)
     for mod in list(sys.modules.values()):
         name = getattr(mod, "__name__", "") or ""
@@ -296,12 +351,17 @@ def offline_app():
     if hasattr(marinas, "_marinas_fc_task"):
         patch(marinas, "_marinas_fc_task", None)
 
-    app = FastAPI()
-    for mod in modules:
-        app.include_router(mod.router)
+    # Production runs with ADMIN_KEY set: the admin gate (app.main._admin_gate) is on.
+    import os
+    old_key = os.environ.get("ADMIN_KEY")
+    os.environ["ADMIN_KEY"] = ADMIN_KEY
     try:
-        yield app
+        yield main.app
     finally:
+        if old_key is None:
+            os.environ.pop("ADMIN_KEY", None)
+        else:
+            os.environ["ADMIN_KEY"] = old_key
         for obj, name, old in reversed(patched):
             setattr(obj, name, old)
 
@@ -311,17 +371,23 @@ def fill(query: dict) -> dict:
 
 
 def call_all() -> dict[str, dict]:
-    """{route id: {"path", "status", "shape"}} on the current code."""
+    """{route id: {"path", "query", "headers", "status", "shape"}} on the current code.
+    No lifespan: startup tasks (Mongo indexes, refresh loops) do not run."""
     from fastapi.testclient import TestClient
 
     out = {}
-    with offline_app() as app, TestClient(app) as client:
-        for rid, path, query in ROUTES:
-            resp = client.get(path, params=fill(query))
-            entry = {"path": path, "query": query, "status": resp.status_code}
-            if resp.status_code == 200:
+    with offline_app() as app:
+        client = TestClient(app)
+        for rid, path, query, opts in ROUTES:
+            headers = opts.get("headers") or {}
+            resp = client.get(path, params=fill(query), headers=headers)
+            entry = {"path": path, "query": query, "status": resp.status_code,
+                     "expected_status": opts.get("status", 200),
+                     "admin_key": bool(headers)}
+            try:
                 entry["shape"] = shape_of(resp.json())
-            else:
+            except ValueError:
+                entry["shape"] = {"top_type": "non-json"}
                 entry["error"] = resp.text[:300]
             out[rid] = entry
     return out
@@ -329,17 +395,20 @@ def call_all() -> dict[str, dict]:
 
 def record(source_ref: str) -> dict:
     routes = call_all()
-    bad = {k: v for k, v in routes.items() if v["status"] != 200}
+    bad = {k: v for k, v in routes.items() if v["status"] != v["expected_status"]}
     if bad:
-        raise SystemExit(f"routes failed while recording: {json.dumps(bad, indent=1)[:2000]}")
+        raise SystemExit(f"unexpected status while recording: {json.dumps(bad, indent=1)[:3000]}")
     return {
         "about": ("Response shape of the Blue Intelligence routes NAVIGUIDE (naviguide.fr) "
-                  "consumes, recorded on the production branch with the seeded offline harness "
-                  "(tests/contracts/naviguide_harness.py). A recorded key or feature property "
-                  "must not be removed, renamed or change JSON type; new ones are allowed."),
+                  "calls, with the query parameters its code sends, recorded on the production "
+                  "branch with the seeded offline harness (tests/contracts/naviguide_harness.py; "
+                  "app.main.app with ADMIN_KEY set as in production). A recorded key or feature "
+                  "property must not be removed, renamed or change JSON type, and the status must "
+                  "not change; new keys are allowed."),
         "recorded_from": source_ref,
         "types": "string | number | boolean | null | object | array",
-        "routes": {k: {"path": v["path"], "query": v["query"], "shape": v["shape"]}
+        "routes": {k: {"path": v["path"], "query": v["query"], "admin_key": v["admin_key"],
+                       "status": v["status"], "shape": v["shape"]}
                    for k, v in routes.items()},
     }
 
