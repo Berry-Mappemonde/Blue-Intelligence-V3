@@ -35,6 +35,7 @@ MIN_EXCERPT_CHARS = 20
 MAX_EXCERPT_CHARS = 400
 MAX_TEXTS = 20
 TRACE_TEXT_CHARS = 200  # reason / excerpt length in the trace event (port.judge keeps them whole)
+GATE_REFUSED = 'formalities.extract_max_llm_calls reached'
 RETRY_HINT = 'Nemotron judge: named a port of entry in the official text; re-check its sources'
 JUDGE_SYSTEM = (
     'You audit port-of-entry designations for a maritime clearance tool. Use only the official '
@@ -108,13 +109,21 @@ def _disagrees(judge_verdict: str, port_verdict: str | None) -> bool:
             or (judge_verdict == 'not_poe' and port_verdict == 'pass'))
 
 
-async def _ask(zone_name: str, ports: list[dict], texts: list[dict], run_id: str,
-               timeout_s: float) -> tuple[dict, dict, str | None]:
-    """(llm provenance, judgments by port_key, skip reason or None)."""
+async def ask(zone_name: str, ports: list[dict], texts: list[dict], run_id: str,
+              timeout_s: float = JUDGE_TIMEOUT_S, *,
+              gate=None) -> tuple[dict, dict, str | None]:
+    """(llm provenance, judgments by port_key, skip reason or None).
+
+    ``gate`` (optional) is called once, right before the single generator call; when it
+    returns False the call is not made and the zone is skipped with ``GATE_REFUSED``.
+    The poe_pipeline runs pass the zone's share of the run call cap here.
+    """
     if (os.environ.get('SAMPLE_MODE') or '').strip().lower() == 'true':
         return {}, {}, 'SAMPLE_MODE=true'
     if not texts:
         return {}, {}, 'no official evidence text for this zone'
+    if gate is not None and not gate():
+        return {}, {}, GATE_REFUSED
     try:
         result = await asyncio.wait_for(generator.generate(
             judge_prompt(zone_name, ports, texts), JUDGE_SYSTEM, json_mode=True, role='judge',
@@ -127,6 +136,9 @@ async def _ask(zone_name: str, ports: list[dict], texts: list[dict], run_id: str
     if result['provider'] == 'sample':
         return llm, {}, result.get('fallback_reason') or 'no provider answered'
     return llm, parse_judgments(result.get('parsed'), texts), None
+
+
+_ask = ask  # judge_zone (run_pipeline) and existing callers
 
 
 async def judge_zone(state: dict, zone_name: str, *, timeout_s: float = JUDGE_TIMEOUT_S) -> dict:

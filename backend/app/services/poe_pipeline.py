@@ -2951,6 +2951,8 @@ async def _persist_zone_run(db, zone: dict, docs: list[dict], status: str,
         # Partial, not complete: the call cap (or a batch failure, the deadline) left text unread.
         "extraction_partial": bool(gaps),
         "extraction_gaps": gaps or None,
+        # NemotronJudge outcome for the zone (_judge_zone_run), or None when it did not run.
+        "judge": (_zone_extract.get() or {}).get("judge"),
     }
     await db[run.zones_coll].update_one(
         {"run_id": run.run_id, "mrgid": mrgid}, {"$set": zone_doc}, upsert=True)
@@ -3032,6 +3034,114 @@ async def _persist_zone(db, zone: dict, docs: list[dict], status: str,
         }})
         log("terminé: 0 PoE, statut erreur")
     return await db.eez_zones.find_one({"mrgid": mrgid})
+
+
+JUDGE_MIN_TIME_S = 5.0  # below this, no judge call before the zone deadline
+
+
+def judge_texts(zone: dict, docs: list[dict], raw: str, used_sources: list[dict]) -> list[dict]:
+    """[{url, text}] for the judge: the official snippets this zone already fetched
+    (evidence_store.build_records on the collected text), once each, as poe_judge reads them."""
+    from app.agents import poe_judge
+    records = evidence_store.build_records(
+        zone.get("mrgid"), [d.get("name") for d in docs or []],
+        evidence_store.documents_from_context(raw, used_sources))
+    out, seen = [], set()
+    for r in records:
+        key = (r.get("url"), r.get("snippet"))
+        if r.get("snippet") and key not in seen:
+            seen.add(key)
+            out.append({"url": r.get("url"), "text": r["snippet"]})
+    return out[:poe_judge.MAX_TEXTS]
+
+
+def _take_judge_call() -> bool:
+    """One call from the zone's share of the run cap for the judge. A refusal does not
+    mark the extraction ``capped``: the readers already read what they were given."""
+    state = _zone_extract.get()
+    was_capped = (state or {}).get("capped", False)
+    granted = _take_extract_calls(1) > 0
+    if state is not None and not granted:
+        state["capped"] = was_capped
+    return granted
+
+
+def _judge_timeout_s() -> float:
+    """poe_judge.JUDGE_TIMEOUT_S, cut to what is left before the zone's extraction stop."""
+    from app.agents import poe_judge
+    stop = _extract_stop_time()
+    if stop is None:
+        return float(poe_judge.JUDGE_TIMEOUT_S)
+    return min(float(poe_judge.JUDGE_TIMEOUT_S), stop - asyncio.get_running_loop().time())
+
+
+async def _judge_zone_run(zone: dict, docs: list[dict], raw: str, used_sources: list[dict],
+                          whitelist: list[str], run, log, rec=None) -> dict:
+    """Run mode only: NemotronJudge on this zone's ports, then the C-level again.
+
+    One judge call per zone (agents.poe_judge.ask, output of parse_judgments), on the
+    official snippets already fetched. The call is taken from the zone's share of
+    ``formalities.extract_max_llm_calls`` and, through the generator, lands on the run's
+    Token Factory USD ledger. Skipped, with the reason recorded (log, ``judge`` run event,
+    ``poe_run_zones.judge``), when ``formalities.judge_in_runs`` is false, the cap is
+    reached, there is no official text, no time is left, or the judge has no answer.
+    ``port.judge`` and the levels are written to the run collections only.
+    """
+    from app.agents import poe_judge
+    from app.agents.registry_check import port_key
+    from app.core.run_rules import get_rule
+
+    def done(summary: dict) -> dict:
+        state = _zone_extract.get()
+        if state is not None:
+            state["judge"] = summary
+        if summary["status"] == "skipped":
+            log(f"juge Nemotron: sauté ({summary['reason']})")
+        else:
+            log(f"juge Nemotron: {summary['judged']} verdict(s) {summary['verdicts']}")
+        return summary
+
+    summary = {"status": "skipped", "reason": None, "provider": None, "served_model": None,
+               "judged": 0, "verdicts": {}, "evidence_texts": 0}
+    if not bool(get_rule("formalities.judge_in_runs", True)):
+        summary["reason"] = "formalities.judge_in_runs=false"
+    elif not docs:
+        summary["reason"] = "no ports"
+    if summary["reason"]:
+        await emit(rec, "judge", **summary)
+        return done(summary)
+
+    try:
+        texts = await asyncio.to_thread(judge_texts, zone, docs, raw, used_sources)
+    except Exception as e:  # noqa: BLE001 — the judge is advisory, the zone must finish
+        texts = []
+        log(f"juge Nemotron: extraits non construits ({type(e).__name__})")
+    summary["evidence_texts"] = len(texts)
+    timeout_s = _judge_timeout_s()
+    if texts and timeout_s < JUDGE_MIN_TIME_S:
+        summary["reason"] = "no time left before the zone deadline"
+        await emit(rec, "judge", **summary)
+        return done(summary)
+
+    name = zone.get("name") or zone.get("geoname") or str(zone.get("mrgid"))
+    llm, judged, reason = await poe_judge.ask(
+        name, docs, texts, run.run_id, timeout_s, gate=_take_judge_call)
+    summary.update(provider=llm.get("provider"), served_model=llm.get("served_model"))
+    for d in docs:
+        judgment = None if reason else judged.get(port_key(d.get("name")))
+        if judgment:
+            d["judge"] = dict(judgment)
+            summary["verdicts"][judgment["verdict"]] = summary["verdicts"].get(judgment["verdict"], 0) + 1
+        else:
+            d.pop("judge", None)
+        attach_confidence_level(d, whitelist=whitelist)
+    summary["judged"] = sum(summary["verdicts"].values())
+    if not reason and not summary["judged"]:
+        reason = "no usable answer"
+    summary["status"] = "skipped" if reason else "ok"
+    summary["reason"] = reason
+    await emit(rec, "judge", **summary)
+    return done(summary)
 
 
 async def _store_evidence(db, zone: dict, docs: list[dict], raw: str,
@@ -3221,6 +3331,11 @@ async def generate_zone_poe(db, mrgid: int, logger=None, force: bool = False,
                             listing_ports=None))
                         if run is not None:
                             attach_confidence_level(d, whitelist=whitelist)
+
+        # Run mode: NemotronJudge on the official snippets already fetched (PLAN-V3 §5:
+        # poe + verified excerpt -> C2, not_poe -> C1), then the level again.
+        if run is not None:
+            await _judge_zone_run(zone, docs, raw, used_sources, whitelist, run, log, rec)
 
         # Official evidence records from the fetched text (never model output), stored for
         # the run pipeline and /api/poe/verify, which read ports from Zetaris.
