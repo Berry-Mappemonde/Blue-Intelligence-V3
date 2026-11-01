@@ -286,3 +286,190 @@ def test_judge_lift_then_geo_reaches_c3(judge_calls):
     docs[0]["geocode_agreement_km"] = 0.3
     _judge(docs)
     assert docs[0]["confidence_level"] == "C3"
+
+
+# --- the judge's call is reserved before extraction --------------------------------
+
+def _share(n):
+    """Rules giving each zone a share of exactly ``n`` calls (one zone in the run)."""
+    return {"formalities.extract_max_llm_calls": n, "formalities.extract_min_zone_calls": n}
+
+
+def _in_zone(run_id, rules, body):
+    async def go():
+        rtoken = _rules(**rules)
+        ttoken = tokenfactory.bind_run(run_id)
+        try:
+            tokenfactory.plan_zone_calls(1, run_id)
+            with poe.zone_extract_budget() as state:
+                out = await body(state)
+            return out, dict(state)
+        finally:
+            tokenfactory.reset_run(ttoken)
+            run_rules.reset_rules(rtoken)
+    return asyncio.run(go())
+
+
+def test_reserved_call_survives_an_extraction_that_wants_the_whole_share(judge_calls):
+    docs = _docs()
+    run = SimpleNamespace(run_id="run-res")
+
+    async def body(state):
+        assert poe._reserve_judge_call(RAW, SOURCES, lambda m: None) is True
+        granted = poe._take_extract_calls(10)  # the readers ask for far more than the share
+        summary = await poe._judge_zone_run(ZONE, docs, RAW, SOURCES, WL, run, lambda m: None)
+        return granted, summary
+
+    (granted, summary), state = _in_zone("run-res", _share(3), body)
+    assert granted == 2  # the readers got the share minus the judge's call
+    assert summary["status"] == "ok" and len(judge_calls) == 1
+    assert docs[0]["confidence_level"] == "C2" and docs[1]["confidence_level"] == "C1"
+    assert tokenfactory.calls_taken("run-res") == 3  # never more than the share
+    assert "judge_reserved" not in state
+
+
+def test_without_official_text_nothing_is_reserved():
+    async def body(state):
+        return poe._reserve_judge_call(f"[SOURCE: https://navily.com/x]\n{FDF}", [],
+                                       lambda m: None)
+
+    reserved, state = _in_zone("run-noofficial", _share(3), body)
+    assert reserved is False and state["used"] == 0
+    assert tokenfactory.calls_taken("run-noofficial") == 0
+
+
+def test_no_reservation_when_the_judge_is_off_or_sample_mode(monkeypatch):
+    async def body(state):
+        return poe._reserve_judge_call(RAW, SOURCES, lambda m: None)
+
+    reserved, state = _in_zone("run-off", {**_share(3), "formalities.judge_in_runs": False}, body)
+    assert reserved is False and state["used"] == 0
+    monkeypatch.setenv("SAMPLE_MODE", "true")
+    reserved, state = _in_zone("run-sample", _share(3), body)
+    assert reserved is False and state["used"] == 0
+
+
+def test_unused_reservation_goes_back_to_the_run(monkeypatch):
+    run = SimpleNamespace(run_id="run-back")
+
+    async def body(state):
+        assert poe._reserve_judge_call(RAW, SOURCES, lambda m: None)
+        assert state["used"] == 1
+        # No port extracted: the judge is skipped and gives its call back.
+        summary = await poe._judge_zone_run(ZONE, [], RAW, SOURCES, WL, run, lambda m: None)
+        return summary
+
+    summary, state = _in_zone("run-back", _share(3), body)
+    assert summary["reason"] == "no ports"
+    assert state["used"] == 0 and "judge_reserved" not in state
+    assert tokenfactory.calls_taken("run-back") == 0
+
+
+def test_share_of_one_goes_to_the_judge_without_marking_extraction_capped():
+    async def body(state):
+        reserved = poe._reserve_judge_call(RAW, SOURCES, lambda m: None)
+        return reserved, poe.extraction_gaps()
+
+    (reserved, gaps), state = _in_zone("run-one", _share(1), body)
+    assert reserved is True and gaps == {}
+
+
+def _generate_harness(monkeypatch, extract_wants):
+    """generate_zone_poe in run mode with stubbed I/O; extraction asks for ``extract_wants``
+    calls from the zone's share before returning its ports."""
+    import app.db
+
+    seen = {}
+
+    async def no_settings():
+        return {}
+
+    async def find_sources(zone, *args, **kwargs):
+        return [{"url": URL, "official": True}], True, None
+
+    async def collect(official, log, rec=None, **kwargs):
+        return [f"[SOURCE: {URL}]\n{FDF} {MARIN}"], {}, SOURCES, {}
+
+    async def extract(zone, context, used_sources, log, rec=None, run=None,
+                      catalog_text=None, settings=None):
+        seen["extract_granted"] = poe._take_extract_calls(extract_wants)
+        docs = _docs()
+        for d in docs:
+            poe.attach_confidence_level(d, whitelist=WL)
+        return docs
+
+    async def persist_run(db, zone, docs, status, used_sources, hashes, run, rec, log):
+        seen["docs"] = docs
+        return {"mrgid": zone["mrgid"], "status": status, "poe_count": len(docs),
+                "judge": (poe._zone_extract.get() or {}).get("judge")}
+
+    async def evidence(*args, **kwargs):
+        return 0
+
+    class _Zones:
+        async def find_one(self, query):
+            return dict(ZONE)
+
+    class _DB:
+        eez_zones = _Zones()
+
+    monkeypatch.setattr(app.db, "get_settings", no_settings)
+    monkeypatch.setattr(poe, "load_exceptions", lambda: {})
+    monkeypatch.setattr(poe, "build_whitelist", lambda *a, **k: list(WL))
+    monkeypatch.setattr(poe, "_find_sources", find_sources)
+    monkeypatch.setattr(poe, "_collect_texts", collect)
+    monkeypatch.setattr(poe, "extract_structured_ports", lambda raw: [])
+    monkeypatch.setattr(poe, "_extract_and_geocode", extract)
+    monkeypatch.setattr(poe, "_store_evidence", evidence)
+    monkeypatch.setattr(poe, "_persist_zone_run", persist_run)
+    return _DB(), seen
+
+
+def test_generate_zone_judges_a_zone_whose_extraction_uses_the_whole_share(
+        monkeypatch, judge_calls):
+    db, seen = _generate_harness(monkeypatch, extract_wants=50)
+    run = SimpleNamespace(run_id="run-gen", variant="tinyfish", recorder=None)
+
+    async def go():
+        rtoken = _rules(**_share(4))
+        ttoken = tokenfactory.bind_run("run-gen")
+        try:
+            tokenfactory.plan_zone_calls(1, "run-gen")
+            return await poe.generate_zone_poe(db, 1, run=run)
+        finally:
+            tokenfactory.reset_run(ttoken)
+            run_rules.reset_rules(rtoken)
+
+    monkeypatch.setattr(poe, "ZoneRecorder", lambda *a, **k: None)
+    result = asyncio.run(go())
+    assert seen["extract_granted"] == 3  # 4 - the judge's reserved call
+    assert len(judge_calls) == 1
+    assert result["judge"]["status"] == "ok"
+    levels = {d["name"]: d["confidence_level"] for d in seen["docs"]}
+    assert levels == {"Fort-de-France": "C2", "Le Marin": "C1"}
+    assert tokenfactory.calls_taken("run-gen") == 4
+
+
+def test_generate_zone_gives_the_reservation_back_on_error(monkeypatch):
+    db, seen = _generate_harness(monkeypatch, extract_wants=1)
+    run = SimpleNamespace(run_id="run-err", variant="tinyfish", recorder=None)
+
+    async def boom(*a, **k):
+        raise RuntimeError("extraction failed")
+
+    monkeypatch.setattr(poe, "_extract_and_geocode", boom)
+    monkeypatch.setattr(poe, "ZoneRecorder", lambda *a, **k: None)
+
+    async def go():
+        rtoken = _rules(**_share(4))
+        ttoken = tokenfactory.bind_run("run-err")
+        try:
+            tokenfactory.plan_zone_calls(1, "run-err")
+            with pytest.raises(RuntimeError):
+                await poe.generate_zone_poe(db, 1, run=run)
+        finally:
+            tokenfactory.reset_run(ttoken)
+            run_rules.reset_rules(rtoken)
+
+    asyncio.run(go())
+    assert tokenfactory.calls_taken("run-err") == 0

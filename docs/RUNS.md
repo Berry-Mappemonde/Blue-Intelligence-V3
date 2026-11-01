@@ -85,8 +85,11 @@ extraction, on the official snippets the zone already fetched
 verified excerpt lifts to C2, `not_poe` caps at C1. Ports and levels are written
 to `poe_run_ports` only; live `poe_ports` never gets them.
 
-The call is taken from the zone's share of `formalities.extract_max_llm_calls`
-and, on Token Factory, its spend lands on the run's USD ledger. The judge is
+The call comes from the zone's share of `formalities.extract_max_llm_calls`.
+When the zone has official text (and the rule is on, outside SAMPLE_MODE), one
+call of the share is reserved for the judge before extraction starts, so the
+readers can never use it; if the judge does not run, the call goes back to the
+run. On Token Factory its spend lands on the run's USD ledger. The judge is
 skipped, with the reason in `poe_run_zones.judge` and a `judge` run event, when
 the share is used up (`formalities.extract_max_llm_calls reached`), when
 `formalities.judge_in_runs` is false (default true), when the zone has no
