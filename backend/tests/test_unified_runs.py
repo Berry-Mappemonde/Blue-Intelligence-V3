@@ -819,7 +819,7 @@ def test_concurrent_resume_starts_the_run_once(env, api):
                                                "concurrency": 1, "variant": "tinyfish"}})
     res = _post_concurrently(api["app"], [
         ("/api/poe/runs", {"resume_run_id": "r1"}),
-        ("/api/runs", {"run_id": "r1", "resume": True})])
+        ("/api/v3/runs", {"run_id": "r1", "resume": True})])
     assert sorted(r.status_code for r in res) == [202, 409]
     assert api["started"] == ["r1"]
 
@@ -827,17 +827,17 @@ def test_concurrent_resume_starts_the_run_once(env, api):
 def test_concurrent_launches_respect_parallel_cap(env, api):
     cap = api["router"].MAX_PARALLEL_RUNS
     res = _post_concurrently(api["app"], [
-        ("/api/runs", {"run_id": f"r-cap-{i}"}) for i in range(cap + 2)])
+        ("/api/v3/runs", {"run_id": f"r-cap-{i}"}) for i in range(cap + 2)])
     assert sorted(r.status_code for r in res) == [202] * cap + [409] * 2
     assert len(api["started"]) == cap
 
 
 def test_failed_lookup_releases_the_reserved_run(env, api):
-    res = _post_concurrently(api["app"], [("/api/runs", {"run_id": "r-x", "resume": True})])
+    res = _post_concurrently(api["app"], [("/api/v3/runs", {"run_id": "r-x", "resume": True})])
     assert res[0].status_code == 400  # unknown run
     assert "r-x" not in api["router"].RUN_STATES
     env["db"].poe_runs.docs.append({"_id": "r-x", "state": "done", "params": {}})
-    res = _post_concurrently(api["app"], [("/api/runs", {"run_id": "r-x", "resume": True})])
+    res = _post_concurrently(api["app"], [("/api/v3/runs", {"run_id": "r-x", "resume": True})])
     assert res[0].status_code == 202 and api["started"] == ["r-x"]
 
 
@@ -997,9 +997,9 @@ def test_upload_route_after_failed_upload(env, monkeypatch):
     stub = _StubClient()
     monkeypatch.setattr(object_storage, "S3Client", lambda cfg: stub)
     app = _bare_runs_app(env, monkeypatch)
-    res = _post_concurrently(app, [(f"/api/runs/{rid}/export", {})])
+    res = _post_concurrently(app, [(f"/api/v3/runs/{rid}/export", {})])
     assert res[0].status_code == 409  # the export itself is never redone
-    res = _post_concurrently(app, [(f"/api/runs/{rid}/upload", {})])
+    res = _post_concurrently(app, [(f"/api/v3/runs/{rid}/upload", {})])
     assert res[0].status_code == 200 and res[0].json()["uploaded"] is True
     assert stub.calls[-1][0] == "manifest.json"
 
@@ -1282,11 +1282,11 @@ def test_cli_resume_refused_while_running_elsewhere(env, monkeypatch, cli, capsy
 
 def test_api_resume_refused_while_running_elsewhere(env, api):
     _running_elsewhere(env["db"], "r-api-busy")
-    res = _post_concurrently(api["app"], [("/api/runs", {"run_id": "r-api-busy", "resume": True})])
+    res = _post_concurrently(api["app"], [("/api/v3/runs", {"run_id": "r-api-busy", "resume": True})])
     assert res[0].status_code == 409 and "another process" in res[0].json()["detail"]
     assert api["started"] == []
     assert "r-api-busy" not in api["router"].RUN_STATES
-    res = _post_concurrently(api["app"], [("/api/runs", {"run_id": "r-api-busy", "resume": True,
+    res = _post_concurrently(api["app"], [("/api/v3/runs", {"run_id": "r-api-busy", "resume": True,
                                                          "force": True})])
     assert res[0].status_code == 202 and api["started"] == ["r-api-busy"]
 
@@ -1356,3 +1356,26 @@ def test_export_appearing_just_before_the_rename(env, monkeypatch):
     assert unified_runs.verify_export(base) == other["result"][1]
     assert sorted(p.name for p in env["exports"].iterdir()) == [rid]
     assert "exports" not in env["db"].poe_runs.docs[0]  # the late one recorded nothing
+
+
+# --- the unified-run API lives under /api/v3/runs ------------------------------------
+
+def test_unified_run_routes_are_under_api_v3(tmp_path, monkeypatch):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from app.routers import runs as runs_router
+
+    paths = {(m, r.path) for r in runs_router.router.routes for m in getattr(r, "methods", ())}
+    assert {("POST", "/api/v3/runs"), ("GET", "/api/v3/runs/{run_id}/manifest"),
+            ("POST", "/api/v3/runs/{run_id}/export"),
+            ("POST", "/api/v3/runs/{run_id}/upload")} <= paths
+    assert not [p for _, p in paths if p == "/api/runs" or p.startswith("/api/runs/")]
+
+    monkeypatch.setenv("BI_RUNS_DIR", str(tmp_path / "runs"))
+    app = FastAPI()
+    app.include_router(runs_router.router)
+    client = TestClient(app)
+    assert client.get("/api/v3/runs/no-such-run/manifest").status_code == 404
+    assert client.get("/api/runs/no-such-run/manifest").status_code == 404  # old path: gone
+    assert client.post("/api/runs", json={}).status_code in (404, 405)
