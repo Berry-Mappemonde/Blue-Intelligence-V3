@@ -149,8 +149,9 @@
           "name": "Douane - Direction interrégionale Antilles-Guyane (clearance, entry/exit form)",
           "url": "https://www.douane.gouv.fr/particuliers/vous-etes-en-outre-mer/martinique-preparer-son-arrivee-ou-son-retour-sur-le-territoire",
           "domain": "douane.gouv.fr",
-          "added": true,
-          "source": "https://www.martinique.gouv.fr/Services-de-l-Etat/Finances-publiques-impots-et-douanes/Direction-interregionale-des-Douanes-Antilles-Guyane/Nouvelles-formalites-de-clearance-dans-les-iles-des-Antilles-francaises"
+          "added": false,
+          "source": "https://www.martinique.gouv.fr/Services-de-l-Etat/Finances-publiques-impots-et-douanes/Direction-interregionale-des-Douanes-Antilles-Guyane/Nouvelles-formalites-de-clearance-dans-les-iles-des-Antilles-francaises",
+          "note": "inherited from France (FR) since territories inherit their sovereign's whitelist"
         },
         {
           "role": "immigration",
@@ -165,8 +166,9 @@
           "name": "Direction de la mer de la Martinique (DM)",
           "url": "https://www.dm.martinique.developpement-durable.gouv.fr/formalites-de-clearance-a707.html",
           "domain": "martinique.developpement-durable.gouv.fr",
-          "added": true,
-          "source": "https://www.martinique.gouv.fr/Services-de-l-Etat/Mer-littoral-et-securite-maritime/DM/Formulaires-et-documentation-a-telecharger/Plaisance"
+          "added": false,
+          "source": "https://www.martinique.gouv.fr/Services-de-l-Etat/Mer-littoral-et-securite-maritime/DM/Formulaires-et-documentation-a-telecharger/Plaisance",
+          "note": "inherited from France (FR) since territories inherit their sovereign's whitelist"
         },
         {
           "role": "port_authority",

@@ -126,11 +126,19 @@ def rows() -> list[dict]:
             if now:
                 row["note"] += "; still missing " + ", ".join(ROLE_LABELS[r] for r in now)
         elif not wl:
-            row["gap"], row["note"] = "yes", "empty whitelist"
+            why = no_inherit().get((z["iso2"] or "").upper())
+            row["gap"] = "yes"
+            row["note"] = "empty whitelist" + (f" (no inheritance: {why.split(':')[0]}, "
+                                               f"{why.split(': ', 1)[1]})" if why else "")
         else:
             row["gap"], row["note"] = "not checked", ""
         out.append(row)
     return out
+
+
+def no_inherit() -> dict:
+    from app.services.poe_pipeline import NO_SOVEREIGN_INHERITANCE
+    return dict(NO_SOVEREIGN_INHERITANCE)
 
 
 def render(table: list[dict] | None = None) -> str:
@@ -146,8 +154,13 @@ def render(table: list[dict] | None = None) -> str:
         "`backend/data/eez_world_map.geojson`) and the official domains the PoE whitelist",
         "accepts for each (`poe_pipeline.build_whitelist`: government labels of the zone's",
         "ISO2 from the Public Suffix List, plus `poe_exceptions.json` manual / auto entries;",
-        "matched by host with `url_allowed`). A zone uses its own ISO2 when it has one, else",
-        "the sovereign's (`iso2 or sov_iso2`): Martinique (MQ) does not inherit France's list.",
+        "matched by host with `url_allowed`). A zone gets its own ISO2's domains and, as a",
+        "territory, its sovereign's (`whitelist_countries`): Martinique (MQ) also accepts",
+        "France's. A zone without its own ISO2 uses the sovereign's.",
+        "",
+        "No inheritance (`NO_SOVEREIGN_INHERITANCE` in `poe_pipeline.py`):",
+        "",
+        *[f"- `{cc}`: {why}" for cc, why in sorted(no_inherit().items())],
         "",
         "**Gap**: `yes` when an audited authority (customs, immigration, maritime authority,",
         "port authority) has no matching domain, or the whitelist is empty; `no` when all",
@@ -171,18 +184,16 @@ def render(table: list[dict] | None = None) -> str:
                   "|---|---|---|---|---|---|"]
         for a in audit["authorities"]:
             lines.append(f"| {ROLE_LABELS[a['role']]} | {a['name']} | `{a['domain']}` "
-                         f"| {'yes' if a.get('added') else 'already listed'} "
+                         f"| {'yes' if a.get('added') else a.get('note') or 'already listed'} "
                          f"| {a['url']} | {a['source']} |")
         lines.append("")
     lines += [
         "## Next",
         "",
         "- Audit the `not checked` zones the same way (one authority per role, official",
-        "  source each). Zones with an empty whitelist come first: Collectivity of Saint",
-        "  Martin, Saint-Barthélemy, Bonaire, Saba, Sint-Eustatius, Western Sahara.",
-        "- Other French overseas zones (Guadeloupe, French Guiana, Réunion, Mayotte,",
-        "  Saint-Martin, Saint-Barthélemy) have the same pattern as Martinique: their own",
-        "  ISO2 means `douane.gouv.fr` is not in their whitelist.",
+        "  source each). Territories now inherit their sovereign's domains, but local",
+        "  bodies (port authorities, territorial maritime services) still need entries.",
+        "- Western Sahara stays empty by decision (disputed territory).",
         "",
     ]
     return "\n".join(lines)

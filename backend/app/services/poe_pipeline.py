@@ -824,17 +824,48 @@ def _preferred_gov_label(iso2: str) -> str:
     return "gov"
 
 
+# Zones with their own ISO2 that do NOT inherit the sovereign's whitelist.
+# Default: a territory inherits it (Martinique gets France's douane.gouv.fr, Bonaire the
+# Netherlands' domains). Not for a disputed territory, nor for a self-governing country
+# that runs its own customs and immigration (the sovereign's pages are not its law).
+NO_SOVEREIGN_INHERITANCE = {
+    "EH": "Western Sahara: disputed territory; no State's domains are taken as its own",
+    "SX": "Sint Maarten: constituent country of the Kingdom of the Netherlands, own customs",
+    "AW": "Aruba: constituent country of the Kingdom of the Netherlands, own customs",
+    "CW": "Curaçao: constituent country of the Kingdom of the Netherlands, own customs",
+    "CK": "Cook Islands: self-governing in free association with New Zealand",
+    "NU": "Niue: self-governing in free association with New Zealand",
+    "GL": "Greenland: self-governing within the Kingdom of Denmark, own customs",
+    "FO": "Faroe Islands: self-governing within the Kingdom of Denmark, own customs",
+}
+
+
+def whitelist_countries(iso2: str | None, sov_iso2: str | None) -> list[str]:
+    """ISO2 codes whose State domains a zone accepts: its own, then its sovereign's
+    (a territory inherits it), unless the zone is in NO_SOVEREIGN_INHERITANCE.
+    A zone without its own ISO2 uses the sovereign's."""
+    own = (iso2 or "").strip().upper()
+    sov = (sov_iso2 or "").strip().upper()
+    if not own:
+        return [sov] if sov else []
+    if sov and sov != own and own not in NO_SOVEREIGN_INHERITANCE:
+        return [own, sov]
+    return [own]
+
+
 def build_whitelist(iso2: str | None, sov_iso2: str | None, exceptions: dict | None = None) -> list[str]:
     """State domains of countries that have an EEZ (a hint, no longer a gate).
 
+    A zone gets its own country's domains and, when it is a territory, its
+    sovereign's (``whitelist_countries``: Martinique accepts douane.gouv.fr;
+    Western Sahara, Sint Maarten, Niue… do not inherit).
     A wildcard PSL suffix (Nepal, Jamaica…) no longer produces the 7 patterns:
     we keep the usual label (gov / gouv / gob). Landlocked countries are
     ignored — even if NP or SK is passed by mistake."""
     exc = exceptions or load_exceptions()
     maritime = eez_iso2_set()
     out: set[str] = set()
-    primary = iso2 or sov_iso2
-    for cc in {c for c in (primary,) if c}:
+    for cc in whitelist_countries(iso2, sov_iso2):
         up = cc.upper()
         if maritime and up not in maritime:
             continue

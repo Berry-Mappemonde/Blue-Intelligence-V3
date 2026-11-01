@@ -99,9 +99,10 @@ def test_new_entries_do_not_open_lookalike_hosts(exceptions):
     assert not url_allowed("https://notslaspa.com/", lc)
     assert not url_allowed("https://www.noonsite.com/place/st-lucia", lc)
     assert url_allowed("https://www.douane.gouv.fr/fiche/navigation-dans-les-departements-doutre-mer", mq)
-    # MQ gets the customs and DM hosts, not all of gouv.fr.
-    assert not url_allowed("https://www.education.gouv.fr/", mq)
-    assert not url_allowed("https://dm.guadeloupe.developpement-durable.gouv.fr/", mq)
+    # MQ inherits France's State domains (gouv.fr), never lookalikes of them.
+    assert url_allowed("https://www.dm.martinique.developpement-durable.gouv.fr/", mq)
+    assert not url_allowed("https://gouv.fr.example.com/", mq)
+    assert not url_allowed("https://notgouv.fr/", mq)
     assert url_allowed("https://www.palmasport.es/en/who-are-we/", es)
     assert not url_allowed("https://palmasport.es.fake.com/", es)
 
@@ -123,3 +124,60 @@ def test_report_marks_pilots_without_gap_and_is_up_to_date():
     assert empty and all(by_mrgid[m]["gap"] == "yes" for m in empty)
     assert report.DOC.read_text(encoding="utf-8") == report.render(table), (
         "docs/ROUTE-WHITELIST.md is stale: run backend/scripts/route_whitelist_report.py --write")
+
+
+
+# --- territories inherit their sovereign's whitelist ---------------------------------
+
+FR_CUSTOMS = "https://www.douane.gouv.fr/fiche/navigation-dans-les-departements-doutre-mer"
+NL_CUSTOMS = "https://www.belastingdienst.nl/wps/wcm/connect/nl/douane/douane"
+
+
+@pytest.mark.parametrize("iso2, sov2, url", [
+    ("MQ", "FR", FR_CUSTOMS),   # Martinique
+    ("GP", "FR", FR_CUSTOMS),   # Guadeloupe
+    ("MF", "FR", FR_CUSTOMS),   # Collectivity of Saint Martin (was empty)
+    ("BQ", "NL", NL_CUSTOMS),   # Bonaire (was empty)
+])
+def test_territories_accept_their_sovereigns_customs_site(iso2, sov2, url, exceptions):
+    wl = build_whitelist(iso2, sov2, exceptions)
+    assert url_allowed(url, wl), wl
+    # The sovereign's own list is included as is.
+    assert set(build_whitelist(sov2, sov2, exceptions)) <= set(wl)
+
+
+def test_territory_keeps_its_own_domains_too(exceptions):
+    wl = build_whitelist("MQ", "FR", exceptions)
+    assert {"martinique.gouv.fr", "martinique.port.fr", "douane.gouv.fr"} <= set(wl)
+    assert url_allowed("https://www.martinique.port.fr/autorite_portuaire.aspx", wl)
+
+
+def test_western_sahara_gets_nothing(exceptions):
+    from app.services.poe_pipeline import NO_SOVEREIGN_INHERITANCE, whitelist_countries
+    assert "disputed" in NO_SOVEREIGN_INHERITANCE["EH"]
+    for sov in ("EH", "MA", "ES", None):
+        assert whitelist_countries("EH", sov) == ["EH"]
+        assert build_whitelist("EH", sov, exceptions) == []
+    row = next(r for r in report.rows() if r["mrgid"] == 8368)
+    assert row["domains"] == [] and row["gap"] == "yes" and "disputed" in row["note"]
+
+
+@pytest.mark.parametrize("iso2, sov2, foreign", [
+    ("SX", "NL", "https://www.government.nl/"),
+    ("AW", "NL", "https://www.government.nl/"),
+    ("CW", "NL", "https://www.government.nl/"),
+    ("NU", "NZ", "https://www.mpi.govt.nz/"),
+    ("CK", "NZ", "https://www.mpi.govt.nz/"),
+])
+def test_self_governing_countries_do_not_inherit(iso2, sov2, foreign, exceptions):
+    assert not url_allowed(foreign, build_whitelist(iso2, sov2, exceptions))
+
+
+def test_inheritance_order_and_zones_without_iso2():
+    from app.services.poe_pipeline import whitelist_countries
+    assert whitelist_countries("MQ", "FR") == ["MQ", "FR"]
+    assert whitelist_countries("mq", "fr") == ["MQ", "FR"]
+    assert whitelist_countries("FR", "FR") == ["FR"]
+    assert whitelist_countries(None, "ES") == ["ES"]   # Canary Islands
+    assert whitelist_countries(None, None) == []
+    assert whitelist_countries("SX", "NL") == ["SX"]

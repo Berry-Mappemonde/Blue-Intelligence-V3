@@ -6,8 +6,20 @@ EEZs crossed by the Berry-Mappemonde route (`backend/data/route.geojson` x
 `backend/data/eez_world_map.geojson`) and the official domains the PoE whitelist
 accepts for each (`poe_pipeline.build_whitelist`: government labels of the zone's
 ISO2 from the Public Suffix List, plus `poe_exceptions.json` manual / auto entries;
-matched by host with `url_allowed`). A zone uses its own ISO2 when it has one, else
-the sovereign's (`iso2 or sov_iso2`): Martinique (MQ) does not inherit France's list.
+matched by host with `url_allowed`). A zone gets its own ISO2's domains and, as a
+territory, its sovereign's (`whitelist_countries`): Martinique (MQ) also accepts
+France's. A zone without its own ISO2 uses the sovereign's.
+
+No inheritance (`NO_SOVEREIGN_INHERITANCE` in `poe_pipeline.py`):
+
+- `AW`: Aruba: constituent country of the Kingdom of the Netherlands, own customs
+- `CK`: Cook Islands: self-governing in free association with New Zealand
+- `CW`: Curaçao: constituent country of the Kingdom of the Netherlands, own customs
+- `EH`: Western Sahara: disputed territory; no State's domains are taken as its own
+- `FO`: Faroe Islands: self-governing within the Kingdom of Denmark, own customs
+- `GL`: Greenland: self-governing within the Kingdom of Denmark, own customs
+- `NU`: Niue: self-governing in free association with New Zealand
+- `SX`: Sint Maarten: constituent country of the Kingdom of the Netherlands, own customs
 
 **Gap**: `yes` when an audited authority (customs, immigration, maritime authority,
 port authority) has no matching domain, or the whitelist is empty; `no` when all
@@ -15,13 +27,13 @@ audited authorities match; `not checked` when the zone has not been audited yet.
 Audited on 2026-11-01: the pilot zones. Sources per domain are below
 and in `backend/data/whitelist_sources.json`.
 
-70 zones: 6 gap, 4 no gap, 60 not checked.
+70 zones: 1 gap, 4 no gap, 65 not checked.
 
 | mrgid | zone | sovereign | key | domains listed | gap | note |
 |---|---|---|---|---|---|---|
 | 8414 | Antigua and Barbuda | Antigua and Barbuda | AG | `gov.ag`, `immigration.gov.ag` | not checked |  |
 | 8323 | Australia | Australia | AU | `abf.gov.au`, `gov.au` | not checked |  |
-| 8309 | Christmas Island | Australia | CX | `gov.cx` | not checked |  |
+| 8309 | Christmas Island | Australia | CX | `abf.gov.au`, `gov.au`, `gov.cx` | not checked |  |
 | 8418 | Barbados | Barbados | BB | `gov.bb` | not checked |  |
 | 8493 | Canada | Canada | CA | `canada.ca`, `gc.ca` | not checked |  |
 | 8362 | Cape Verde | Cape Verde | CV | `enapor.cv`, `gov.cv`, `governo.cv`, `imp.cv`, `policianacional.cv` | no | audited; was missing immigration, maritime authority, port authority |
@@ -33,22 +45,22 @@ and in `backend/data/whitelist_sources.json`.
 | 21791 | Oecusse | East Timor | TL | `gov.tl` | not checked |  |
 | 8403 | Galapagos | Ecuador | EC | `gob.ec`, `gov.ec` | not checked |  |
 | 8325 | Fiji | Fiji | FJ | `baf.com.fj`, `frcs.org.fj`, `gov.fj` | not checked |  |
-| 8495 | Collectivity of Saint Martin | France | MF | (none) | yes | empty whitelist |
-| 8341 | Europa Island | France | TF | `taaf.fr` | not checked |  |
+| 8495 | Collectivity of Saint Martin | France | MF | `douane.gouv.fr`, `gouv.fr`, `service-public.fr` | not checked |  |
+| 8341 | Europa Island | France | TF | `douane.gouv.fr`, `gouv.fr`, `service-public.fr`, `taaf.fr` | not checked |  |
 | 5677 | France | France | FR | `douane.gouv.fr`, `gouv.fr`, `service-public.fr` | not checked |  |
 | 48966 | France | France | FR | `douane.gouv.fr`, `gouv.fr`, `service-public.fr` | not checked |  |
-| 8462 | French Guiana | France | GF | `guyane.gouv.fr` | not checked |  |
-| 8440 | French Polynesia | France | PF | `gov.pf`, `service-public.pf` | not checked |  |
-| 33177 | Guadeloupe | France | GP | `guadeloupe.gouv.fr` | not checked |  |
+| 8462 | French Guiana | France | GF | `douane.gouv.fr`, `gouv.fr`, `guyane.gouv.fr`, `service-public.fr` | not checked |  |
+| 8440 | French Polynesia | France | PF | `douane.gouv.fr`, `gouv.fr`, `gov.pf`, `service-public.fr`, `service-public.pf` | not checked |  |
+| 33177 | Guadeloupe | France | GP | `douane.gouv.fr`, `gouv.fr`, `guadeloupe.gouv.fr`, `service-public.fr` | not checked |  |
 | 48946 | Ile Tromelin | France | FR | `douane.gouv.fr`, `gouv.fr`, `service-public.fr` | not checked |  |
-| 33178 | Martinique | France | MQ | `douane.gouv.fr`, `martinique.developpement-durable.gouv.fr`, `martinique.gouv.fr`, `martinique.port.fr` | no | audited; was missing customs, maritime authority, port authority |
+| 33178 | Martinique | France | MQ | `douane.gouv.fr`, `gouv.fr`, `martinique.gouv.fr`, `martinique.port.fr`, `service-public.fr` | no | audited; was missing port authority |
 | 48948 | Matthew and Hunter Islands | France | FR | `douane.gouv.fr`, `gouv.fr`, `service-public.fr` | not checked |  |
-| 48944 | Mayotte | France | YT | `legifrance.gouv.fr`, `mayotte.gouv.fr` | not checked |  |
-| 8312 | New Caledonia | France | NC | `douane.gouv.nc`, `gouv.nc`, `service-public.nc` | not checked |  |
-| 8338 | Réunion | France | RE | `reunion.gouv.fr` | not checked |  |
-| 48952 | Saint-Barthélemy | France | BL | (none) | yes | empty whitelist |
-| 8494 | Saint-Pierre and Miquelon | France | PM | `douane975.fr` | not checked |  |
-| 8454 | Wallis and Futuna | France | WF | `wallis-et-futuna.gouv.fr` | not checked |  |
+| 48944 | Mayotte | France | YT | `douane.gouv.fr`, `gouv.fr`, `legifrance.gouv.fr`, `mayotte.gouv.fr`, `service-public.fr` | not checked |  |
+| 8312 | New Caledonia | France | NC | `douane.gouv.fr`, `douane.gouv.nc`, `gouv.fr`, `gouv.nc`, `service-public.fr`, `service-public.nc` | not checked |  |
+| 8338 | Réunion | France | RE | `douane.gouv.fr`, `gouv.fr`, `reunion.gouv.fr`, `service-public.fr` | not checked |  |
+| 48952 | Saint-Barthélemy | France | BL | `douane.gouv.fr`, `gouv.fr`, `service-public.fr` | not checked |  |
+| 8494 | Saint-Pierre and Miquelon | France | PM | `douane.gouv.fr`, `douane975.fr`, `gouv.fr`, `service-public.fr` | not checked |  |
+| 8454 | Wallis and Futuna | France | WF | `douane.gouv.fr`, `gouv.fr`, `service-public.fr`, `wallis-et-futuna.gouv.fr` | not checked |  |
 | 8419 | Grenada | Grenada | GD | `gov.gd` | not checked |  |
 | 8460 | Guyana | Guyana | GY | `gov.gy` | not checked |  |
 | 8333 | Andaman and Nicobar | India | IN | `gov.in`, `nic.in` | not checked |  |
@@ -59,10 +71,10 @@ and in `backend/data/whitelist_sources.json`.
 | 8345 | Maldives | Maldives | MV | `gov.mv` | not checked |  |
 | 8367 | Morocco | Morocco | MA | `gov.ma` | not checked |  |
 | 26519 | Aruba | Netherlands | AW | `douane.aw` | not checked |  |
-| 26520 | Bonaire | Netherlands | BQ | (none) | yes | empty whitelist |
+| 26520 | Bonaire | Netherlands | BQ | `belastingdienst.nl`, `douane.nl`, `government.nl`, `rijksoverheid.nl` | not checked |  |
 | 26517 | Curaçao | Netherlands | CW | `douane.cw`, `gobiernu.cw` | not checked |  |
-| 26518 | Saba | Netherlands | BQ | (none) | yes | empty whitelist |
-| 26526 | Sint-Eustatius | Netherlands | BQ | (none) | yes | empty whitelist |
+| 26518 | Saba | Netherlands | BQ | `belastingdienst.nl`, `douane.nl`, `government.nl`, `rijksoverheid.nl` | not checked |  |
+| 26526 | Sint-Eustatius | Netherlands | BQ | `belastingdienst.nl`, `douane.nl`, `government.nl`, `rijksoverheid.nl` | not checked |  |
 | 21803 | Sint-Maarten | Netherlands | SX | `gov.sx`, `sintmaartengov.org` | not checked |  |
 | 8446 | Cook Islands | New Zealand | CK | `gov.ck` | not checked |  |
 | 8423 | Panama | Panama | PA | `gob.pa` | not checked |  |
@@ -82,13 +94,13 @@ and in `backend/data/whitelist_sources.json`.
 | 8461 | Suriname | Suriname | SR | `gov.sr` | not checked |  |
 | 8448 | Tonga | Tonga | TO | `gov.to` | not checked |  |
 | 8420 | Trinidad and Tobago | Trinidad and Tobago | TT | `gov.tt` | not checked |  |
-| 8379 | Ascension | United Kingdom | SH | `gov.sh` | not checked |  |
-| 8365 | Gibraltar | United Kingdom | GI | `gov.gi` | not checked |  |
-| 8415 | Montserrat | United Kingdom | MS | `gov.ms` | not checked |  |
-| 8380 | Saint Helena | United Kingdom | SH | `gov.sh` | not checked |  |
-| 8444 | American Samoa | United States | AS | `gov.as` | not checked |  |
+| 8379 | Ascension | United Kingdom | SH | `gov.sh`, `gov.uk` | not checked |  |
+| 8365 | Gibraltar | United Kingdom | GI | `gov.gi`, `gov.uk` | not checked |  |
+| 8415 | Montserrat | United Kingdom | MS | `gov.ms`, `gov.uk` | not checked |  |
+| 8380 | Saint Helena | United Kingdom | SH | `gov.sh`, `gov.uk` | not checked |  |
+| 8444 | American Samoa | United States | AS | `cbp.gov`, `gov`, `gov.as`, `mil` | not checked |  |
 | 8433 | Venezuela | Venezuela | VE | `gob.ve`, `gov.ve`, `inea.gob.ve` | not checked |  |
-| 8368 | Western Sahara | Western Sahara | EH | (none) | yes | empty whitelist |
+| 8368 | Western Sahara | Western Sahara | EH | (none) | yes | empty whitelist (no inheritance: Western Sahara, disputed territory; no State's domains are taken as its own) |
 
 ## Domains added and their sources
 
@@ -126,16 +138,14 @@ and in `backend/data/whitelist_sources.json`.
 
 | role | authority | domain | added | official URL | source |
 |---|---|---|---|---|---|
-| customs | Douane - Direction interrégionale Antilles-Guyane (clearance, entry/exit form) | `douane.gouv.fr` | yes | https://www.douane.gouv.fr/particuliers/vous-etes-en-outre-mer/martinique-preparer-son-arrivee-ou-son-retour-sur-le-territoire | https://www.martinique.gouv.fr/Services-de-l-Etat/Finances-publiques-impots-et-douanes/Direction-interregionale-des-Douanes-Antilles-Guyane/Nouvelles-formalites-de-clearance-dans-les-iles-des-Antilles-francaises |
+| customs | Douane - Direction interrégionale Antilles-Guyane (clearance, entry/exit form) | `douane.gouv.fr` | inherited from France (FR) since territories inherit their sovereign's whitelist | https://www.douane.gouv.fr/particuliers/vous-etes-en-outre-mer/martinique-preparer-son-arrivee-ou-son-retour-sur-le-territoire | https://www.martinique.gouv.fr/Services-de-l-Etat/Finances-publiques-impots-et-douanes/Direction-interregionale-des-Douanes-Antilles-Guyane/Nouvelles-formalites-de-clearance-dans-les-iles-des-Antilles-francaises |
 | immigration | Préfecture de la Martinique (services de l'État, contrôle aux frontières) | `martinique.gouv.fr` | already listed | https://www.martinique.gouv.fr/ | https://www.douane.gouv.fr/particuliers/vous-naviguez/vous-naviguez-en-provenance-ou-destination-dun-pays-non-membre-de |
-| maritime authority | Direction de la mer de la Martinique (DM) | `martinique.developpement-durable.gouv.fr` | yes | https://www.dm.martinique.developpement-durable.gouv.fr/formalites-de-clearance-a707.html | https://www.martinique.gouv.fr/Services-de-l-Etat/Mer-littoral-et-securite-maritime/DM/Formulaires-et-documentation-a-telecharger/Plaisance |
+| maritime authority | Direction de la mer de la Martinique (DM) | `martinique.developpement-durable.gouv.fr` | inherited from France (FR) since territories inherit their sovereign's whitelist | https://www.dm.martinique.developpement-durable.gouv.fr/formalites-de-clearance-a707.html | https://www.martinique.gouv.fr/Services-de-l-Etat/Mer-littoral-et-securite-maritime/DM/Formulaires-et-documentation-a-telecharger/Plaisance |
 | port authority | Grand Port Maritime de la Martinique (EPIC since 2013) | `martinique.port.fr` | yes | https://www.martinique.port.fr/autorite_portuaire.aspx | https://atlantic-maritime-strategy.ec.europa.eu/en/partners/grand-port-maritime-de-la-martinique-martinique-hub-cara%C3%AFbe |
 
 ## Next
 
 - Audit the `not checked` zones the same way (one authority per role, official
-  source each). Zones with an empty whitelist come first: Collectivity of Saint
-  Martin, Saint-Barthélemy, Bonaire, Saba, Sint-Eustatius, Western Sahara.
-- Other French overseas zones (Guadeloupe, French Guiana, Réunion, Mayotte,
-  Saint-Martin, Saint-Barthélemy) have the same pattern as Martinique: their own
-  ISO2 means `douane.gouv.fr` is not in their whitelist.
+  source each). Territories now inherit their sovereign's domains, but local
+  bodies (port authorities, territorial maritime services) still need entries.
+- Western Sahara stays empty by decision (disputed territory).
