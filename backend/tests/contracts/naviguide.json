@@ -1,0 +1,1527 @@
+{
+ "about": "Response shape of the Blue Intelligence routes NAVIGUIDE (naviguide.fr) consumes, recorded on the production branch with the seeded offline harness (tests/contracts/naviguide_harness.py). A recorded key or feature property must not be removed, renamed or change JSON type; new ones are allowed.",
+ "recorded_from": "feat/integrate-poe-pipeline@c811ab3",
+ "types": "string | number | boolean | null | object | array",
+ "routes": {
+  "poe_ports": {
+   "path": "/api/poe/ports",
+   "query": {
+    "mrgid": "{mrgid}"
+   },
+   "shape": {
+    "top": {
+     "type": "string",
+     "attribution": "string",
+     "features": "array"
+    },
+    "nested": {},
+    "features": {
+     "count_nonzero": true,
+     "geometry_types": [
+      "Point"
+     ],
+     "properties": {
+      "city": [
+       "string"
+      ],
+      "confidence": [
+       "number"
+      ],
+      "confidence_parts": [
+       "object"
+      ],
+      "confidence_reasons": [
+       "array"
+      ],
+      "country_iso2": [
+       "string"
+      ],
+      "distance_km": [
+       "number"
+      ],
+      "extracted_at": [
+       "string"
+      ],
+      "geocode_source": [
+       "string"
+      ],
+      "id": [
+       "string"
+      ],
+      "mrgid": [
+       "number"
+      ],
+      "name": [
+       "string"
+      ],
+      "note": [
+       "string"
+      ],
+      "osm_confidence": [
+       "null"
+      ],
+      "osm_tags": [
+       "null"
+      ],
+      "reasons_en": [
+       "array"
+      ],
+      "source_urls": [
+       "array"
+      ],
+      "spatial_anomaly": [
+       "null"
+      ],
+      "spatial_kind": [
+       "null"
+      ],
+      "url_bu": [
+       "null"
+      ],
+      "validated": [
+       "boolean"
+      ],
+      "zone_name": [
+       "string"
+      ]
+     }
+    }
+   }
+  },
+  "poe_zones_geojson": {
+   "path": "/api/poe/zones/geojson",
+   "query": {},
+   "shape": {
+    "top": {
+     "type": "string",
+     "attribution": "string",
+     "features": "array"
+    },
+    "nested": {},
+    "features": {
+     "count_nonzero": true,
+     "geometry_types": [
+      "MultiPolygon",
+      "Polygon"
+     ],
+     "properties": {
+      "geoname": [
+       "string"
+      ],
+      "iso2": [
+       "null",
+       "string"
+      ],
+      "mrgid": [
+       "number"
+      ],
+      "name": [
+       "string"
+      ],
+      "pol_type": [
+       "string"
+      ],
+      "sovereign": [
+       "string"
+      ]
+     }
+    }
+   }
+  },
+  "export_poe": {
+   "path": "/api/export/poe.geojson",
+   "query": {},
+   "shape": {
+    "top": {
+     "type": "string",
+     "attribution": "string",
+     "features": "array",
+     "metadata": "object"
+    },
+    "nested": {
+     "metadata": {
+      "dataset": "string",
+      "version": "string",
+      "generated_at": "string",
+      "count": "number",
+      "content_sha256": "string",
+      "generator": "string",
+      "disclaimer": "string",
+      "disclaimer_fr": "string",
+      "license": "string"
+     }
+    },
+    "features": {
+     "count_nonzero": true,
+     "geometry_types": [
+      "Point"
+     ],
+     "properties": {
+      "city": [
+       "null",
+       "string"
+      ],
+      "confidence": [
+       "number"
+      ],
+      "confidence_parts": [
+       "object"
+      ],
+      "confidence_reasons": [
+       "array"
+      ],
+      "country_iso2": [
+       "null",
+       "string"
+      ],
+      "distance_km": [
+       "number"
+      ],
+      "extracted_at": [
+       "string"
+      ],
+      "geocode_source": [
+       "string"
+      ],
+      "id": [
+       "string"
+      ],
+      "mrgid": [
+       "number"
+      ],
+      "name": [
+       "string"
+      ],
+      "note": [
+       "null",
+       "string"
+      ],
+      "osm_confidence": [
+       "null"
+      ],
+      "osm_tags": [
+       "null"
+      ],
+      "reasons_en": [
+       "array"
+      ],
+      "source_urls": [
+       "array"
+      ],
+      "spatial_anomaly": [
+       "null"
+      ],
+      "spatial_kind": [
+       "null"
+      ],
+      "url_bu": [
+       "null"
+      ],
+      "validated": [
+       "boolean"
+      ],
+      "zone_name": [
+       "string"
+      ]
+     }
+    }
+   }
+  },
+  "export_route": {
+   "path": "/api/export/route.geojson",
+   "query": {},
+   "shape": {
+    "top": {
+     "type": "string",
+     "name": "string",
+     "features": "array",
+     "metadata": "object"
+    },
+    "nested": {
+     "metadata": {
+      "dataset": "string",
+      "version": "string",
+      "generated_at": "string",
+      "count": "number",
+      "content_sha256": "string",
+      "generator": "string",
+      "disclaimer": "string",
+      "disclaimer_fr": "string",
+      "license": "string"
+     }
+    },
+    "features": {
+     "count_nonzero": true,
+     "geometry_types": [
+      "LineString",
+      "Point"
+     ],
+     "properties": {
+      "antimeridian_part": [
+       "number"
+      ],
+      "from": [
+       "string"
+      ],
+      "name": [
+       "string"
+      ],
+      "point_type": [
+       "string"
+      ],
+      "to": [
+       "string"
+      ],
+      "type": [
+       "string"
+      ]
+     }
+    }
+   }
+  },
+  "export_marinas": {
+   "path": "/api/export/marinas.geojson",
+   "query": {},
+   "shape": {
+    "top": {
+     "type": "string",
+     "features": "array",
+     "attribution": "string",
+     "metadata": "object"
+    },
+    "nested": {
+     "metadata": {
+      "dataset": "string",
+      "version": "string",
+      "generated_at": "string",
+      "count": "number",
+      "content_sha256": "string",
+      "generator": "string",
+      "disclaimer": "string",
+      "disclaimer_fr": "string",
+      "license": "string"
+     }
+    },
+    "features": {
+     "count_nonzero": true,
+     "geometry_types": [
+      "Point"
+     ],
+     "properties": {
+      "fetched_at": [
+       "string"
+      ],
+      "has_google_place": [
+       "boolean"
+      ],
+      "id": [
+       "string"
+      ],
+      "image": [
+       "string"
+      ],
+      "maps_place_url": [
+       "string"
+      ],
+      "maps_url": [
+       "string"
+      ],
+      "name": [
+       "string"
+      ],
+      "osm_id": [
+       "string"
+      ],
+      "source": [
+       "string"
+      ],
+      "website": [
+       "string"
+      ],
+      "website_source": [
+       "string"
+      ],
+      "website_status": [
+       "string"
+      ]
+     }
+    }
+   }
+  },
+  "export_anchorages": {
+   "path": "/api/export/anchorages.geojson",
+   "query": {},
+   "shape": {
+    "top": {
+     "type": "string",
+     "features": "array",
+     "metadata": "object"
+    },
+    "nested": {
+     "metadata": {
+      "dataset": "string",
+      "version": "string",
+      "generated_at": "string",
+      "count": "number",
+      "content_sha256": "string",
+      "generator": "string",
+      "disclaimer": "string",
+      "disclaimer_fr": "string",
+      "license": "string"
+     }
+    },
+    "features": {
+     "count_nonzero": true,
+     "geometry_types": [
+      "Point"
+     ],
+     "properties": {
+      "anchorage_type": [
+       "string"
+      ],
+      "fetched_at": [
+       "string"
+      ],
+      "id": [
+       "string"
+      ],
+      "name": [
+       "string"
+      ],
+      "nearest_waypoint": [
+       "object"
+      ],
+      "osm_id": [
+       "string"
+      ],
+      "priority": [
+       "number"
+      ],
+      "source": [
+       "string"
+      ],
+      "stale": [
+       "boolean"
+      ],
+      "tags": [
+       "object"
+      ]
+     }
+    }
+   }
+  },
+  "export_capitaineries": {
+   "path": "/api/export/capitaineries.geojson",
+   "query": {},
+   "shape": {
+    "top": {
+     "type": "string",
+     "features": "array",
+     "attribution": "string",
+     "metadata": "object"
+    },
+    "nested": {
+     "metadata": {
+      "dataset": "string",
+      "version": "string",
+      "generated_at": "string",
+      "count": "number",
+      "content_sha256": "string",
+      "generator": "string",
+      "disclaimer": "string",
+      "disclaimer_fr": "string",
+      "license": "string"
+     }
+    },
+    "features": {
+     "count_nonzero": true,
+     "geometry_types": [
+      "Point"
+     ],
+     "properties": {
+      "canal_vhf": [
+       "string"
+      ],
+      "fetched_at": [
+       "string"
+      ],
+      "id": [
+       "string"
+      ],
+      "kind": [
+       "string"
+      ],
+      "maps_url": [
+       "string"
+      ],
+      "name": [
+       "string"
+      ],
+      "noaa_id": [
+       "null"
+      ],
+      "osm_id": [
+       "string"
+      ],
+      "shom_id": [
+       "string"
+      ],
+      "source": [
+       "string"
+      ],
+      "sources": [
+       "array"
+      ],
+      "telephone": [
+       "string"
+      ],
+      "website": [
+       "string"
+      ]
+     }
+    }
+   }
+  },
+  "export_noaa_aids": {
+   "path": "/api/export/noaa-aids.geojson",
+   "query": {},
+   "shape": {
+    "top": {
+     "type": "string",
+     "features": "array",
+     "metadata": "object"
+    },
+    "nested": {
+     "metadata": {
+      "dataset": "string",
+      "version": "string",
+      "generated_at": "string",
+      "count": "number",
+      "content_sha256": "string",
+      "generator": "string",
+      "disclaimer": "string",
+      "disclaimer_fr": "string",
+      "license": "string"
+     }
+    },
+    "features": {
+     "count_nonzero": true,
+     "geometry_types": [
+      "Point"
+     ],
+     "properties": {
+      "id": [
+       "string"
+      ],
+      "kind": [
+       "string"
+      ],
+      "name": [
+       "string"
+      ],
+      "service": [
+       "string"
+      ],
+      "source": [
+       "string"
+      ]
+     }
+    }
+   }
+  },
+  "export_amp": {
+   "path": "/api/export/amp.geojson",
+   "query": {},
+   "shape": {
+    "top": {
+     "type": "string",
+     "features": "array",
+     "name": "string",
+     "note": "string",
+     "metadata": "object"
+    },
+    "nested": {
+     "metadata": {
+      "dataset": "string",
+      "version": "string",
+      "generated_at": "string",
+      "count": "number",
+      "content_sha256": "string",
+      "generator": "string",
+      "disclaimer": "string",
+      "disclaimer_fr": "string",
+      "license": "string"
+     }
+    },
+    "features": {
+     "count_nonzero": true,
+     "geometry_types": [
+      "Point"
+     ],
+     "properties": {
+      "category_name": [
+       "string"
+      ],
+      "country": [
+       "string"
+      ],
+      "designation": [
+       "string"
+      ],
+      "enriched_at": [
+       "string"
+      ],
+      "entry": [
+       "number"
+      ],
+      "fetched_at": [
+       "string"
+      ],
+      "gov_level": [
+       "string"
+      ],
+      "id": [
+       "string"
+      ],
+      "iucn_cat": [
+       "string"
+      ],
+      "lat": [
+       "number"
+      ],
+      "lfp": [
+       "number"
+      ],
+      "lon": [
+       "number"
+      ],
+      "manager_url": [
+       "string"
+      ],
+      "managing_authority": [
+       "string"
+      ],
+      "name": [
+       "string"
+      ],
+      "purpose": [
+       "string"
+      ],
+      "site_id": [
+       "string"
+      ],
+      "speed": [
+       "number"
+      ],
+      "state": [
+       "string"
+      ],
+      "visit_url": [
+       "string"
+      ],
+      "visit_url_source": [
+       "string"
+      ],
+      "visit_url_status": [
+       "string"
+      ],
+      "wdpa_id": [
+       "string"
+      ],
+      "year_est": [
+       "number"
+      ]
+     }
+    }
+   }
+  },
+  "export_science": {
+   "path": "/api/export/science.geojson",
+   "query": {},
+   "shape": {
+    "top": {
+     "type": "string",
+     "features": "array",
+     "attribution": "string"
+    },
+    "nested": {},
+    "features": {
+     "count_nonzero": true,
+     "geometry_types": [
+      "Point"
+     ],
+     "properties": {
+      "abstract": [
+       "string"
+      ],
+      "bbox": [
+       "array"
+      ],
+      "cycle": [
+       "number"
+      ],
+      "date": [
+       "string"
+      ],
+      "doi": [
+       "string"
+      ],
+      "end": [
+       "string"
+      ],
+      "error_m": [
+       "number"
+      ],
+      "fetched_at": [
+       "string"
+      ],
+      "id": [
+       "string"
+      ],
+      "kind": [
+       "string"
+      ],
+      "lat": [
+       "number"
+      ],
+      "lon": [
+       "number"
+      ],
+      "method": [
+       "string"
+      ],
+      "name": [
+       "string"
+      ],
+      "ocean": [
+       "string"
+      ],
+      "profile_date": [
+       "string"
+      ],
+      "provider": [
+       "string"
+      ],
+      "ship": [
+       "null"
+      ],
+      "source": [
+       "string"
+      ],
+      "start": [
+       "string"
+      ],
+      "url": [
+       "string"
+      ],
+      "wmo": [
+       "string"
+      ]
+     }
+    }
+   }
+  },
+  "marinas": {
+   "path": "/api/marinas",
+   "query": {},
+   "shape": {
+    "top": {
+     "type": "string",
+     "features": "array",
+     "attribution": "string"
+    },
+    "nested": {},
+    "features": {
+     "count_nonzero": true,
+     "geometry_types": [
+      "Point"
+     ],
+     "properties": {
+      "fetched_at": [
+       "string"
+      ],
+      "has_google_place": [
+       "boolean"
+      ],
+      "id": [
+       "string"
+      ],
+      "image": [
+       "string"
+      ],
+      "maps_place_url": [
+       "string"
+      ],
+      "maps_url": [
+       "string"
+      ],
+      "name": [
+       "string"
+      ],
+      "osm_id": [
+       "string"
+      ],
+      "source": [
+       "string"
+      ],
+      "website": [
+       "string"
+      ],
+      "website_source": [
+       "string"
+      ],
+      "website_status": [
+       "string"
+      ]
+     }
+    }
+   }
+  },
+  "capitaineries": {
+   "path": "/api/capitaineries",
+   "query": {},
+   "shape": {
+    "top": {
+     "type": "string",
+     "features": "array",
+     "attribution": "string"
+    },
+    "nested": {},
+    "features": {
+     "count_nonzero": true,
+     "geometry_types": [
+      "Point"
+     ],
+     "properties": {
+      "canal_vhf": [
+       "string"
+      ],
+      "fetched_at": [
+       "string"
+      ],
+      "id": [
+       "string"
+      ],
+      "kind": [
+       "string"
+      ],
+      "maps_url": [
+       "string"
+      ],
+      "name": [
+       "string"
+      ],
+      "noaa_id": [
+       "null"
+      ],
+      "osm_id": [
+       "string"
+      ],
+      "shom_id": [
+       "string"
+      ],
+      "source": [
+       "string"
+      ],
+      "sources": [
+       "array"
+      ],
+      "telephone": [
+       "string"
+      ],
+      "website": [
+       "string"
+      ]
+     }
+    }
+   }
+  },
+  "amp": {
+   "path": "/api/amp",
+   "query": {
+    "bbox": "-61.3,14.3,-60.8,14.9"
+   },
+   "shape": {
+    "top": {
+     "type": "string",
+     "features": "array",
+     "hint": "null",
+     "source": "string",
+     "truncated": "boolean",
+     "fetched": "number",
+     "error": "null"
+    },
+    "nested": {},
+    "features": {
+     "count_nonzero": true,
+     "geometry_types": [
+      "Polygon"
+     ],
+     "properties": {
+      "category_name": [
+       "string"
+      ],
+      "country": [
+       "string"
+      ],
+      "designation": [
+       "string"
+      ],
+      "enriched_at": [
+       "string"
+      ],
+      "entry": [
+       "number"
+      ],
+      "fetched_at": [
+       "string"
+      ],
+      "gov_level": [
+       "string"
+      ],
+      "id": [
+       "string"
+      ],
+      "iucn_cat": [
+       "string"
+      ],
+      "lat": [
+       "number"
+      ],
+      "lfp": [
+       "number"
+      ],
+      "lon": [
+       "number"
+      ],
+      "manager_url": [
+       "string"
+      ],
+      "managing_authority": [
+       "string"
+      ],
+      "name": [
+       "string"
+      ],
+      "purpose": [
+       "string"
+      ],
+      "site_id": [
+       "string"
+      ],
+      "speed": [
+       "number"
+      ],
+      "state": [
+       "string"
+      ],
+      "visit_url": [
+       "string"
+      ],
+      "visit_url_source": [
+       "string"
+      ],
+      "visit_url_status": [
+       "string"
+      ],
+      "wdpa_id": [
+       "string"
+      ],
+      "year_est": [
+       "number"
+      ]
+     }
+    }
+   }
+  },
+  "amp_nogo": {
+   "path": "/api/amp/nogo",
+   "query": {},
+   "shape": {
+    "top": {
+     "type": "string",
+     "features": "array",
+     "name": "string",
+     "note": "string",
+     "count": "number"
+    },
+    "nested": {},
+    "features": {
+     "count_nonzero": true,
+     "geometry_types": [
+      "Polygon"
+     ],
+     "properties": {
+      "category_name": [
+       "string"
+      ],
+      "country": [
+       "string"
+      ],
+      "designation": [
+       "string"
+      ],
+      "enriched_at": [
+       "string"
+      ],
+      "entry": [
+       "number"
+      ],
+      "fetched_at": [
+       "string"
+      ],
+      "gov_level": [
+       "string"
+      ],
+      "id": [
+       "string"
+      ],
+      "iucn_cat": [
+       "string"
+      ],
+      "lat": [
+       "number"
+      ],
+      "lfp": [
+       "number"
+      ],
+      "lon": [
+       "number"
+      ],
+      "manager_url": [
+       "string"
+      ],
+      "managing_authority": [
+       "string"
+      ],
+      "name": [
+       "string"
+      ],
+      "purpose": [
+       "string"
+      ],
+      "site_id": [
+       "string"
+      ],
+      "speed": [
+       "number"
+      ],
+      "state": [
+       "string"
+      ],
+      "visit_url": [
+       "string"
+      ],
+      "visit_url_source": [
+       "string"
+      ],
+      "visit_url_status": [
+       "string"
+      ],
+      "wdpa_id": [
+       "string"
+      ],
+      "year_est": [
+       "number"
+      ]
+     }
+    }
+   }
+  },
+  "amp_stats": {
+   "path": "/api/amp/stats",
+   "query": {},
+   "shape": {
+    "top": {
+     "mode": "string",
+     "total": "number",
+     "with_manager_url": "number",
+     "with_visit_url": "number",
+     "visit_coverage": "number",
+     "items_mapped": "number"
+    },
+    "nested": {}
+   }
+  },
+  "amp_site": {
+   "path": "/api/amp/sites/amp-1",
+   "query": {},
+   "shape": {
+    "top": {
+     "kind": "string",
+     "id": "string",
+     "site_id": "string",
+     "name": "string",
+     "country": "string",
+     "state": "string",
+     "designation": "string",
+     "category_name": "string",
+     "iucn_cat": "string",
+     "purpose": "string",
+     "lfp": "number",
+     "entry": "number",
+     "speed": "number",
+     "managing_authority": "string",
+     "gov_level": "string",
+     "wdpa_id": "string",
+     "year_est": "number",
+     "manager_url": "string",
+     "visit_url": "string",
+     "visit_url_status": "string",
+     "visit_url_source": "string",
+     "lat": "number",
+     "lon": "number",
+     "fetched_at": "string",
+     "enriched_at": "string",
+     "wrote_amp_sites": "boolean"
+    },
+    "nested": {}
+   }
+  },
+  "climatology_meta": {
+   "path": "/api/climatology/meta",
+   "query": {
+    "month": 1
+   },
+   "shape": {
+    "top": {
+     "kind": "string",
+     "month": "number",
+     "period": "string",
+     "periods": "object",
+     "provenance": "object",
+     "source_ids": "array",
+     "doi": "object",
+     "snapshot": "object",
+     "attribution": "object",
+     "disclaimer": "string",
+     "disclaimer_fr": "string",
+     "review": "boolean",
+     "products": "object"
+    },
+    "nested": {
+     "periods": {
+      "wind": "string",
+      "wave": "string",
+      "current": "string",
+      "cyclone": "string"
+     },
+     "provenance": {
+      "wind": "string",
+      "wind_average": "string",
+      "wave": "string",
+      "current": "string",
+      "cyclone": "string"
+     },
+     "doi": {
+      "wind": "string",
+      "wave": "string",
+      "current": "string"
+     },
+     "snapshot": {
+      "wind": "boolean",
+      "wave": "boolean",
+      "current": "boolean",
+      "cyclones": "boolean",
+      "wind_stat": "string",
+      "wave_stat": "string"
+     },
+     "attribution": {
+      "cmems": "string",
+      "ibtracs": "string"
+     },
+     "products": {
+      "wind": "object",
+      "wave": "object",
+      "current": "object",
+      "cyclone": "object"
+     }
+    }
+   }
+  },
+  "climatology_point": {
+   "path": "/api/climatology/point",
+   "query": {
+    "lat": 14.6,
+    "lon": -61.0,
+    "month": 1
+   },
+   "shape": {
+    "top": {
+     "kind": "string",
+     "month": "number",
+     "period": "string",
+     "provenance": "object",
+     "periods": "object",
+     "coordinates": "object",
+     "snapshot": "object",
+     "disclaimer": "string",
+     "disclaimer_fr": "string",
+     "wind_atlas": "null",
+     "wave": "null",
+     "current": "null",
+     "cyclone": "object"
+    },
+    "nested": {
+     "provenance": {
+      "wind": "string",
+      "wind_average": "string",
+      "wave": "string",
+      "current": "string",
+      "cyclone": "string"
+     },
+     "periods": {
+      "wind": "string",
+      "wave": "string",
+      "current": "string",
+      "cyclone": "string"
+     },
+     "coordinates": {
+      "latitude": "number",
+      "longitude": "number",
+      "cell_selection": "string"
+     },
+     "snapshot": {
+      "wind": "boolean",
+      "wave": "boolean",
+      "current": "boolean",
+      "cyclones": "boolean",
+      "wind_stat": "string",
+      "wave_stat": "string"
+     },
+     "cyclone": {
+      "tracks_in_month": "number",
+      "nearby": "number",
+      "crossings_if_leg": "null"
+     }
+    }
+   }
+  },
+  "climatology_crossings": {
+   "path": "/api/climatology/crossings",
+   "query": {
+    "lat1": 14.6,
+    "lon1": -61.0,
+    "lat2": 16.2,
+    "lon2": -61.5,
+    "month": 9
+   },
+   "shape": {
+    "top": {
+     "kind": "string",
+     "count": "number",
+     "storms": "array",
+     "month": "number",
+     "dayrange": "number",
+     "radius_nm": "number",
+     "period": "string",
+     "source": "string",
+     "snapshot_present": "boolean"
+    },
+    "nested": {}
+   }
+  },
+  "climatology_wind": {
+   "path": "/api/climatology/wind.geojson",
+   "query": {
+    "month": 1,
+    "spacing_deg": 4.0
+   },
+   "shape": {
+    "top": {
+     "type": "string",
+     "features": "array",
+     "attribution": "string",
+     "metadata": "object"
+    },
+    "nested": {
+     "metadata": {
+      "dataset": "string",
+      "version": "string",
+      "generated_at": "string",
+      "count": "number",
+      "content_sha256": "string",
+      "generator": "string",
+      "disclaimer": "string",
+      "disclaimer_fr": "string",
+      "license": "string",
+      "period": "string",
+      "month": "number",
+      "source_ids": "array",
+      "doi": "string",
+      "kind": "string",
+      "grid_spacing_deg": "number",
+      "snapshot_present": "boolean",
+      "stat": "string"
+     }
+    },
+    "features": {
+     "count_nonzero": true,
+     "geometry_types": [
+      "Point"
+     ],
+     "properties": {
+      "calm_pct": [
+       "number"
+      ],
+      "directions_from": [
+       "array"
+      ],
+      "gale_pct": [
+       "number"
+      ],
+      "kind": [
+       "string"
+      ],
+      "month": [
+       "number"
+      ],
+      "sample_count": [
+       "number"
+      ],
+      "stat": [
+       "string"
+      ],
+      "vector_mean_from_deg": [
+       "number"
+      ],
+      "vector_mean_knots": [
+       "number"
+      ],
+      "wind_direction_from_deg": [
+       "number"
+      ],
+      "wind_speed_knots": [
+       "number"
+      ]
+     }
+    }
+   }
+  },
+  "climatology_wave": {
+   "path": "/api/climatology/wave.geojson",
+   "query": {
+    "month": 1,
+    "spacing_deg": 4.0
+   },
+   "shape": {
+    "top": {
+     "type": "string",
+     "features": "array",
+     "attribution": "string",
+     "metadata": "object"
+    },
+    "nested": {
+     "metadata": {
+      "dataset": "string",
+      "version": "string",
+      "generated_at": "string",
+      "count": "number",
+      "content_sha256": "string",
+      "generator": "string",
+      "disclaimer": "string",
+      "disclaimer_fr": "string",
+      "license": "string",
+      "period": "string",
+      "month": "number",
+      "source_ids": "array",
+      "doi": "string",
+      "kind": "string",
+      "grid_spacing_deg": "number",
+      "snapshot_present": "boolean",
+      "stat": "string",
+      "snapshot_stat": "string"
+     }
+    },
+    "features": {
+     "count_nonzero": true,
+     "geometry_types": [
+      "Point"
+     ],
+     "properties": {
+      "dir_deg": [
+       "number"
+      ],
+      "hs_m": [
+       "number"
+      ],
+      "kind": [
+       "string"
+      ],
+      "month": [
+       "number"
+      ],
+      "period_s": [
+       "number"
+      ],
+      "stat": [
+       "string"
+      ]
+     }
+    }
+   }
+  },
+  "climatology_current": {
+   "path": "/api/climatology/current.geojson",
+   "query": {
+    "month": 1,
+    "spacing_deg": 4.0
+   },
+   "shape": {
+    "top": {
+     "type": "string",
+     "features": "array",
+     "attribution": "string",
+     "metadata": "object"
+    },
+    "nested": {
+     "metadata": {
+      "dataset": "string",
+      "version": "string",
+      "generated_at": "string",
+      "count": "number",
+      "content_sha256": "string",
+      "generator": "string",
+      "disclaimer": "string",
+      "disclaimer_fr": "string",
+      "license": "string",
+      "period": "string",
+      "month": "number",
+      "source_ids": "array",
+      "doi": "string",
+      "kind": "string",
+      "grid_spacing_deg": "number",
+      "snapshot_present": "boolean"
+     }
+    },
+    "features": {
+     "count_nonzero": true,
+     "geometry_types": [
+      "Point"
+     ],
+     "properties": {
+      "below_threshold": [
+       "boolean"
+      ],
+      "direction_to_deg": [
+       "number"
+      ],
+      "kind": [
+       "string"
+      ],
+      "month": [
+       "number"
+      ],
+      "speed_knots": [
+       "number"
+      ]
+     }
+    }
+   }
+  },
+  "climatology_cyclones": {
+   "path": "/api/climatology/cyclones.geojson",
+   "query": {
+    "month": 9
+   },
+   "shape": {
+    "top": {
+     "type": "string",
+     "features": "array",
+     "attribution": "string",
+     "metadata": "object"
+    },
+    "nested": {
+     "metadata": {
+      "dataset": "string",
+      "version": "string",
+      "generated_at": "string",
+      "count": "number",
+      "content_sha256": "string",
+      "generator": "string",
+      "disclaimer": "string",
+      "disclaimer_fr": "string",
+      "license": "string",
+      "period": "string",
+      "month": "number",
+      "source_ids": "array",
+      "kind": "string",
+      "snapshot_present": "boolean",
+      "wind_note": "string"
+     }
+    },
+    "features": {
+     "count_nonzero": true,
+     "geometry_types": [
+      "LineString"
+     ],
+     "properties": {
+      "basin": [
+       "string"
+      ],
+      "color": [
+       "string"
+      ],
+      "kind": [
+       "string"
+      ],
+      "max_wind_kn": [
+       "number"
+      ],
+      "month": [
+       "number"
+      ],
+      "name": [
+       "string"
+      ],
+      "season": [
+       "number"
+      ],
+      "sid": [
+       "string"
+      ],
+      "url": [
+       "string"
+      ],
+      "wind_source": [
+       "string"
+      ]
+     }
+    }
+   }
+  },
+  "climatology_wind_tile": {
+   "path": "/api/climatology/wind/tiles/2/1/1.json",
+   "query": {
+    "month": 1
+   },
+   "shape": {
+    "top": {
+     "type": "string",
+     "features": "array"
+    },
+    "nested": {},
+    "features": {
+     "count_nonzero": true,
+     "geometry_types": [
+      "Point"
+     ],
+     "properties": {
+      "calm_pct": [
+       "number"
+      ],
+      "dir_from_deg": [
+       "number"
+      ],
+      "gale_pct": [
+       "number"
+      ],
+      "speed_knots": [
+       "number"
+      ]
+     }
+    }
+   }
+  }
+ }
+}
