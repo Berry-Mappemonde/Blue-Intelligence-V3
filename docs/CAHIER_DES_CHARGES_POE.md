@@ -269,6 +269,7 @@ Qualify, do not invent: `sovereign_entry`, `uninhabited`, `overlapping_claim`, `
 | **Claude** (Haiku, sometimes Sonnet) | Second reader (Top-Down); **yes/no judge** on the Bottom-Up **residue**; **not** a list extractor once a catalogue is read by the parser. Local budget, stop at 90% | Not a search engine. Off if `CLAUDE_BUDGET_USD` = 0. Sees neither Noonsite badge nor OSM tags |
 | **Playwright / Chromium** | Local render of JS pages, free | Skipped on a hard challenge |
 | **PyMuPDF** (subprocess) | Text of official PDFs, timeout, SHA-256 cache | Crashed the worker if it stayed in-process |
+| **pdfminer.six** (in process, `read_pdf`) | Fallback text when the PyMuPDF worker fails; caps 30 MB / 180 pages; a PDF with no text layer is logged and flagged `pdf_scanned` (Nemotron VL candidate) | Pure Python, no native crash |
 
 ### 8.2 What feeds the seeds and the control (signals)
 

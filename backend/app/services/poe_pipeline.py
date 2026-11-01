@@ -2537,7 +2537,8 @@ async def _collect_texts(official: list[dict], log, rec=None, max_fetch: int = 8
             continue
         await emit(rec, "fetch", url=url, domain=c.get("domain"), level=res["level"],
                    chars=len(res["text"]), md5=res["md5"], blocked=res.get("blocked", False),
-                   render_used=res.get("render_used", False), parse=res.get("parse"))
+                   render_used=res.get("render_used", False), parse=res.get("parse"),
+                   pdf_status=res.get("pdf_status"), pdf_scanned=res.get("pdf_scanned", False))
         if res.get("fetch_compare"):
             await emit(rec, "fetch_compare", url=url, domain=c.get("domain"),
                        **res["fetch_compare"])
