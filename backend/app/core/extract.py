@@ -68,6 +68,12 @@ PDF_CACHE_DIR = DATA_DIR / "cached_pdfs"
 # OCR of a scanned Gaceta (5 pages) far exceeds 25 s.
 PDF_SUBPROCESS_TIMEOUT_S = 90
 PDF_MAX_CONCURRENT = 3
+# Caps on a PDF source: bigger files are not parsed (logged, pdf_status
+# "oversized"); only the first PDF_MAX_PAGES pages are read.
+PDF_MAX_BYTES = 30 * 1024 * 1024
+PDF_MAX_PAGES = 180
+# Under this many characters, a PDF has no usable text layer (scan).
+PDF_MIN_TEXT_CHARS = 20
 _pdf_slots = threading.Semaphore(PDF_MAX_CONCURRENT)
 
 UA_BROWSER = {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"}
@@ -515,6 +521,72 @@ def parse_pdf_text(content: bytes, max_pages: int = 180) -> str:
     return text
 
 
+def parse_pdf_text_plain(content: bytes, max_pages: int = PDF_MAX_PAGES) -> str:
+    """Plain text with pdfminer.six (pure Python, the engine under pdfplumber).
+
+    Fallback when the PyMuPDF worker fails (crash, timeout, missing wheel).
+    Safe in process: no native code, so no native crash to confine.
+    """
+    if not content:
+        return ""
+    import io
+    import logging
+    from pdfminer.high_level import extract_text
+    logging.getLogger("pdfminer").setLevel(logging.ERROR)
+    return extract_text(io.BytesIO(content), maxpages=max(1, int(max_pages))) or ""
+
+
+async def read_pdf(content: bytes, *, url: str = "", log=None,
+                   max_pages: int | None = None, max_bytes: int | None = None) -> dict:
+    """Text of a PDF source, with caps and an explicit status.
+
+    Returns {text, status, engine, bytes}. status:
+      ok        text extracted (engine "pymupdf" or "pdfminer");
+      no_text   no text layer (scanned image PDF) — candidate for Nemotron VL;
+      oversized more than ``max_bytes`` — not parsed;
+      error     both engines failed.
+    PyMuPDF (out of process, OCR if tesseract is installed) first, then
+    pdfminer.six in process.
+    """
+    log = log or (lambda m: None)
+    max_pages = int(max_pages or PDF_MAX_PAGES)
+    max_bytes = int(max_bytes or PDF_MAX_BYTES)
+    size = len(content or b"")
+    out = {"text": "", "status": "error", "engine": None, "bytes": size}
+    where = f" {url[:100]}" if url else ""
+    if size > max_bytes:
+        log(f"PDF trop gros ({size // 1024} Ko > {max_bytes // 1024} Ko) — non lu{where}")
+        out["status"] = "oversized"
+        return out
+    errors = []
+    try:
+        text = await asyncio.to_thread(parse_pdf_text, content, max_pages)
+    except Exception as e:
+        errors.append(f"PyMuPDF {type(e).__name__}")
+        log(f"N1 PyMuPDF: échec ({type(e).__name__}) — repli pdfminer")
+        text = ""
+    if len((text or "").strip()) >= PDF_MIN_TEXT_CHARS:
+        out.update(text=text.strip(), status="ok", engine="pymupdf")
+        return out
+    try:
+        plain = await asyncio.to_thread(parse_pdf_text_plain, content, max_pages)
+    except Exception as e:
+        errors.append(f"pdfminer {type(e).__name__}")
+        log(f"N1 pdfminer: échec ({type(e).__name__})")
+        plain = ""
+    if len((plain or "").strip()) >= PDF_MIN_TEXT_CHARS:
+        log(f"N1 pdfminer: {len(plain.strip())} chars")
+        out.update(text=plain.strip(), status="ok", engine="pdfminer")
+        return out
+    if len(errors) == 2:
+        log(f"PDF illisible ({', '.join(errors)}){where}")
+        return out
+    log(f"PDF sans texte extractible (scanné ?, {size // 1024} Ko) — "
+        f"candidat Nemotron VL{where}")
+    out["status"] = "no_text"
+    return out
+
+
 async def parse_pdf_with_nemotron_vl(content: bytes, settings: dict | None = None,
                                       max_pages: int = 180, log=None) -> str | None:
     """Extract and understand PDF using Nemotron 3.5 Super VL with reasoning_effort='none'.
@@ -859,6 +931,8 @@ def as_fetch_record(page: dict | None, url: str = "") -> dict:
         "html": page.get("html"),
         "is_pdf": bool(page.get("is_pdf")),
         "render_used": bool(page.get("render_used")),
+        "pdf_status": page.get("pdf_status"),
+        "pdf_scanned": bool(page.get("pdf_scanned")),
     }
 
 
@@ -2128,8 +2202,11 @@ async def extract_cascade(url: str, min_chars: int = 200, allow_render: bool = T
 
     Return {url, text, md5, level, title, meta_desc, image, ext_links, links,
             is_pdf, html, blocked, render_used, parse, final_url, error}.
-    level ∈ N0-tavily-extract | N1-pymupdf | N1-trafilatura | N2-readability | N3-render
+    level ∈ N0-tavily-extract | N1-pymupdf | N1-pdfminer | N1-trafilatura | N2-readability
+            | N3-render
             | blocked | failed | N3-mirror-* .
+    PDF sources also carry pdf_status (ok | no_text | oversized | error, see
+    ``read_pdf``) and pdf_scanned (no text layer: candidate for Nemotron VL).
     md5 = fingerprint of extracted text (stable) else of raw content.
     blocked = anti-bot interstitial detected (content invalidated, never ingested).
     parse = {n1_chars, n2_chars, similarity, agree} — compared dual parsing.
@@ -2198,13 +2275,12 @@ async def extract_cascade(url: str, min_chars: int = 200, allow_render: bool = T
         if keep_raw and content:
             out["raw"] = content
         if is_pdf:
-            try:
-                text = await asyncio.to_thread(parse_pdf_text, content)
-                out["text"] = (text or "").strip()
-                if out["text"]:
-                    out["level"] = "N1-pymupdf"
-            except Exception as e:
-                log(f"N1 PyMuPDF: échec ({type(e).__name__})")
+            pdf = await read_pdf(content, url=out["final_url"] or url, log=log)
+            out["pdf_status"] = pdf["status"]
+            out["pdf_scanned"] = pdf["status"] == "no_text"
+            out["text"] = pdf["text"]
+            if pdf["text"]:
+                out["level"] = f"N1-{pdf['engine']}"
         else:
             try:
                 html = resp.text if resp is not None else content.decode("utf-8", errors="replace")
