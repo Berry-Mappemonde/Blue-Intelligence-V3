@@ -27,6 +27,12 @@ Each run also has a folder `backend/data/runs/<run_id>/` (`BI_RUNS_DIR` override
   Each line is flushed and fsynced. A line torn by a crash is ignored with a
   warning when the trace is read.
 - `manifest.json`: rewritten atomically (temp file + rename) at start and at end.
+- `learned_exceptions.jsonl`: what zones learned during the run, one line per
+  zone and kind (`seed_urls`: official URLs that produced a catalogue; `auto`:
+  bootstrapped State domains), with `mrgid` and `iso2`. Outside a run these go
+  to `backend/data/poe_exceptions.json`; a run never writes that tracked file
+  (or any tracked file), so learned hints are not reused by later zones of the
+  same run. Promote them by hand after review if wanted.
 
 ## Start
 
