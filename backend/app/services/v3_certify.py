@@ -2,9 +2,11 @@
 
 Same ladder as the V3 prototype (`certify.level`): a level never rests on an
 LLM-only point above C1. C1 needs an extracted source on a whitelisted
-State host, C2 a non-LLM corroboration or a NemotronJudge "poe" verdict
-with a verified excerpt (a "not_poe" verdict caps the level at C1), C3 two geocoders
-within 500 m, at sea or at the quay, C4 a human confirmation on top of C3.
+State host, C2 a NemotronJudge "poe" verdict with a verified excerpt, or an
+LLM extraction plus an independent source (LLM∩NER, or two official hosts);
+the catalogue parser alone is not corroboration. A "not_poe" verdict caps the
+level at C1. C3 two geocoders within 500 m, at sea or at the quay, C4 a human
+confirmation on top of C3. An obvious name fragment ("Saint", "nterior") is C0.
 
 `confidence_level` applies that ladder after a verified-quote check: the
 quoted evidence must literally appear in the fetched page (whitespace and
@@ -24,7 +26,7 @@ from collections.abc import Mapping, Sequence
 LEVELS = ("C0", "C1", "C2", "C3", "C4")
 # Fields attach_confidence_level writes. Run collections only, never poe_ports.
 LEVEL_FIELDS = ("confidence_level", "confidence_downgraded_from", "quote_verified",
-                "judge_contradicted")
+                "judge_contradicted", "name_fragment")
 _RANK = {name: i for i, name in enumerate(LEVELS)}
 
 GEO_AGREE_KM = 0.5
@@ -206,16 +208,68 @@ def _urls(port: dict) -> list[str]:
     return out
 
 
-def _non_llm_corroboration(port: dict) -> bool:
-    """Catalogue or LLM∩NER, read from the extraction fields. Two LLM readers
-    do not count. The V2 score's reasons are never read."""
-    engine = (port.get("extraction_engine") or "").lower()
-    if engine == "catalog":
+# Readers that are not an LLM extraction: the catalogue parser and the local NER.
+NON_LLM_ENGINES = frozenset({"catalog", "ner"})
+
+
+def _official_hosts(port: dict, whitelist: Sequence[str] | None) -> set[str]:
+    from urllib.parse import urlsplit
+
+    hosts = set()
+    for url in _urls(port):
+        if is_official(url, whitelist):
+            host = (urlsplit(url).hostname or "").lower()
+            hosts.add(host[4:] if host.startswith("www.") else host)
+    return hosts
+
+
+def _corroborated_llm_extraction(port: dict, whitelist: Sequence[str] | None) -> bool:
+    """C2 without the judge: an LLM extraction plus an independent source.
+
+    Independent source = the local NER found the same name in the text
+    (`extraction_agreement`, LLM∩NER), or the port comes from two distinct official
+    hosts. The catalogue parser alone (or NER alone) is a single non-LLM reader:
+    it never counts as corroboration. Two LLM readers do not count either.
+    The V2 score's reasons are never read.
+    """
+    engine = (port.get("extraction_engine") or "").strip().lower()
+    if not engine or engine in NON_LLM_ENGINES:
+        return False
+    if port.get("extraction_agreement") is True:
         return True
-    note = port.get("note") if isinstance(port.get("note"), str) else ""
-    if "catalogue officiel" in note:
+    return len(_official_hosts(port, whitelist)) >= 2
+
+
+# Words that are never a port name on their own (articles, saint, port types).
+GENERIC_NAME_WORDS = frozenset({
+    "saint", "sainte", "st", "ste", "san", "santa", "santo", "sao", "são", "port", "porto",
+    "puerto", "porte", "harbour", "harbor", "marina", "baie", "bay", "bahia", "bahía",
+    "ile", "île", "isla", "island", "islands", "iles", "îles", "cap", "cape", "cabo", "pointe",
+    "point", "anse", "le", "la", "les", "el", "los", "las", "de", "du", "des", "the", "of",
+    "north", "south", "east", "west", "nord", "sud", "est", "ouest", "interior", "city",
+    "town", "ville", "village", "customs", "douane", "dock", "quai", "wharf",
+})
+_TOKEN = re.compile(r"[^\W\d_]+", re.UNICODE)
+
+
+def is_name_fragment(name) -> bool:
+    """An obvious fragment, not a port name: empty, a single generic word ("Saint",
+    "Port"), or a single word cut at its start ("nterior" from "Interior").
+
+    Multi-word names are kept: this rejects only the obvious cases.
+    """
+    if not isinstance(name, str) or not name.strip():
         return True
-    return port.get("extraction_agreement") is True
+    tokens = _TOKEN.findall(name)
+    if not tokens:
+        return True
+    if len(tokens) > 1:
+        return False
+    word = tokens[0]
+    if len(word) < 3 or word.casefold() in GENERIC_NAME_WORDS:
+        return True
+    # A lone word starting lower-case is a token cut from a longer one.
+    return word[0].islower() and name.strip()[0].islower()
 
 
 JUDGE_SUPPORTED = "supported"
@@ -246,10 +300,10 @@ def judge_outcome(port: dict) -> str | None:
     return None
 
 
-def _lifts_above_c1(port: dict) -> bool:
-    if _non_llm_corroboration(port):
+def _lifts_above_c1(port: dict, whitelist: Sequence[str] | None) -> bool:
+    if judge_outcome(port) == JUDGE_SUPPORTED:
         return True
-    return judge_outcome(port) == JUDGE_SUPPORTED
+    return _corroborated_llm_extraction(port, whitelist)
 
 
 def _cap(result: dict, port: dict) -> dict:
@@ -296,7 +350,7 @@ def _from_v2(port: dict, whitelist: Sequence[str] | None) -> dict:
     urls = _urls(port)
     synthesis = bool(port.get("from_synthesis"))
     extracted = bool(urls) and not synthesis
-    lift = _lifts_above_c1(port)
+    lift = _lifts_above_c1(port, whitelist)
     quote = port.get("quote") if isinstance(port.get("quote"), str) else ""
     page = port.get("page_text") if isinstance(port.get("page_text"), str) else ""
     evidence = []
@@ -326,6 +380,9 @@ def assess_port(port: dict, *, whitelist: Sequence[str] | None = None,
     """Map a prototype entity or a V2 scored port, then apply the quote check."""
     if not isinstance(port, dict):
         return {"confidence_level": "C0"}
+    if is_name_fragment(port.get("name")):
+        # "Saint" from "Saint Lucia", "nterior": not a port, never certified.
+        return {"confidence_level": "C0", "name_fragment": True}
     if isinstance(port.get("evidence"), list):
         return _cap(assess_level(port, pages, whitelist=whitelist), port)
     entity = _from_v2(port, whitelist)
@@ -339,8 +396,9 @@ def level_from_v2(port: dict, *, whitelist: Sequence[str] | None = None,
     """C0–C4 for a pipeline port or a prototype entity.
 
     A whitelisted (State) host is required for C1+. An LLM-only reading (single extractor,
-    or two LLM readers) never goes above C1. Catalogue, LLM∩NER, or a judge
-    "poe" with excerpt_verified can; a judge "not_poe" caps at C1.
+    or two LLM readers) and a catalogue-only port never go above C1. A judge "poe"
+    with excerpt_verified, or an LLM extraction with LLM∩NER agreement or two
+    official hosts, can; a judge "not_poe" caps at C1. A name fragment is C0.
     `human == "confirmed"` lifts only C3 to C4.
     """
     return assess_port(port, whitelist=whitelist, pages=pages)["confidence_level"]
@@ -355,10 +413,11 @@ def attach_confidence_level(port: dict, *, whitelist: Sequence[str] | None = Non
         port["confidence_level"] = "C0"
         return port
     port["confidence_level"] = assessed["confidence_level"]
-    if assessed.get("judge_contradicted"):
-        port["judge_contradicted"] = True
-    else:
-        port.pop("judge_contradicted", None)
+    for flag in ("judge_contradicted", "name_fragment"):
+        if assessed.get(flag):
+            port[flag] = True
+        else:
+            port.pop(flag, None)
     if assessed.get("downgraded_from"):
         port["confidence_downgraded_from"] = assessed["downgraded_from"]
     else:

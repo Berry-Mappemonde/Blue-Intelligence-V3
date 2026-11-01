@@ -67,6 +67,10 @@ def _judged(verdict, excerpt=EXCERPT):
     return next(iter(poe_judge.parse_judgments(parsed, EVIDENCE_TEXT).values()))
 
 
+# C2 without the judge: LLM extraction + an independent reader (LLM∩NER).
+CORROBORATED = {"extraction_engine": "llm", "extraction_agreement": True}
+
+
 def _v2(**overrides):
     port = {
         "name": "Marina du Marin",
@@ -139,8 +143,7 @@ def test_v2_official_from_whitelist_and_catalogue_ladder():
     assert level_from_v2(_v2()) == "C1"
 
     catalogue = _v2(
-        extraction_engine="catalog",
-        extraction_agreement=True,
+        **CORROBORATED,
         confidence_reasons=["source d'État", "catalogue officiel"],
         **GEO_OK,
     )
@@ -181,7 +184,7 @@ def test_judge_poe_with_verified_excerpt_lifts_to_c2():
 
 
 def test_judge_not_poe_caps_at_c1():
-    catalogue = _v2(extraction_engine="catalog", note="catalogue officiel", **GEO_OK)
+    catalogue = _v2(**CORROBORATED, **GEO_OK)
     assert level_from_v2(catalogue) == "C3"
     contradicted = {**catalogue, "judge": _judged("not_poe"), "human": "confirmed"}
     assert level_from_v2(contradicted) == "C1"
@@ -249,7 +252,7 @@ def test_bad_extraction_quote_downgrades_and_does_not_mutate():
     assert entity == snapshot
 
     port = _v2(
-        extraction_engine="catalog",
+        **CORROBORATED,
         confidence_reasons=["source d'État", "catalogue officiel"],
         **GEO_OK,
         quote="Official   CATALOGUE\ntext",
@@ -260,9 +263,9 @@ def test_bad_extraction_quote_downgrades_and_does_not_mutate():
     assert fabricated["downgraded_from"] == "C3"
 
 
-def test_catalogue_survives_a_bad_judge_excerpt():
+def test_corroborated_extraction_survives_a_bad_judge_excerpt():
     port = _v2(
-        extraction_engine="catalog",
+        **CORROBORATED,
         confidence_reasons=["source d'État", "catalogue officiel"],
         **GEO_OK,
         judge=_judged("poe", excerpt="this sentence is not on the page at all"),
@@ -300,7 +303,7 @@ def test_apply_score_leaves_the_level_to_its_callers():
 
 
 def test_level_never_derived_from_the_v2_score():
-    port = _v2(extraction_engine="catalog", lat=14.5, lon=-61.0, **GEO_OK)
+    port = _v2(**CORROBORATED, lat=14.5, lon=-61.0, **GEO_OK)
     expected = level_from_v2(port)
     assert expected == "C3"
     for score in ({"confidence": 0, "confidence_parts": {}, "confidence_reasons": []},
@@ -466,7 +469,7 @@ def test_unified_run_is_the_only_run_mechanism():
     ({"geocode_agree": False, "geocode_agreement_km": 0.1, "spatial_kind": "in_eez"}, "C2"),
 ])
 def test_c3_needs_500_m_agreement_and_land_mask(geo, expected):
-    port = _v2(extraction_engine="catalog", note="catalogue officiel", lat=14.5, lon=-61.0, **geo)
+    port = _v2(**CORROBORATED, lat=14.5, lon=-61.0, **geo)
     assert level_from_v2(port) == expected
     entity = {
         "name": "Marina du Marin",
@@ -511,3 +514,50 @@ def test_official_uses_the_pipeline_whitelist():
     port = {"name": "Saint-Pierre", "source_urls": ["https://saint-pierre-hotel.com/"],
             "extraction_engine": "catalog"}
     assert v3_certify.level_from_v2(port, whitelist=wl) == "C0"
+
+
+# --- pilot dry-run findings: catalogue alone, name fragments -------------------------
+
+def test_catalogue_parser_alone_is_not_corroboration():
+    # Dry run, Saint Lucia: the catalogue parser named "Saint" and it reached C2.
+    for engine in ("catalog", "ner"):
+        port = _v2(extraction_engine=engine, note="catalogue officiel", **GEO_OK)
+        assert level_from_v2(port) == "C1", engine
+        assert level_from_v2({**port, "extraction_agreement": True}) == "C1", engine
+    # LLM alone stays C1; LLM + an independent source reaches C2 (C3 with geo).
+    assert level_from_v2(_v2(extraction_engine="llm")) == "C1"
+    assert level_from_v2(_v2(**CORROBORATED)) == "C2"
+    two_hosts = _v2(extraction_engine="llm",
+                    source_urls=[GOV, "https://www.douane.gouv.fr/ports"])
+    assert level_from_v2(two_hosts) == "C2"
+    same_host = _v2(extraction_engine="llm",
+                    source_urls=[GOV, "https://martinique.gouv.fr/other"])
+    assert level_from_v2(same_host) == "C1"
+    # The judge still lifts a catalogue-only port.
+    judged = _v2(extraction_engine="catalog", judge=_judged("poe"))
+    assert level_from_v2(judged) == "C2"
+
+
+@pytest.mark.parametrize("name", [
+    "Saint", "saint", "St", "Port", "Puerto", "Marina", "La", "Baie", "Isla", "Cape",
+    "nterior", "arigot", "", "  ", None, "X", "12", "-",
+])
+def test_name_fragments_are_c0(name):
+    assert v3_certify.is_name_fragment(name)
+    port = _v2(name=name, judge=_judged("poe"), **CORROBORATED, **GEO_OK)
+    out = assess_port(port)
+    assert out["confidence_level"] == "C0" and out["name_fragment"] is True
+    attach_confidence_level(port)
+    assert port["confidence_level"] == "C0" and port["name_fragment"] is True
+
+
+@pytest.mark.parametrize("name", [
+    "Castries", "Rodney Bay", "Saint-Pierre", "Saint Pierre", "Le Marin", "Fort-de-France",
+    "Praia", "Mindelo", "Las Palmas de Gran Canaria", "Port Louis", "São Vicente", "Vieux Fort",
+])
+def test_real_names_are_not_fragments(name):
+    assert not v3_certify.is_name_fragment(name)
+    port = _v2(name=name, **CORROBORATED)
+    assert level_from_v2(port) == "C2"
+    attach_confidence_level(port)
+    assert "name_fragment" not in port

@@ -32,11 +32,12 @@ GEO_OK = {"geocode_agree": True, "geocode_agreement_km": 0.2, "spatial_kind": "i
 def _docs():
     # Fort-de-France: one LLM reader -> C1, lifted to C2 by a verified "poe" (geocoders
     # 1.5 km apart, so it stops at C2).
-    # Le Marin: catalogue + agreeing geo -> C3, capped to C1 by "not_poe".
+    # Le Marin: LLM∩NER + agreeing geo -> C3, capped to C1 by "not_poe".
     return [
         {"name": "Fort-de-France", "source_urls": [URL], "extraction_engine": "llm",
          "confidence": 55, **GEO_OK, "geocode_agreement_km": 1.5},  # geo short of C3
-        {"name": "Le Marin", "source_urls": [URL], "extraction_engine": "catalog",
+        {"name": "Le Marin", "source_urls": [URL], "extraction_engine": "llm",
+         "extraction_agreement": True,
          "confidence": 80, **GEO_OK},
     ]
 
