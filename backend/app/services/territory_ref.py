@@ -68,6 +68,21 @@ def territory_place_names(terr: dict | None = None) -> list[str]:
     return [str(t[k]) for t in recs for k in ("name_fr", "name_en") if t.get(k)]
 
 
+def with_sovereign_iso2(zone: dict | None) -> dict:
+    """The zone with ``sov_iso2`` from its territory record when the zone doc has none.
+
+    Referentials built before ``sov_iso2`` was stored (the V2 database: no zone has it)
+    left a curated polygon without its sovereign: build_whitelist reads the record's
+    ``sovereign_iso2`` itself, but the search language, the ``.fr`` SERP token of a DROM,
+    the foreign-government filter and the country recorded on run ports read the zone
+    (Canary Islands searched without Spanish queries). Returns a copy; never written."""
+    zone = zone or {}
+    if zone.get("sov_iso2"):
+        return zone
+    sov = str(territory_for_mrgid(zone.get("mrgid")).get("sovereign_iso2") or "").strip().upper()
+    return {**zone, "sov_iso2": sov} if sov else zone
+
+
 def territory_for_mrgid(mrgid) -> dict:
     """Curated record of the territory this VLIZ polygon belongs to, or {} when unmapped."""
     try:

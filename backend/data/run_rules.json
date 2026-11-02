@@ -522,6 +522,33 @@
       "group": "budget"
     },
     {
+      "id": "tavily.scoped_min_official_hosts",
+      "mode": "shared",
+      "kind": "budget",
+      "value": 2,
+      "numeric": "int",
+      "unit": "hosts",
+      "interval": [
+        1,
+        10
+      ],
+      "vary": true,
+      "principle": "La recherche Tavily restreinte aux domaines de la whitelist (include_domains) part tant que le premier tour a trouvé moins de N hôtes officiels distincts (ou en cas de discordance SearXNG/TinyFish). 1 = seulement quand aucun hôte officiel, comme TinyFish (dc7e85d, moteur payant). Pilote du 2 novembre 2026 : Sainte-Lucie n'avait qu'un hôte officiel (une gazette), la recherche restreinte ne partait pas et la loi des douanes (customs.gov.lc) n'était trouvée que par SearXNG. Coût : 1 crédit de plus par ZEE au plus, sous tavily.max_credits.",
+      "cdc": "PLAN-V3.md §4 P0-1",
+      "code": [
+        "app/services/poe_pipeline.py:_find_sources"
+      ],
+      "title": {
+        "fr": "Tavily restreint sous N hôtes officiels",
+        "en": "Scoped Tavily below N official hosts"
+      },
+      "help": {
+        "fr": "Nombre d'hôtes officiels distincts sous lequel Tavily cherche aussi dans les seuls domaines de la whitelist. 1 = seulement si aucun.",
+        "en": "Below this many distinct official hosts, Tavily also searches the whitelisted domains only. 1 = only when there are none."
+      },
+      "group": "budget"
+    },
+    {
       "id": "projects.no_hq_as_site",
       "mode": "projects",
       "kind": "loi",
