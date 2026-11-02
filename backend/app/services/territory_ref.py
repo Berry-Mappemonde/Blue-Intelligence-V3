@@ -169,12 +169,15 @@ def _host_matches_domain(host: str, domain: str) -> bool:
 
 
 def td_url_fits_polygon(url: str, zone: dict | None) -> bool:
-    """True si la page peut appartenir à CE polygone.
+    """True if the page can belong to THIS polygon (Review page TD URLs).
 
-    Quand le polygone n'est pas le souverain (NC ≠ FR), on n'accepte que
-    les domaines curés / le ccTLD local. Légifrance et mer.gouv.fr restent
-    sur la France hexagone, pas sur Nouméa.
-    Sans référentiel (Saba…) : on ne filtre pas.
+    Same rule as the pipeline: when the polygon is a curated territory that is not
+    its sovereign (NC ≠ FR), accept a host on the polygon's PoE whitelist
+    (poe_pipeline.build_whitelist with its mrgid: official_domains + whitelist_mrgid,
+    plus the sovereign's national labels only when the record sets
+    sovereign_runs_entry), or on the local ccTLD. Légifrance and mer.gouv.fr fit
+    Mayotte (a DROM, the State runs entry) but not Nouméa.
+    The sovereign's own polygon and unmapped zones (Saba…) are not filtered.
     """
     zone = zone or {}
     iso2 = str(zone.get("iso2") or "").strip().upper()
@@ -185,7 +188,8 @@ def td_url_fits_polygon(url: str, zone: dict | None) -> bool:
     host = (urlparse(url or "").hostname or "").lower().lstrip(".")
     if not host:
         return False
-    if any(_host_matches_domain(host, d) for d in official):
+    from app.services.poe_pipeline import build_whitelist, url_allowed
+    if url_allowed(url, build_whitelist(iso2, sov, None, mrgid=zone.get("mrgid"))):
         return True
     cc = iso2.lower()
     return host == cc or host.endswith("." + cc)

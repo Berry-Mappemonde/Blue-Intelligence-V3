@@ -111,11 +111,25 @@ def fetch_ports(zone_name: str, run_id: str) -> tuple[list[dict], str]:
 def check_registries(ports: list[dict], zone_name: str, run_id: str,
                      zetaris_mode: str | None = None) -> tuple[list[dict], dict]:
     """Registry check step: UN/LOCODE + WPI evidence on every candidate port, plus official
-    evidence from stored snippets of the zone (evidence_store.lookup; none on failure)."""
+    evidence from stored snippets of the zone (evidence_store.lookup; none on failure).
+
+    For a polygon curated in territories.json, "official" means on that polygon's PoE
+    whitelist (zone_whitelist, as in poe_pipeline); other zones keep the naming heuristic."""
     mrgid = next((p.get('mrgid') for p in ports if p.get('mrgid') is not None), None)
     stored = evidence_store.lookup(mrgid, [p.get('name') for p in ports], run_id)
     return registry_check.check_ports(ports, dict(name=zone_name, mrgid=mrgid), run_id,
-                                      live_failed=zetaris_mode == 'fallback', stored_records=stored)
+                                      live_failed=zetaris_mode == 'fallback', stored_records=stored,
+                                      whitelist=zone_registry_whitelist(mrgid))
+
+
+def zone_registry_whitelist(mrgid) -> list[str] | None:
+    """The polygon's PoE whitelist when mrgid is a curated territory, else None
+    (registry_check then uses is_official_source). poe_pipeline is imported only then."""
+    from app.services.territory_ref import territory_for_mrgid
+    if not territory_for_mrgid(mrgid):
+        return None
+    from app.services.poe_pipeline import registry_whitelist
+    return registry_whitelist({'mrgid': mrgid})
 
 
 def list_zones() -> dict:
