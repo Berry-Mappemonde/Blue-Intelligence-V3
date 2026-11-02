@@ -52,7 +52,8 @@ def test_tariff_list_of_ports_is_c1():
     urls = ["https://www.portos.gov.cv/tarifario.pdf", "https://www.mtt.gov.cv/portos"]
     texts = [{"url": u, "text": tariff} for u in urls]
     port = {"name": "Porto Novo", "source_urls": urls, "extraction_engine": "llm",
-            "zone_name": "Cabo Verde", "lat": 17.0, "lon": -25.06}
+            "zone_name": "Cabo Verde", "lat": 17.0, "lon": -25.06,
+            "spatial_kind": "in_eez"}
     out = v3_certify.assess_port(port, whitelist=CV_WL, texts=texts)
     assert out["confidence_level"] == "C1"
     assert out["confidence_cap_reason"] == v3_certify.CAP_NO_ENTRY_CONTEXT
@@ -81,7 +82,8 @@ def test_quote_from_another_territorys_row_of_a_national_decree_is_c1():
     ours = _port("Pointe-à-Pitre", urls)
     assert v3_certify.level_from_v2(ours, whitelist=WL, texts=texts, zone=GP) == "C2"
     # Placed in this zone by the 8face05 check: attributable whatever the row says.
-    geo = _port("Le Marin", urls, lat=16.30, lon=-61.80, geocode_arbitration="agree")
+    geo = _port("Le Marin", urls, lat=16.30, lon=-61.80, geocode_arbitration="agree",
+                spatial_kind="in_eez")
     assert v3_certify.level_from_v2(geo, whitelist=WL, texts=texts, zone=GP) == "C2"
 
 
@@ -157,6 +159,30 @@ def test_pipeline_passes_zone_texts_to_the_certifier():
         call = src[start:src.index(")", src.index("attach_confidence_level(", start)) + 1]
         assert "texts=" in call or "texts=" in src[start:start + 300], line
     texts = poe_pipeline.certify_texts(
-        "[SOURCE: https://www.guadeloupe.gouv.fr/a]\nLe port de Deshaies est désigné port d'entrée.",
+        "[SOURCE: https://www.guadeloupe.gouv.fr/a]\n"
+        "Le port de Deshaies est désigné port d'entrée.",
         [{"url": "https://www.guadeloupe.gouv.fr/a"}])
     assert texts and texts[0]["url"] == "https://www.guadeloupe.gouv.fr/a"
+
+
+def test_point_kept_without_zone_geometry_is_not_placed():
+    """Zone without polygon geometry: _apply_spatial keeps the point unchecked
+    (spatial_kind None / "unknown"). That is not a placement: C2 needs the zone row."""
+    from app.services.poe_zone_label import placed_in_zone
+
+    texts = [{"url": DECREE, "text": NATIONAL_DECREE}]
+    urls = [DECREE, PREF]
+    for kind in ("unknown", None):
+        port = _port("Le Marin", urls, lat=14.47, lon=-60.87, geocode_arbitration="agree",
+                     spatial_kind=kind)
+        assert not placed_in_zone(port), kind
+        out = v3_certify.assess_port(port, whitelist=WL, texts=texts, zone=GP)
+        assert out["confidence_level"] == "C1", kind
+        assert out["confidence_cap_reason"] == "evidence not attributable to zone"
+        # Named in its own territory's row: C2 without the polygon check.
+        mq = {"mrgid": 33178, "name": "Martinique"}
+        own = {**port, "mrgid": 33178, "zone_name": "Martinique"}
+        assert v3_certify.level_from_v2(own, whitelist=WL, texts=texts, zone=mq) == "C2"
+    # The same point checked against the polygon is placed.
+    for kind in ("in_eez", "coastal_land", "inland_river"):
+        assert placed_in_zone(_port("Le Marin", urls, lat=14.47, lon=-60.87, spatial_kind=kind))

@@ -469,10 +469,12 @@ def zone_attributable(port: Mapping, *, whitelist: Sequence[str] | None = None,
     """C2 guard: this port's evidence belongs to this zone.
 
     True when the pipeline placed the port in this zone (8face05: a GPS outside the
-    mrgid is never written, see `geo_in_zone`), or an evidence mention in an official text sits in a row/section naming this zone's
-    territory. Evidence mentions: entry-context mentions, the verified judge excerpt
-    and, when LLM∩NER agree, any mention of the name. Mentions under another
-    territory's row of a national decree do not count.
+    mrgid is never written, see `geo_in_zone`), or an evidence mention in an official
+    text sits in a row/section naming this zone's territory. A point kept without a
+    polygon check (zone without geometry) is not a placement. Evidence mentions:
+    entry-context mentions, the verified judge excerpt and, when LLM∩NER agree, any
+    mention of the name. Mentions under another territory's row of a national decree
+    do not count.
     """
     if geo_in_zone(port):
         return True

@@ -239,9 +239,11 @@ def placed_in_zone(port: dict) -> bool:
 
     A GPS outside the mrgid is never written on the card: ``spatial_rejected`` drops
     the port (``keep_extracted_in_zone``) and ``llm_spatial_rejected`` keeps the name
-    with no coordinates. So a port is placed when it carries coordinates and its
-    arbitration passes ``keep_extracted_in_zone``. A name-only port (no GPS, deferred
-    or failed geocode) is not placed.
+    with no coordinates. So a port is placed when it carries coordinates, its
+    arbitration passes ``keep_extracted_in_zone`` and the point was actually checked
+    against the polygon. A name-only port (no GPS, deferred or failed geocode) is not
+    placed, nor is a point kept without a check because the zone has no geometry
+    (``spatial_kind`` None / "unknown").
     """
     if not isinstance(port, dict):
         return False
@@ -253,4 +255,6 @@ def placed_in_zone(port: dict) -> bool:
     except (TypeError, ValueError):
         return False
     arbitration = port.get("geocode_arbitration")
-    return arbitration != "llm_spatial_rejected" and keep_extracted_in_zone(arbitration)
+    # No zone geometry: _apply_spatial keeps the point unchecked (kind None / "unknown").
+    return (arbitration != "llm_spatial_rejected" and keep_extracted_in_zone(arbitration)
+            and port.get("spatial_kind") not in (None, "unknown"))
