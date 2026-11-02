@@ -46,6 +46,7 @@ from app.core.events import ZoneRecorder, emit
 from app.core.extract import (
     audit_serp_filter, catalog_is_sufficient, catalog_ports_to_keep,
     catalog_ports_with_coords, extract_cascade, extract_structured_ports,
+    fold_place_name, split_territory_rows,
     internal_followups, is_geocodeable_name, looks_like_port_catalog,
     official_attachments, serp_filter, should_follow_attachments,
 )
@@ -749,13 +750,38 @@ def remember_review_pins(mrgid, kept_urls: list[str] | None,
     return {"kept": kept_added, "dropped": drop_added}
 
 
-def urls_with_catalog(texts: list[str]) -> list[str]:
+def urls_with_catalog(texts: list[str], zone: dict | None = None) -> list[str]:
     out = []
     for block in texts or []:
         m = re.match(r"\[SOURCE: ([^\]]+)\]", (block or "").lstrip())
-        if m and extract_structured_ports(block):
+        if m and (zone_catalog(block, zone)[0] if zone else extract_structured_ports(block)):
             out.append(m.group(1).strip())
     return out
+
+
+def zone_row_names(zone: dict | None) -> tuple[set[str], set[str]]:
+    """(the zone's folded names, every curated territory's folded names), so that a
+    per-territory list (18 July 2023 Arrêté) gives the zone its own row only:
+    Martinique reads "Fort-de-France, le Marin, …", never Saint-Pierre-et-Miquelon's."""
+    from app.services.territory_ref import territory_for_mrgid, territory_place_names
+    zone = zone or {}
+    terr = territory_for_mrgid(zone.get("mrgid"))
+    names = [zone.get("name"), zone.get("geoname"), *(territory_place_names(terr) if terr else [])]
+    zone_names = {fold_place_name(n) for n in names if n} - {""}
+    return zone_names, {fold_place_name(n) for n in territory_place_names()} | zone_names
+
+
+def zone_catalog(text: str, zone: dict | None) -> tuple[list[dict], bool]:
+    """Catalog ports for this zone, and True when a per-territory list in the text has
+    no row for it. Such a list gives the zone its own row; the other parsers read the
+    rest of the text as before."""
+    rest, row_ports, missed = split_territory_rows(text, *zone_row_names(zone))
+    ports, seen = list(row_ports), {p["name"].casefold() for p in row_ports}
+    for p in extract_structured_ports(rest) if rest.strip() else []:
+        if p["name"].casefold() not in seen:
+            seen.add(p["name"].casefold())
+            ports.append(p)
+    return ports, missed
 
 
 def save_exceptions(exc: dict):
@@ -1630,8 +1656,10 @@ async def _extract_ports_compared(context: str, zone: dict, log, rec=None,
     Claude only steps in after both NIM/OR readers fail.
     """
     raw_catalog = catalog_text if catalog_text is not None else context
-    catalog = await asyncio.to_thread(extract_structured_ports, raw_catalog)
-    if catalog_is_sufficient(catalog, raw_catalog):
+    catalog, rows_miss_zone = await asyncio.to_thread(zone_catalog, raw_catalog, zone)
+    if rows_miss_zone:
+        log("catalogue par territoire sans ligne pour cette zone — LLM non sauté")
+    if not rows_miss_zone and catalog_is_sufficient(catalog, raw_catalog):
         kept = catalog_ports_to_keep(catalog)
         if kept:
             n_coord = len(catalog_ports_with_coords(catalog))
@@ -1811,6 +1839,8 @@ async def _extract_ports_compared(context: str, zone: dict, log, rec=None,
             if looks_like_port_catalog(raw_catalog)
             else catalog_ports_with_coords(catalog)
         )
+        # The zone's own row of an official per-territory list is kept even without coords.
+        extra_src = extra_src + [c for c in catalog if c.get("territory_row")]
         for c in extra_src:
             key = normalize_name(c.get("name") or "")
             if not key or key in have:
@@ -3462,9 +3492,9 @@ async def generate_zone_poe(db, mrgid: int, logger=None, force: bool = False,
         raw_chars = len(raw)
         # Whole-text parsing and RAG ranking run in a worker thread: with sources up to
         # formalities.source_max_chars they would block the other zones and the API.
-        raw_catalog = await asyncio.to_thread(extract_structured_ports, raw)
+        raw_catalog, _ = await asyncio.to_thread(zone_catalog, raw, zone)
         if raw_catalog:
-            remembered = remember_seed_urls(zone, urls_with_catalog(texts), exceptions)
+            remembered = remember_seed_urls(zone, urls_with_catalog(texts, zone), exceptions)
             if remembered:
                 log(f"sources productives mémorisées pour {zone.get('iso2')}: {remembered}")
                 await emit(rec, "seed_remembered", iso2=zone.get("iso2"), urls=remembered)

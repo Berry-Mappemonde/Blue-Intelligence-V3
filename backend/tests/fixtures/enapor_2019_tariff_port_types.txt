@@ -1,0 +1,42 @@
+# ENAPOR, S.A. Tariff Regulation (Official Gazette of the Republic of Cape Verde,
+# 1st Series No 34, 25 March 2019), English version: Chapter XIII, Articles 41-42.
+# Names the type II and III ports for a tariff discount; it does not designate ports of entry.
+# Source: https://enapor.cv/web/content/5154?unique=f2e4657aca10787ecd53fa6ff649b9cc1f072354&download=true
+# Text extracted with PyMuPDF (page text), sliced verbatim.
+CHAPTER XIII 
+FINAL AND TRANSITIONAL 
+PROVISIONS 
+ 
+Article 41 
+ 
+Application of discount for regional development 
+ 
+As long as ENAPOR S.A.’s role in consolidation of 
+national connectivity and integration is considered 
+essential, to the PT-S and PT-C tariffs set out and arising 
+from the present Tariff Legislation - Chapter II - a 
+cumulative discount shall be applied, by multiplying the 
+resulting tariff by 1 (discount rate by port type), in order 
+to support the regional development of islands which are 
+smaller in size, population, and traffic scale: 
+ 
+Type II and III ports - ports of Palmeira, Sal-Rei, Porto 
+Novo, Tarrafal, Vale de Cavaleiros, Furna, and Porto 
+Inglês - 5%. 
+ 
+ 
+
+1st Series 
+-- No 34 Official Gazette of the Republic of Cape Verde   -- 25th of March 2019 
+ 
+ 
+ 
+ 
+Article 42 
+Revocation 
+The provisions of the Resolution No. 012 / CA / 
+201 of the Port Maritime Authority (IMP) that 
+approves the Tariff Regulations of ENAPOR S.A., 
+and all legislation that directly or indirectly 
+contravenes the provisions of this Legislation, are 
+revoked.
