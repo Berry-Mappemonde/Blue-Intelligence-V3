@@ -6,7 +6,6 @@ from __future__ import annotations
 import inspect
 import random
 import sys
-import time
 from pathlib import Path
 
 import pytest
@@ -113,18 +112,48 @@ def test_nearby_count_matches_brute_force():
         assert cyc.nearby_count(lat, lon, month) == cyc.nearby_count(lat, lon, month, prefilter=False), (lat, lon, month)
 
 
+PREFILTER_LEG = (30.1, -60.5, 4.9333, -52.3533, 9)  # Bermuda area -> Cayenne, September
+
+
+def _distance_calls(monkeypatch, prefilter: bool) -> tuple[int, dict]:
+    """Distance computations (point_to_segment_nm) one uncached crossings() run makes.
+
+    A count, not a wall-clock time: it does not depend on machine load, so the
+    test cannot flake under the full suite (it used to time both runs)."""
+    calls = {"n": 0}
+    real = cyc.point_to_segment_nm
+
+    def counting(*args):
+        calls["n"] += 1
+        return real(*args)
+
+    monkeypatch.setattr(cyc, "point_to_segment_nm", counting)
+    lat1, lon1, lat2, lon2, month = PREFILTER_LEG
+    window = int(cyc.rule("climatology.cyclone_dayrange", 21))
+    radius = float(cyc.rule("climatology.cyclone_radius_nm", 120))
+    out = cyc._crossings_compute(lat1, lon1, lat2, lon2, month, None, window, radius, prefilter)
+    monkeypatch.setattr(cyc, "point_to_segment_nm", real)
+    return calls["n"], out
+
+
 @needs_ibtracs
-def test_prefilter_is_much_faster_than_brute_force():
-    lat1, lon1, lat2, lon2 = 30.1, -60.5, 4.9333, -52.3533
-    cyc.crossings(lat1, lon1, lat2, lon2, 9)  # warm bboxes + index
-    cyc._crossings_cached.cache_clear()
-    t0 = time.perf_counter()
-    cyc.crossings(lat1 + 0.01, lon1, lat2, lon2, 9)
-    fast = time.perf_counter() - t0
-    t0 = time.perf_counter()
-    cyc.crossings(lat1 + 0.01, lon1, lat2, lon2, 9, prefilter=False)
-    slow = time.perf_counter() - t0
-    assert fast * 5 < slow, f"prefilter {fast:.3f}s vs brute {slow:.3f}s"
+def test_prefilter_is_much_faster_than_brute_force(monkeypatch):
+    """The prefilter skips most of the distance work (incident 2026-09-21: ~1 s per call)."""
+    fast, fast_out = _distance_calls(monkeypatch, prefilter=True)
+    slow, slow_out = _distance_calls(monkeypatch, prefilter=False)
+    assert fast_out["count"] == slow_out["count"] > 0
+    assert [s["sid"] for s in fast_out["storms"]] == [s["sid"] for s in slow_out["storms"]]
+    assert fast * 5 < slow, f"prefilter {fast} distance computations vs brute force {slow}"
+
+
+@needs_ibtracs
+def test_distance_count_measures_the_prefilter(monkeypatch):
+    """With the bbox test disabled the prefilter path does the brute-force work, so the
+    count above really measures the prefilter."""
+    slow, _ = _distance_calls(monkeypatch, prefilter=False)
+    monkeypatch.setattr(cyc, "bbox_near_segment", lambda *a, **k: True)
+    disabled, _ = _distance_calls(monkeypatch, prefilter=True)
+    assert disabled == slow
 
 
 @needs_ibtracs
