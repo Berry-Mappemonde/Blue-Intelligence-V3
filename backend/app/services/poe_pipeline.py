@@ -1321,6 +1321,8 @@ EXTRACT_BATCH_OVERLAP_CHARS = 1500
 EXTRACT_BATCH_CONCURRENCY = 3
 EXTRACT_MAX_LLM_CALLS = 1000
 SOURCE_MAX_CHARS = 120_000  # per fetched source; was a hard 60,000 cut before batching
+MAX_FETCH = 8  # pages / PDFs fetched per zone (formalities.max_fetch)
+FETCH_SLOTS_PER_ROLE = 1  # reserved per authority role within MAX_FETCH (formalities.fetch_slots_per_role)
 _SOURCE_BLOCK_RE = re.compile(r"\n\n(?=\[(?:SOURCE: |SYNTHÈSE DE RECHERCHE))")
 
 
@@ -2745,24 +2747,63 @@ async def _find_sources(zone: dict, whitelist: list[str], exceptions: dict, log,
     return official, strictly_official, synthesis
 
 
-async def _collect_texts(official: list[dict], log, rec=None, max_fetch: int = 8
+async def _collect_texts(official: list[dict], log, rec=None, max_fetch: int | None = None,
+                         zone: dict | None = None
                          ) -> tuple[list[str], dict, list[dict], dict]:
     """Step 3 — Collection: N1∥N2 cascade, anti-bot mirror, official attached PDFs
     (even if the page is already long), depth-2 if the text is thin.
-    Attachments go before the rest of the SERP queue (France lesson: list + map)."""
+    Attachments go before the rest of the SERP queue (France lesson: list + map).
+
+    The cap (``formalities.max_fetch``) keeps at least one slot per authority role
+    of the zone that has a candidate (backend/data/whitelist_sources.json): once the
+    slots left only cover the roles not yet fetched, the next fetch is the
+    best-ranked candidate of such a role instead of the queue head (Canaries lesson:
+    8 fetches on transport and tax pages, no port authority read)."""
     from app.core.run_rules import get_rule
+    from app.services.authority_roles import ROLE_PRIORITY, role_quotas, roles_of, zone_authorities
     source_max = int(get_rule("formalities.source_max_chars", SOURCE_MAX_CHARS))
+    if max_fetch is None:
+        max_fetch = int(get_rule("formalities.max_fetch", MAX_FETCH))
     texts, hashes, used_sources, excerpts = [], {}, [], {}
     queue = list(official)
     seen_urls: set[str] = set()
     fetched = 0
+    authorities = zone_authorities(zone) if zone else []
+    quotas = role_quotas(queue, authorities, max_fetch,
+                         int(get_rule("formalities.fetch_slots_per_role", FETCH_SLOTS_PER_ROLE))
+                         ) if authorities else {}
+    got: dict[str, int] = {}
+    if quotas:
+        log("collecte: créneaux réservés par rôle " + ", ".join(
+            f"{r}={n}" for r, n in quotas.items()) + f" (plafond {max_fetch})")
+        await emit(rec, "fetch_reservation", cap=max_fetch, quotas=quotas)
+
+    def _deficit_roles() -> list[str]:
+        return [r for r in ROLE_PRIORITY + tuple(sorted(set(quotas) - set(ROLE_PRIORITY)))
+                if got.get(r, 0) < quotas.get(r, 0)]
+
     while queue and fetched < max_fetch:
-        c = queue.pop(0)
+        need = _deficit_roles()
+        c = None
+        if need and max_fetch - fetched <= sum(quotas[r] - got.get(r, 0) for r in need):
+            for r in need:
+                c = next((q for q in queue if (q.get("url") or "") not in seen_urls
+                          and r in roles_of(q.get("url") or "", authorities)), None)
+                if c is not None:
+                    queue.remove(c)
+                    log(f"collecte: créneau réservé {r} → {(c.get('url') or '')[:90]}")
+                    await emit(rec, "fetch_reserved", role=r, url=c.get("url"))
+                    break
+                quotas[r] = got.get(r, 0)  # no candidate left for this role
+        if c is None:
+            c = queue.pop(0)
         url = c.get("url") or ""
         if not url or url in seen_urls:
             continue
         seen_urls.add(url)
         fetched += 1
+        for r in roles_of(url, authorities):
+            got[r] = got.get(r, 0) + 1
         try:
             res = await extract_cascade(url, min_chars=200, log=log)
         except Exception as e:
@@ -3576,7 +3617,7 @@ async def generate_zone_poe(db, mrgid: int, logger=None, force: bool = False,
             zone, whitelist, exceptions, log, rec, variant=variant)
 
         # 3. Collect texts
-        texts, hashes, used_sources, excerpts = await _collect_texts(official, log, rec)
+        texts, hashes, used_sources, excerpts = await _collect_texts(official, log, rec, zone=zone)
 
         # Post-collection MD5 monitoring: skip if content is strictly identical
         old_hashes = zone.get("source_hashes") or {}
