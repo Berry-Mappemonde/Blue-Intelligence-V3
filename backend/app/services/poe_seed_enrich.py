@@ -43,7 +43,7 @@ from app.core.tinyfish import (
 from app.services.poe_pipeline import (
     OFFICIAL_TOKENS, build_whitelist, domain_of, list_url_bonus,
     load_exceptions, now_iso, remember_seed_urls, search_polygon_name,
-    url_allowed, urls_with_catalog,
+    url_allowed, urls_with_catalog, zone_catalog,
 )
 from app.services.poe_seeds import (
     SEARCH_EXCLUDE_DOMAINS, listing_is_poe, seed_search_query,
@@ -648,8 +648,12 @@ async def _search_hits(doc: dict, zone: dict, whitelist: list[str], key: str, lo
     return drop_excluded_hits(hits)
 
 
-def harvest_bu_catalog(fetched: dict, urls: list[str]) -> dict:
-    """Catalog parser on already-fetched state pages. 0 crawl."""
+def harvest_bu_catalog(fetched: dict, urls: list[str], zone: dict | None = None) -> dict:
+    """Catalog parser on already-fetched state pages. 0 crawl.
+
+    With ``zone``, a per-territory list (18 July 2023 Arrêté) gives this zone's own row,
+    as in Top-Down (``poe_pipeline.zone_catalog``); a list with no row for the zone is
+    not a catalogue for it."""
     blocks = []
     for u in urls or []:
         rec = (fetched or {}).get(u) or {}
@@ -660,15 +664,15 @@ def harvest_bu_catalog(fetched: dict, urls: list[str]) -> dict:
             continue
         blocks.append(f"[SOURCE: {u}]\n{text[:CATALOG_FETCH_CHARS].rstrip()}\n")
     raw = "\n\n".join(blocks)
-    ports = extract_structured_ports(raw)
+    ports, rows_miss_zone = zone_catalog(raw, zone) if zone else (extract_structured_ports(raw), False)
     named = [
         p for p in ports
         if p.get("extraction_engine") == "catalog"
         and "tournure légale" not in (p.get("note") or "")
         and (p.get("name") or "").strip()
     ]
-    sufficient = catalog_is_sufficient(ports, raw) or len(named) >= 4
-    productive = urls_with_catalog(blocks) if blocks else []
+    sufficient = not rows_miss_zone and (catalog_is_sufficient(ports, raw) or len(named) >= 4)
+    productive = urls_with_catalog(blocks, zone) if blocks else []
     if sufficient and not productive:
         productive = [
             u for u in (urls or [])
@@ -942,7 +946,7 @@ async def judge_one(doc: dict, zone: dict, settings: dict, log,
                     judged["judge_agent_url"] = blocked_official[0]
                     judged["judge_at"] = now_iso()
                     return judged
-    harvest = harvest_bu_catalog(fetched, urls)
+    harvest = harvest_bu_catalog(fetched, urls, zone)
     if harvest["sufficient"]:
         merge_catalog_cache(cache, harvest)
         zone["sources_bu"] = list(cache.get("urls") or [])

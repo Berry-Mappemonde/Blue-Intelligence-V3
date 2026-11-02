@@ -60,6 +60,14 @@ def _build_mrgid_map() -> dict[int, str]:
 MRGID_TO_TERRITORY: dict[int, str] = _build_mrgid_map()
 
 
+def territory_place_names(terr: dict | None = None) -> list[str]:
+    """``name_fr`` / ``name_en`` of one curated territory, or of all of them: the row
+    headers of per-territory lists such as the 18 July 2023 Arrêté (ports open to
+    international traffic)."""
+    recs = [terr] if terr is not None else list(_territories().values())
+    return [str(t[k]) for t in recs for k in ("name_fr", "name_en") if t.get(k)]
+
+
 def territory_for_mrgid(mrgid) -> dict:
     """Curated record of the territory this VLIZ polygon belongs to, or {} when unmapped."""
     try:

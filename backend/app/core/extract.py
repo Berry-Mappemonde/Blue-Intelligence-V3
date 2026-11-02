@@ -1234,6 +1234,98 @@ def looks_like_port_catalog(text: str) -> bool:
     return False
 
 
+# Lists headed by territory lines, one row per territory: the Arrêté du 18 juillet 2023
+# (ports open to international traffic) gives "Martinique" then "Fort-de-France, le Marin,
+# Le Robert, Saint-Pierre, Trinité.", "Saint-Pierre-et-Miquelon" then "Port de Miquelon,
+# Port de Saint-Pierre.", and so on. A zone reads its own row only.
+_ROW_PORT_PREFIX_RE = re.compile(r"^port\s+(?:de\s+la\s+|de\s+l['’]\s*|de\s+|du\s+|d['’]\s*)", re.I)
+_ROW_MIN_KNOWN_HEADS = 2
+
+
+def fold_place_name(name: str | None) -> str:
+    """Accent- and case-folded place name for matching row headers to a zone:
+    "Saint-Barthélémy" = "Saint-Barthélemy", "Saint-Pierre and Miquelon" =
+    "Saint-Pierre-et-Miquelon", "Iles Wallis-et-Futuna" = "Wallis-et-Futuna"."""
+    nfd = unicodedata.normalize("NFD", (name or "").casefold())
+    s = "".join(ch for ch in nfd if unicodedata.category(ch) != "Mn")
+    s = re.sub(r"[^a-z0-9]+", " ", s).strip()
+    s = re.sub(r"\band\b", "et", s)
+    return re.sub(r"^(?:iles?|la|le|les)\s+", "", s)
+
+
+def _row_head_like(line: str) -> bool:
+    return (2 <= len(line) <= 60 and "," not in line and not line.endswith(".")
+            and not line.isupper() and line[:1].isupper() and len(line.split()) <= 6)
+
+
+def _row_value_like(line: str) -> bool:
+    return (not line.isupper() and len(line) <= 600
+            and ("," in line or line.endswith(".") or len(line) <= 60))
+
+
+def territory_rows(text: str, known_heads: set[str]) -> list[tuple[str, str]]:
+    """(header, ports line) rows of a per-territory list, or [] when the text is not one.
+
+    A row is a short title-like line followed by a list line. The text counts as a
+    per-territory list only when at least two row headers are known territory names
+    (``known_heads``, folded): a page of headings and paragraphs is not one."""
+    lines = [ln.strip() for ln in (text or "").splitlines() if ln.strip()]
+    rows, i = [], 0
+    while i < len(lines) - 1:
+        head, value = lines[i], lines[i + 1]
+        if _row_head_like(head) and _row_value_like(value):
+            rows.append((head, value))
+            i += 2
+        else:
+            i += 1
+    known = {fold_place_name(h) for h, _ in rows} & known_heads
+    return rows if len(known) >= _ROW_MIN_KNOWN_HEADS else []
+
+
+def _row_ports(head: str, value: str) -> list[dict]:
+    out = []
+    for raw in value.rstrip(" .").split(","):
+        name = " ".join(raw.split()).strip(" .;")
+        bare = _ROW_PORT_PREFIX_RE.sub("", name)
+        name = bare if len(bare) >= 3 else name
+        if len(name) < 3:
+            continue
+        out.append({
+            "name": name[:1].upper() + name[1:], "city": None,
+            "note": f"ligne « {head} » d'une liste par territoire",
+            "extraction_engine": "catalog", "territory_row": head,
+        })
+    return out
+
+
+def split_territory_rows(text: str, zone_names: set[str] | None,
+                         known_heads: set[str] | None) -> tuple[str, list[dict], bool]:
+    """Take the per-territory lists out of ``text`` before the other parsers read it.
+
+    Returns (the text without those [SOURCE: …] blocks, the ports of the zone's own
+    row(s), True when a list was found but none of its rows is the zone's). The other
+    parsers must not read such a block: their "Port de X" takes every territory's row.
+    Names are folded (``fold_place_name``); without them the text is returned as is."""
+    if not text or not zone_names or not known_heads:
+        return text, [], False
+    parts = re.split(r"\n(?=\[SOURCE: )", text) if "[SOURCE:" in text else [text]
+    kept, ports, seen, lists = [], [], set(), 0
+    for part in parts:
+        rows = territory_rows(part, known_heads)
+        if not rows:
+            kept.append(part)
+            continue
+        lists += 1
+        for head, value in rows:
+            if fold_place_name(head) not in zone_names:
+                continue
+            for p in _row_ports(head, value):
+                if p["name"].casefold() not in seen:
+                    seen.add(p["name"].casefold())
+                    ports.append(p)
+    return "\n".join(kept), ports, bool(lists) and not ports
+
+
 def extract_structured_ports(text: str) -> list[dict]:
     """Read an official list from the source text (not a hardcoded list):
     "N.- Name" titles + lat/lon, or legal phrasing "port of X".
@@ -1466,7 +1558,11 @@ def _extract_nz_pofa_tables(text: str) -> list[dict]:
 
 
 def _extract_annexe_ppc_maritime(text: str) -> list[dict]:
-    """Mayotte Annex I: controlled crossing points, maritime borders only."""
+    """Mayotte Annex I: controlled crossing points, maritime borders only.
+
+    Arrêté du 4 février 2015 (documents and visas, Mayotte only): sections by border
+    type, site + opening modality. Not a per-territory list: ``split_territory_rows``
+    (one row per territory, 18 July 2023 Arrêté) leaves this text to this reader."""
     out, seen = [], set()
     skip = _PORT_OF_SKIP | _GENERIC_PORT_NAMES | {
         "sites", "modalités", "modalites", "ouverture", "liste", "documents",
