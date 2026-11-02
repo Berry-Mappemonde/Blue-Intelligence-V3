@@ -17,9 +17,10 @@ Two per-port guards (pilot: 1 of 19 C2 ports had correct per-port evidence):
 the "two official hosts" corroboration also needs the port's name next to
 entry wording in an official text (`entry_context`; tariff and port-dues
 schedules do not count), and every C2+ is capped at C1 ("evidence not
-attributable to zone") unless the port geocodes inside this zone's polygon
-or coastal buffer, or its evidence row/section names this zone's territory
-(`zone_attributable`).
+attributable to zone") unless the pipeline placed the port in this zone
+(8face05: a GPS outside the mrgid is never written), or its evidence
+row/section names this zone's territory (`zone_attributable`). Unplaced and
+unattributed ports (name only, no GPS) stay at C1 at most.
 
 `level_from_v2` maps a pipeline port onto the same scale from its
 extraction, source, judge and geo fields. It never reads the V2 score
@@ -454,10 +455,12 @@ def _mention_in_zone(text: str, ns: int, ne: int, own: set[str], other: set[str]
 
 
 def geo_in_zone(port: Mapping) -> bool:
-    """Geocoded inside this zone's polygon or its coastal buffer (the C3 land mask)."""
-    g = port.get("geo") if isinstance(port.get("geo"), Mapping) else {}
-    kind = port.get("spatial_kind", g.get("spatial_kind"))
-    return kind in GEO_KINDS
+    """Placed in this zone by the pipeline's existing polygon check (8face05,
+    poe_zone_label.placed_in_zone): coordinates are only written for a point kept in
+    this mrgid."""
+    from app.services.poe_zone_label import placed_in_zone
+
+    return placed_in_zone(dict(port))
 
 
 def zone_attributable(port: Mapping, *, whitelist: Sequence[str] | None = None,
@@ -465,8 +468,8 @@ def zone_attributable(port: Mapping, *, whitelist: Sequence[str] | None = None,
                       zone: Mapping | None = None) -> bool:
     """C2 guard: this port's evidence belongs to this zone.
 
-    True when the port geocodes inside the zone (polygon or coastal buffer), or an
-    evidence mention in an official text sits in a row/section naming this zone's
+    True when the pipeline placed the port in this zone (8face05: a GPS outside the
+    mrgid is never written, see `geo_in_zone`), or an evidence mention in an official text sits in a row/section naming this zone's
     territory. Evidence mentions: entry-context mentions, the verified judge excerpt
     and, when LLM∩NER agree, any mention of the name. Mentions under another
     territory's row of a national decree do not count.

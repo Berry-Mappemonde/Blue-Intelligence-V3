@@ -1,8 +1,8 @@
 """C2 guards (pilot: 1 of 19 C2 ports had correct per-port evidence).
 
-a) zone attribution: the evidence row/section names this zone's territory, or the
-   port geocodes in the zone (polygon / coastal buffer); else C1, "evidence not
-   attributable to zone".
+a) zone attribution: the port is placed in this zone by the pipeline's polygon check
+   (8face05, poe_zone_label.placed_in_zone), or its evidence row/section names this
+   zone's territory; unplaced and unattributed -> C1, "evidence not attributable to zone".
 b) two official hosts need a per-port entry context; tariff schedules do not count.
 
 Synthetic fixtures only. No network, no Mongo.
@@ -52,7 +52,7 @@ def test_tariff_list_of_ports_is_c1():
     urls = ["https://www.portos.gov.cv/tarifario.pdf", "https://www.mtt.gov.cv/portos"]
     texts = [{"url": u, "text": tariff} for u in urls]
     port = {"name": "Porto Novo", "source_urls": urls, "extraction_engine": "llm",
-            "zone_name": "Cabo Verde", "spatial_kind": "in_eez"}
+            "zone_name": "Cabo Verde", "lat": 17.0, "lon": -25.06}
     out = v3_certify.assess_port(port, whitelist=CV_WL, texts=texts)
     assert out["confidence_level"] == "C1"
     assert out["confidence_cap_reason"] == v3_certify.CAP_NO_ENTRY_CONTEXT
@@ -80,9 +80,31 @@ def test_quote_from_another_territorys_row_of_a_national_decree_is_c1():
     # The Guadeloupe row of the same decree is attributable.
     ours = _port("Pointe-à-Pitre", urls)
     assert v3_certify.level_from_v2(ours, whitelist=WL, texts=texts, zone=GP) == "C2"
-    # Geocoded inside this zone's polygon: attributable whatever the row says.
-    geo = _port("Le Marin", urls, spatial_kind="in_eez")
+    # Placed in this zone by the 8face05 check: attributable whatever the row says.
+    geo = _port("Le Marin", urls, lat=16.30, lon=-61.80, geocode_arbitration="agree")
     assert v3_certify.level_from_v2(geo, whitelist=WL, texts=texts, zone=GP) == "C2"
+
+
+def test_unplaced_ports_need_a_zone_row():
+    """Pilot, Martinique: 8 ports could not be placed in the zone, 2 still reached C2."""
+    from app.services.poe_zone_label import placed_in_zone
+
+    texts = [{"url": DECREE, "text": NATIONAL_DECREE}]
+    urls = [DECREE, PREF]
+    for unplaced in ({}, {"lat": None, "lon": None},
+                     {"lat": None, "lon": None, "geocode_arbitration": "llm_spatial_rejected"},
+                     {"lat": 16.3, "lon": -61.8, "geocode_arbitration": "llm_spatial_rejected"},
+                     {"lat": 16.3, "lon": -61.8, "geocode_arbitration": "spatial_rejected"},
+                     {"spatial_kind": "in_eez"}):  # a kind without coordinates is not placed
+        port = _port("Le Marin", urls, **unplaced)
+        assert not placed_in_zone(port), unplaced
+        out = v3_certify.assess_port(port, whitelist=WL, texts=texts, zone=GP)
+        assert out["confidence_level"] == "C1", unplaced
+        assert out["confidence_cap_reason"] == "evidence not attributable to zone"
+    # Same unplaced port, named in this zone's own row: C2.
+    mq = {"mrgid": 33178, "name": "Martinique"}
+    port = _port("Le Marin", urls, mrgid=33178, zone_name="Martinique")
+    assert v3_certify.level_from_v2(port, whitelist=WL, texts=texts, zone=mq) == "C2"
 
 
 def test_customs_order_designating_the_port_keeps_c2():

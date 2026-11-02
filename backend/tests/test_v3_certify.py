@@ -49,7 +49,9 @@ def level(entity):
 
 
 # PLAN-V3 §5 C3 geo: two geocoders < 500 m, at sea or at the quay.
-GEO_OK = {"geocode_agree": True, "geocode_agreement_km": 0.3, "spatial_kind": "in_eez"}
+# Coordinates included: the pipeline wrote the point, so it is placed in the zone (8face05).
+GEO_OK = {"geocode_agree": True, "geocode_agreement_km": 0.3, "spatial_kind": "in_eez",
+          "lat": 14.47, "lon": -60.87}
 GEO_OK_ENTITY = {"agree": True, "independent_sources": 2, "agreement_km": 0.3,
                  "spatial_kind": "in_eez"}
 
@@ -69,8 +71,9 @@ def _judged(verdict, excerpt=EXCERPT):
 
 # C2 without the judge: LLM extraction + an independent reader (LLM∩NER).
 CORROBORATED = {"extraction_engine": "llm", "extraction_agreement": True}
-# C2 zone guard: geocoded inside this zone's polygon (or its coastal buffer).
-IN_ZONE = {"spatial_kind": "in_eez"}
+# C2 zone guard: placed in this zone by the pipeline (8face05: a GPS outside the
+# mrgid is never written, so coordinates on the port mean "in this polygon").
+IN_ZONE = {"lat": 14.47, "lon": -60.87}
 
 
 def _v2(**overrides):
@@ -177,7 +180,7 @@ def test_judge_poe_with_verified_excerpt_lifts_to_c2():
     base = _v2(**IN_ZONE)
     assert level_from_v2(base) == "C1"
     assert level_from_v2({**base, "judge": _judged("poe")}) == "C2"
-    # Zone guard: the excerpt names no territory and the port is not geocoded here.
+    # Zone guard: the excerpt names no territory and the port is not placed (no GPS).
     out = assess_port({**_v2(), "judge": _judged("poe")})
     assert out["confidence_level"] == "C1"
     assert out["confidence_cap_reason"] == "evidence not attributable to zone"
@@ -309,7 +312,7 @@ def test_apply_score_leaves_the_level_to_its_callers():
 
 
 def test_level_never_derived_from_the_v2_score():
-    port = _v2(**CORROBORATED, lat=14.5, lon=-61.0, **GEO_OK)
+    port = _v2(**CORROBORATED, **GEO_OK)  # GEO_OK carries the coordinates
     expected = level_from_v2(port)
     assert expected == "C3"
     for score in ({"confidence": 0, "confidence_parts": {}, "confidence_reasons": []},
@@ -461,26 +464,22 @@ def test_unified_run_is_the_only_run_mechanism():
     assert run_artifacts.SCORE_FIELD == "confidence"
 
 
-@pytest.mark.parametrize("geo, expected, expected_v2", [
-    ({"geocode_agree": True, "geocode_agreement_km": 0.5, "spatial_kind": "in_eez"}, "C3", "C3"),
-    ({"geocode_agree": True, "geocode_agreement_km": 0.2, "spatial_kind": "coastal_land"},
-     "C3", "C3"),
+@pytest.mark.parametrize("geo, expected", [
+    ({"geocode_agree": True, "geocode_agreement_km": 0.5, "spatial_kind": "in_eez"}, "C3"),
+    ({"geocode_agree": True, "geocode_agreement_km": 0.2, "spatial_kind": "coastal_land"}, "C3"),
     # Agreeing under the pipeline's 2 km flag, but not within 500 m.
-    ({"geocode_agree": True, "geocode_agreement_km": 1.8, "spatial_kind": "in_eez"}, "C2", "C2"),
-    ({"geocode_agree": True, "geocode_agreement_km": None, "spatial_kind": "in_eez"}, "C2", "C2"),
-    ({"geocode_agree": True, "spatial_kind": "in_eez"}, "C2", "C2"),
-    # Within 500 m but off the land mask. The bare ladder says C2; the port, with no
-    # evidence row naming the zone and no geocode in it, is capped at C1 (zone guard).
-    ({"geocode_agree": True, "geocode_agreement_km": 0.1, "spatial_kind": "out_of_eez"},
-     "C2", "C1"),
-    ({"geocode_agree": True, "geocode_agreement_km": 0.1, "spatial_kind": "inland_river"},
-     "C2", "C1"),
-    ({"geocode_agree": True, "geocode_agreement_km": 0.1, "spatial_kind": None}, "C2", "C1"),
-    ({"geocode_agree": False, "geocode_agreement_km": 0.1, "spatial_kind": "in_eez"}, "C2", "C2"),
+    ({"geocode_agree": True, "geocode_agreement_km": 1.8, "spatial_kind": "in_eez"}, "C2"),
+    ({"geocode_agree": True, "geocode_agreement_km": None, "spatial_kind": "in_eez"}, "C2"),
+    ({"geocode_agree": True, "spatial_kind": "in_eez"}, "C2"),
+    # Within 500 m but off the land mask.
+    ({"geocode_agree": True, "geocode_agreement_km": 0.1, "spatial_kind": "out_of_eez"}, "C2"),
+    ({"geocode_agree": True, "geocode_agreement_km": 0.1, "spatial_kind": "inland_river"}, "C2"),
+    ({"geocode_agree": True, "geocode_agreement_km": 0.1, "spatial_kind": None}, "C2"),
+    ({"geocode_agree": False, "geocode_agreement_km": 0.1, "spatial_kind": "in_eez"}, "C2"),
 ])
-def test_c3_needs_500_m_agreement_and_land_mask(geo, expected, expected_v2):
+def test_c3_needs_500_m_agreement_and_land_mask(geo, expected):
     port = _v2(**CORROBORATED, lat=14.5, lon=-61.0, **geo)
-    assert level_from_v2(port) == expected_v2
+    assert level_from_v2(port) == expected
     entity = {
         "name": "Marina du Marin",
         "evidence": [{"url": GOV, "extracted": True, "judge": "supported"}],
