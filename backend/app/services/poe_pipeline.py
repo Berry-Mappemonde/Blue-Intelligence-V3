@@ -2162,6 +2162,35 @@ async def _tavily_search_safe(query: str, log, *, include_domains=None,
         return []
 
 
+# Scoped Tavily (include_domains = whitelist) runs below this many distinct official hosts
+# (run rule tavily.scoped_min_official_hosts; 1 = only when none, as for TinyFish).
+TAVILY_SCOPED_MIN_OFFICIAL_HOSTS = 2
+_SITE_OP_RE = re.compile(r"\bsite:(\S+)")
+_FILETYPE_OP_RE = re.compile(r"\bfiletype:\S+", re.I)
+
+
+async def _search_with_fallback(query: str, log) -> tuple[list[dict], str]:
+    """SearXNG, then Tavily with the same query when SearXNG returns nothing.
+
+    For the SearXNG-only steps (pinned hints, site: PDF / page): where Tavily already
+    runs in parallel (round 1, lessons) it stays a parallel engine (PR #8). A
+    ``site:domain`` operator becomes ``include_domains``. Credits and cache are those of
+    ``_tavily_search_safe`` (tavily.max_credits, tavily.cache_ttl_days). Grounded search
+    stays the last resort after this. Returns (results, engine that served them)."""
+    res = await search_searxng(query, log)
+    if res or not _tavily_key():
+        return res, "searxng"
+    domains = _SITE_OP_RE.findall(query)
+    plain = " ".join(_FILETYPE_OP_RE.sub(" ", _SITE_OP_RE.sub(" ", query)).split())
+    tv = await _tavily_search_safe(plain or query, log, include_domains=domains or None)
+    log(f"SearXNG vide → Tavily: {len(tv)} résultat(s) pour « {query[:70]} »")
+    return tv, "tavily"
+
+
+def _served_by(results: list[dict]) -> str:
+    return "+".join(sorted({r.get("engine") or "searxng" for r in results or []})) or "searxng"
+
+
 def site_list_pdf_query(domain: str, zone: dict) -> str:
     """`site:` query once the state domain is known."""
     iso = polygon_iso2(zone)
@@ -2255,9 +2284,9 @@ async def _site_list_pdf_search(domains: list[str], zone: dict, log) -> list[dic
         if not dom:
             continue
         q = site_list_pdf_query(dom, zone)
-        res = await search_searxng(q, log)
+        res, engine = await _search_with_fallback(q, log)
         if res:
-            log(f"site PDF {dom}: {len(res)} résultat(s)")
+            log(f"site PDF {dom}: {len(res)} résultat(s) ({engine})")
             out.extend(res)
     return out
 
@@ -2269,9 +2298,9 @@ async def _site_list_page_search(domains: list[str], zone: dict, log) -> list[di
         if not dom:
             continue
         q = site_list_page_query(dom, zone)
-        res = await search_searxng(q, log)
+        res, engine = await _search_with_fallback(q, log)
         if res:
-            log(f"site page {dom}: {len(res)} résultat(s)")
+            log(f"site page {dom}: {len(res)} résultat(s) ({engine})")
             out.extend(res)
     return out
 
@@ -2302,6 +2331,17 @@ async def _find_sources(zone: dict, whitelist: list[str], exceptions: dict, log,
     loc_q = localized_query(zone)
 
     searx_groups, tf_groups, serper_groups, tavily_groups = [], [], [], []
+    served: dict[str, dict] = {}
+
+    async def _emit_search(**kw) -> None:
+        """emit(rec, "search", ...) plus a per-zone count of which engine served it."""
+        slot = served.setdefault(kw.get("engine") or "?",
+                                 {"queries": 0, "results": 0, "empty": 0, "fallback": 0})
+        slot["queries"] += 1
+        slot["results"] += int(kw.get("n") or 0)
+        slot["empty"] += 0 if kw.get("n") else 1
+        slot["fallback"] += 1 if kw.get("fallback_for") else 0
+        await emit(rec, "search", **kw)
 
     def _add_serper_jobs(jobs: list, labels: list) -> None:
         # The shots are always scheduled. `_serper_search_safe` returns []
@@ -2340,24 +2380,24 @@ async def _find_sources(zone: dict, whitelist: list[str], exceptions: dict, log,
         res_en: list = []
         for res, (engine, qlang, query) in zip(results, labels):
             rnd = "google_style" if engine == "serper" else "classic"
-            await emit(rec, "search", engine=engine, lang=qlang, query=query,
-                       n=len(res or []), results=res or [], variant=variant,
-                       round=rnd)
+            await _emit_search(engine=engine, lang=qlang, query=query,
+                               n=len(res or []), results=res or [], variant=variant,
+                               round=rnd)
             if engine == "searxng":
                 res_en = res or []
             _bucket_search(engine, res)
         if not res_en and loc_q:
             log(f"v1: SearXNG EN vide — bascule localisée ({lang}): {loc_q[:80]}")
             res_loc = await search_searxng(loc_q, log)
-            await emit(rec, "search", engine="searxng", lang=lang, query=loc_q,
-                       n=len(res_loc or []), results=res_loc or [], variant=variant,
-                       round="classic")
+            await _emit_search(engine="searxng", lang=lang, query=loc_q,
+                               n=len(res_loc or []), results=res_loc or [], variant=variant,
+                               round="classic")
             searx_groups.append(res_loc or [])
             if tavily_key:
                 tv_loc = await _tavily_search_safe(loc_q, log)
-                await emit(rec, "search", engine="tavily", lang=lang, query=loc_q,
-                           n=len(tv_loc or []), results=tv_loc or [], variant=variant,
-                           round="classic")
+                await _emit_search(engine="tavily", lang=lang, query=loc_q,
+                                   n=len(tv_loc or []), results=tv_loc or [], variant=variant,
+                                   round="classic")
                 tavily_groups.append(tv_loc or [])
     else:
         jobs = [search_searxng(query_en, log)]
@@ -2381,9 +2421,9 @@ async def _find_sources(zone: dict, whitelist: list[str], exceptions: dict, log,
         results = await asyncio.gather(*jobs)
         for res, (engine, qlang, query) in zip(results, labels):
             rnd = "google_style" if engine == "serper" else "classic"
-            await emit(rec, "search", engine=engine, lang=qlang, query=query,
-                       n=len(res or []), results=res or [], variant=variant,
-                       round=rnd)
+            await _emit_search(engine=engine, lang=qlang, query=query,
+                               n=len(res or []), results=res or [], variant=variant,
+                               round=rnd)
             _bucket_search(engine, res)
 
     searx_set = _merge_candidates(*searx_groups)
@@ -2406,10 +2446,12 @@ async def _find_sources(zone: dict, whitelist: list[str], exceptions: dict, log,
 
     hints = search_hint_queries(zone, exceptions)
     if hints:
-        hint_res = await asyncio.gather(*[search_searxng(q, log) for q in hints])
-        for q, res in zip(hints, hint_res):
-            await emit(rec, "search", engine="searxng", lang="hint", query=q,
-                       n=len(res), results=res, round="classic")
+        hint_out = await asyncio.gather(*[_search_with_fallback(q, log) for q in hints])
+        hint_res = [res for res, _ in hint_out]
+        for q, (res, engine) in zip(hints, hint_out):
+            await _emit_search(engine=engine, lang="hint", query=q, n=len(res), results=res,
+                               round="classic",
+                               **({"fallback_for": "searxng"} if engine == "tavily" else {}))
         candidates = _merge_candidates(candidates, *hint_res)
         log(f"requêtes épinglées: {len(hints)} → +{sum(len(r) for r in hint_res)} candidats")
 
@@ -2437,8 +2479,8 @@ async def _find_sources(zone: dict, whitelist: list[str], exceptions: dict, log,
         scoped = await _tf_search_safe(
             query_en, key, log, location=iso, language="en",
             include_domains=whitelist[:8])
-        await emit(rec, "search", engine="tinyfish", lang="en", query=query_en,
-                   n=len(scoped), results=scoped, scoped=True, round="classic")
+        await _emit_search(engine="tinyfish", lang="en", query=query_en,
+                           n=len(scoped), results=scoped, scoped=True, round="classic")
         if scoped:
             log(f"TinyFish Search scoped: {len(scoped)} résultat(s) include_domains")
             candidates, official = await _merge_scoped(
@@ -2446,11 +2488,16 @@ async def _find_sources(zone: dict, whitelist: list[str], exceptions: dict, log,
     elif key and not whitelist and (not official or compare.get("discordant")):
         log("TinyFish scoped sauté : whitelist vide pour cette ZEE")
 
-    if tavily_key and whitelist and (not official or compare.get("discordant")):
+    from app.core.run_rules import get_rule
+    official_hosts = {(c.get("domain") or domain_of(c.get("url") or "")).lower() for c in official}
+    min_hosts = int(get_rule("tavily.scoped_min_official_hosts", TAVILY_SCOPED_MIN_OFFICIAL_HOSTS))
+    if tavily_key and whitelist and (len(official_hosts) < min_hosts or compare.get("discordant")):
+        if official:
+            log(f"Tavily scoped: {len(official_hosts)} hôte(s) officiel(s) < {min_hosts}")
         scoped_tv = await _tavily_search_safe(
             query_en, log, include_domains=whitelist[:8])
-        await emit(rec, "search", engine="tavily", lang="en", query=query_en,
-                   n=len(scoped_tv), results=scoped_tv, scoped=True, round="classic")
+        await _emit_search(engine="tavily", lang="en", query=query_en,
+                           n=len(scoped_tv), results=scoped_tv, scoped=True, round="classic")
         if scoped_tv:
             log(f"Tavily Search scoped: {len(scoped_tv)} résultat(s) include_domains")
             candidates, official = await _merge_scoped(
@@ -2472,24 +2519,24 @@ async def _find_sources(zone: dict, whitelist: list[str], exceptions: dict, log,
         lesson_parts = await asyncio.gather(*lesson_jobs)
         extra_groups = []
         for res, (engine, qlang, query) in zip(lesson_parts, lesson_labels):
-            await emit(rec, "search", engine=engine, lang=qlang, query=query,
-                       n=len(res or []), results=res or [], variant=variant,
-                       round="lessons")
+            await _emit_search(engine=engine, lang=qlang, query=query,
+                               n=len(res or []), results=res or [], variant=variant,
+                               round="lessons")
             extra_groups.append(res or [])
         if key and whitelist:
             scoped2 = await _tf_search_safe(
                 q2, key, log, location=iso, language="en",
                 include_domains=whitelist[:8])
-            await emit(rec, "search", engine="tinyfish", lang="en", query=q2,
-                       n=len(scoped2 or []), results=scoped2 or [],
-                       scoped=True, variant=variant, round="lessons")
+            await _emit_search(engine="tinyfish", lang="en", query=q2,
+                               n=len(scoped2 or []), results=scoped2 or [],
+                               scoped=True, variant=variant, round="lessons")
             extra_groups.append(scoped2 or [])
         if tavily_key and whitelist:
             scoped_tv2 = await _tavily_search_safe(
                 q2, log, include_domains=whitelist[:8])
-            await emit(rec, "search", engine="tavily", lang="en", query=q2,
-                       n=len(scoped_tv2 or []), results=scoped_tv2 or [],
-                       scoped=True, variant=variant, round="lessons")
+            await _emit_search(engine="tavily", lang="en", query=q2,
+                               n=len(scoped_tv2 or []), results=scoped_tv2 or [],
+                               scoped=True, variant=variant, round="lessons")
             extra_groups.append(scoped_tv2 or [])
         extra = _merge_candidates(*extra_groups)
         known_urls = {_normalize_url(c.get("url")) for c in candidates}
@@ -2505,9 +2552,9 @@ async def _find_sources(zone: dict, whitelist: list[str], exceptions: dict, log,
     if not candidates and not grounded_attempted:
         candidates, synthesis = await search_grounded(zone, whitelist, log)
         grounded_attempted = True
-        await emit(rec, "search", engine="grounded", lang="en", query="(prompt groundé)",
-                   n=len(candidates), results=candidates,
-                   synthesis_chars=len(synthesis or ""), round="lessons")
+        await _emit_search(engine="grounded", lang="en", query="(prompt groundé)",
+                           n=len(candidates), results=candidates,
+                           synthesis_chars=len(synthesis or ""), round="lessons")
         if candidates:
             candidates = serp_filter(candidates, protect_fn=protect)
             candidates = rank_candidates_ml(candidates, log, whitelist=whitelist)
@@ -2540,10 +2587,10 @@ async def _find_sources(zone: dict, whitelist: list[str], exceptions: dict, log,
         for c in official
     ):
         extra_pdfs = await _site_list_pdf_search(domains, zone, log)
-        await emit(rec, "search", engine="searxng", lang="site-pdf",
-                   query="site:domain filetype:pdf", n=len(extra_pdfs),
-                   results=extra_pdfs, domains=domains[:3],
-                   round="lessons" if needs_lessons_round(official) else "classic")
+        await _emit_search(engine=_served_by(extra_pdfs), lang="site-pdf",
+                           query="site:domain filetype:pdf", n=len(extra_pdfs),
+                           results=extra_pdfs, domains=domains[:3],
+                           round="lessons" if needs_lessons_round(official) else "classic")
         if extra_pdfs:
             extra_pdfs = serp_filter(extra_pdfs, protect_fn=protect)
             candidates = _merge_candidates(candidates, extra_pdfs)
@@ -2551,10 +2598,10 @@ async def _find_sources(zone: dict, whitelist: list[str], exceptions: dict, log,
             log(f"site PDF: {len(extra_pdfs)} candidat(s) sur {domains[:3]}")
     if official and not any(list_url_bonus(c.get("url") or "") >= 0.45 for c in official):
         extra_pages = await _site_list_page_search(domains, zone, log)
-        await emit(rec, "search", engine="searxng", lang="site-page",
-                   query="site:domain liste", n=len(extra_pages),
-                   results=extra_pages, domains=domains[:3],
-                   round="lessons" if needs_lessons_round(official) else "classic")
+        await _emit_search(engine=_served_by(extra_pages), lang="site-page",
+                           query="site:domain liste", n=len(extra_pages),
+                           results=extra_pages, domains=domains[:3],
+                           round="lessons" if needs_lessons_round(official) else "classic")
         if extra_pages:
             extra_pages = serp_filter(extra_pages, protect_fn=protect)
             candidates = _merge_candidates(candidates, extra_pages)
@@ -2603,6 +2650,12 @@ async def _find_sources(zone: dict, whitelist: list[str], exceptions: dict, log,
     for c in official:
         c["official"] = url_allowed(c.get("url") or "", whitelist) or bool(
             OFFICIAL_TOKENS.search(c.get("domain") or ""))
+    if served:
+        log("moteurs de recherche: " + ", ".join(
+            f"{e} {v['queries']} requête(s) ({v['empty']} vide(s)"
+            + (f", {v['fallback']} en secours de SearXNG" if v["fallback"] else "") + ")"
+            for e, v in sorted(served.items())))
+        await emit(rec, "search_providers", engines=served)
     await emit(rec, "gatekeeper", whitelist=whitelist[:12],
                official=[c["domain"] for c in official],
                rejected=[c["domain"] for c in rejected],
@@ -3402,6 +3455,8 @@ async def generate_zone_poe(db, mrgid: int, logger=None, force: bool = False,
     zone = await db.eez_zones.find_one({"mrgid": int(mrgid)})
     if not zone:
         raise ValueError(f"ZEE mrgid={mrgid} inconnue — construire le référentiel d'abord")
+    from app.services.territory_ref import with_sovereign_iso2
+    zone = with_sovereign_iso2(zone)
     name = zone.get("name") or zone.get("geoname")
     rec = ZoneRecorder(run.recorder, int(mrgid), name) if run is not None else None
     t0 = time.time()
