@@ -49,7 +49,9 @@ def level(entity):
 
 
 # PLAN-V3 §5 C3 geo: two geocoders < 500 m, at sea or at the quay.
-GEO_OK = {"geocode_agree": True, "geocode_agreement_km": 0.3, "spatial_kind": "in_eez"}
+# Coordinates included: the pipeline wrote the point, so it is placed in the zone (8face05).
+GEO_OK = {"geocode_agree": True, "geocode_agreement_km": 0.3, "spatial_kind": "in_eez",
+          "lat": 14.47, "lon": -60.87}
 GEO_OK_ENTITY = {"agree": True, "independent_sources": 2, "agreement_km": 0.3,
                  "spatial_kind": "in_eez"}
 
@@ -69,6 +71,9 @@ def _judged(verdict, excerpt=EXCERPT):
 
 # C2 without the judge: LLM extraction + an independent reader (LLM∩NER).
 CORROBORATED = {"extraction_engine": "llm", "extraction_agreement": True}
+# C2 zone guard: placed in this zone by the pipeline (8face05: a GPS outside the
+# mrgid is never written, so coordinates on the port mean "in this polygon").
+IN_ZONE = {"lat": 14.47, "lon": -60.87, "spatial_kind": "in_eez"}
 
 
 def _v2(**overrides):
@@ -172,9 +177,13 @@ def test_judge_outcome_reads_the_real_poe_judge_shape():
 
 
 def test_judge_poe_with_verified_excerpt_lifts_to_c2():
-    base = _v2()
+    base = _v2(**IN_ZONE)
     assert level_from_v2(base) == "C1"
     assert level_from_v2({**base, "judge": _judged("poe")}) == "C2"
+    # Zone guard: the excerpt names no territory and the port is not placed (no GPS).
+    out = assess_port({**_v2(), "judge": _judged("poe")})
+    assert out["confidence_level"] == "C1"
+    assert out["confidence_cap_reason"] == "evidence not attributable to zone"
     assert level_from_v2({**base, "judge": _judged("unclear")}) == "C1"
     unverified = _judged("poe", excerpt="Fort-de-France is a nice place to anchor at night")
     assert level_from_v2({**base, "judge": unverified}) == "C1"
@@ -303,7 +312,7 @@ def test_apply_score_leaves_the_level_to_its_callers():
 
 
 def test_level_never_derived_from_the_v2_score():
-    port = _v2(**CORROBORATED, lat=14.5, lon=-61.0, **GEO_OK)
+    port = _v2(**CORROBORATED, **GEO_OK)  # GEO_OK carries the coordinates
     expected = level_from_v2(port)
     assert expected == "C3"
     for score in ({"confidence": 0, "confidence_parts": {}, "confidence_reasons": []},
@@ -455,22 +464,28 @@ def test_unified_run_is_the_only_run_mechanism():
     assert run_artifacts.SCORE_FIELD == "confidence"
 
 
-@pytest.mark.parametrize("geo, expected", [
-    ({"geocode_agree": True, "geocode_agreement_km": 0.5, "spatial_kind": "in_eez"}, "C3"),
-    ({"geocode_agree": True, "geocode_agreement_km": 0.2, "spatial_kind": "coastal_land"}, "C3"),
+@pytest.mark.parametrize("geo, expected, expected_v2", [
+    ({"geocode_agree": True, "geocode_agreement_km": 0.5, "spatial_kind": "in_eez"}, "C3", "C3"),
+    ({"geocode_agree": True, "geocode_agreement_km": 0.2, "spatial_kind": "coastal_land"},
+     "C3", "C3"),
     # Agreeing under the pipeline's 2 km flag, but not within 500 m.
-    ({"geocode_agree": True, "geocode_agreement_km": 1.8, "spatial_kind": "in_eez"}, "C2"),
-    ({"geocode_agree": True, "geocode_agreement_km": None, "spatial_kind": "in_eez"}, "C2"),
-    ({"geocode_agree": True, "spatial_kind": "in_eez"}, "C2"),
+    ({"geocode_agree": True, "geocode_agreement_km": 1.8, "spatial_kind": "in_eez"}, "C2", "C2"),
+    ({"geocode_agree": True, "geocode_agreement_km": None, "spatial_kind": "in_eez"}, "C2", "C2"),
+    ({"geocode_agree": True, "spatial_kind": "in_eez"}, "C2", "C2"),
     # Within 500 m but off the land mask.
-    ({"geocode_agree": True, "geocode_agreement_km": 0.1, "spatial_kind": "out_of_eez"}, "C2"),
-    ({"geocode_agree": True, "geocode_agreement_km": 0.1, "spatial_kind": "inland_river"}, "C2"),
-    ({"geocode_agree": True, "geocode_agreement_km": 0.1, "spatial_kind": None}, "C2"),
-    ({"geocode_agree": False, "geocode_agreement_km": 0.1, "spatial_kind": "in_eez"}, "C2"),
+    ({"geocode_agree": True, "geocode_agreement_km": 0.1, "spatial_kind": "out_of_eez"},
+     "C2", "C2"),
+    ({"geocode_agree": True, "geocode_agreement_km": 0.1, "spatial_kind": "inland_river"},
+     "C2", "C2"),
+    # No kind: the point was never checked against the polygon (no geometry), so it is
+    # not placed in the zone; with no zone row either, the port is capped at C1 (the bare
+    # ladder, which has no zone guard, still says C2).
+    ({"geocode_agree": True, "geocode_agreement_km": 0.1, "spatial_kind": None}, "C2", "C1"),
+    ({"geocode_agree": False, "geocode_agreement_km": 0.1, "spatial_kind": "in_eez"}, "C2", "C2"),
 ])
-def test_c3_needs_500_m_agreement_and_land_mask(geo, expected):
+def test_c3_needs_500_m_agreement_and_land_mask(geo, expected, expected_v2):
     port = _v2(**CORROBORATED, lat=14.5, lon=-61.0, **geo)
-    assert level_from_v2(port) == expected
+    assert level_from_v2(port) == expected_v2
     entity = {
         "name": "Marina du Marin",
         "evidence": [{"url": GOV, "extracted": True, "judge": "supported"}],
@@ -525,16 +540,19 @@ def test_catalogue_parser_alone_is_not_corroboration():
         assert level_from_v2(port) == "C1", engine
         assert level_from_v2({**port, "extraction_agreement": True}) == "C1", engine
     # LLM alone stays C1; LLM + an independent source reaches C2 (C3 with geo).
-    assert level_from_v2(_v2(extraction_engine="llm")) == "C1"
-    assert level_from_v2(_v2(**CORROBORATED)) == "C2"
-    two_hosts = _v2(extraction_engine="llm",
+    assert level_from_v2(_v2(extraction_engine="llm", **IN_ZONE)) == "C1"
+    assert level_from_v2(_v2(**CORROBORATED, **IN_ZONE)) == "C2"
+    two_hosts = _v2(extraction_engine="llm", **IN_ZONE,
                     source_urls=[GOV, "https://www.douane.gouv.fr/ports"])
-    assert level_from_v2(two_hosts) == "C2"
-    same_host = _v2(extraction_engine="llm",
+    # Two official hosts alone no longer lift: the port needs an entry context.
+    assert level_from_v2(two_hosts) == "C1"
+    order = [{"url": GOV, "text": "Arrêté: la Marina du Marin est désignée port d'entrée."}]
+    assert level_from_v2(two_hosts, texts=order) == "C2"
+    same_host = _v2(extraction_engine="llm", **IN_ZONE,
                     source_urls=[GOV, "https://martinique.gouv.fr/other"])
-    assert level_from_v2(same_host) == "C1"
+    assert level_from_v2(same_host, texts=order) == "C1"
     # The judge still lifts a catalogue-only port.
-    judged = _v2(extraction_engine="catalog", judge=_judged("poe"))
+    judged = _v2(extraction_engine="catalog", judge=_judged("poe"), **IN_ZONE)
     assert level_from_v2(judged) == "C2"
 
 
@@ -557,7 +575,7 @@ def test_name_fragments_are_c0(name):
 ])
 def test_real_names_are_not_fragments(name):
     assert not v3_certify.is_name_fragment(name)
-    port = _v2(name=name, **CORROBORATED)
+    port = _v2(name=name, **CORROBORATED, **IN_ZONE)
     assert level_from_v2(port) == "C2"
     attach_confidence_level(port)
     assert "name_fragment" not in port

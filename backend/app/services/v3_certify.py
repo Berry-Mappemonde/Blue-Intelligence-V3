@@ -13,6 +13,15 @@ quoted evidence must literally appear in the fetched page (whitespace and
 case normalized). Otherwise that evidence is not extracted and the level
 is recomputed — it can only fall.
 
+Two per-port guards (pilot: 1 of 19 C2 ports had correct per-port evidence):
+the "two official hosts" corroboration also needs the port's name next to
+entry wording in an official text (`entry_context`; tariff and port-dues
+schedules do not count), and every C2+ is capped at C1 ("evidence not
+attributable to zone") unless the pipeline placed the port in this zone
+(8face05: a GPS outside the mrgid is never written), or its evidence
+row/section names this zone's territory (`zone_attributable`). Unplaced and
+unattributed ports (name only, no GPS) stay at C1 at most.
+
 `level_from_v2` maps a pipeline port onto the same scale from its
 extraction, source, judge and geo fields. It never reads the V2 score
 (`confidence`, `confidence_parts`, `confidence_reasons`) and never writes
@@ -26,7 +35,9 @@ from collections.abc import Mapping, Sequence
 LEVELS = ("C0", "C1", "C2", "C3", "C4")
 # Fields attach_confidence_level writes. Run collections only, never poe_ports.
 LEVEL_FIELDS = ("confidence_level", "confidence_downgraded_from", "quote_verified",
-                "judge_contradicted", "name_fragment")
+                "judge_contradicted", "name_fragment", "confidence_cap_reason")
+CAP_NOT_IN_ZONE = "evidence not attributable to zone"
+CAP_NO_ENTRY_CONTEXT = "no per-port port-of-entry context"
 _RANK = {name: i for i, name in enumerate(LEVELS)}
 
 GEO_AGREE_KM = 0.5
@@ -223,21 +234,282 @@ def _official_hosts(port: dict, whitelist: Sequence[str] | None) -> set[str]:
     return hosts
 
 
-def _corroborated_llm_extraction(port: dict, whitelist: Sequence[str] | None) -> bool:
+def _corroborated_llm_extraction(port: dict, whitelist: Sequence[str] | None,
+                                 texts: Sequence[Mapping] | None = None) -> bool:
     """C2 without the judge: an LLM extraction plus an independent source.
 
     Independent source = the local NER found the same name in the text
     (`extraction_agreement`, LLM∩NER), or the port comes from two distinct official
-    hosts. The catalogue parser alone (or NER alone) is a single non-LLM reader:
-    it never counts as corroboration. Two LLM readers do not count either.
-    The V2 score's reasons are never read.
+    hosts AND one official text puts this port's name next to entry wording
+    (`entry_context`). Two hosts alone are zone-level, not per-port: every port
+    of the zone gets the same source_urls. The catalogue parser alone (or NER
+    alone) is a single non-LLM reader: it never counts as corroboration. Two LLM
+    readers do not count either. The V2 score's reasons are never read.
     """
     engine = (port.get("extraction_engine") or "").strip().lower()
     if not engine or engine in NON_LLM_ENGINES:
         return False
     if port.get("extraction_agreement") is True:
         return True
-    return len(_official_hosts(port, whitelist)) >= 2
+    if len(_official_hosts(port, whitelist)) < 2:
+        return False
+    return bool(entry_mentions(port.get("name"), _official_texts(texts, whitelist)))
+
+
+def _two_hosts_without_context(port: dict, whitelist: Sequence[str] | None,
+                               texts: Sequence[Mapping] | None) -> bool:
+    """The old two-hosts rule would have lifted this port; the new one does not."""
+    engine = (port.get("extraction_engine") or "").strip().lower()
+    return (bool(engine) and engine not in NON_LLM_ENGINES
+            and port.get("extraction_agreement") is not True
+            and judge_outcome(port) != JUDGE_SUPPORTED
+            and len(_official_hosts(port, whitelist)) >= 2
+            and not entry_mentions(port.get("name"), _official_texts(texts, whitelist)))
+
+
+# --- per-port evidence: entry context and zone attribution ---------------------------
+
+# Entry context reuses registry_check.entry_mention (the official-evidence check of the
+# evidence store: the port's name within PROXIMITY_CHARS of an entry term, outside
+# addresses; strong terms alone, weak terms with a port word and the full name). Added
+# here only: wording that check does not have yet. Bare "clearance" was narrowed to
+# "clearance port" in 974da96 (too broad on its own), so it comes back as a WEAK term:
+# it needs a port word and the full name, like customs / douane / alfândega / aduana.
+ENTRY_TERMS_STRONG = (
+    "ouvert au trafic international", "ouverts au trafic international",
+    "ouverte au trafic international", "ouvertes au trafic international",
+    "approved port", "approved ports", "approved marina", "approved marinas",
+    "bureau de douane", "bureaux de douane",
+    "porto habilitado", "portos habilitados", "porto alfandegado", "portos alfandegados",
+)
+ENTRY_TERMS_WEAK = ("clearance",)
+# Tariff and fee schedules list ports for pricing, not for entry: never entry context.
+TARIFF_TERMS = (
+    "tarifa", "tarifas", "tariff", "tariffs", "tarif", "tarifs", "tarifario", "tarifário",
+    "tarifaire", "tarifaires", "tipo i", "tipo ii", "tipo iii", "tipo iv",
+    "port dues", "harbour dues", "harbor dues", "port charges", "harbour fees", "harbor fees",
+    "port fees", "droits de port", "redevance", "redevances", "taxe portuaire",
+    "taxes portuaires", "tasas portuarias", "tasa portuaria", "taxa portuária",
+    "taxas portuárias", "fee schedule", "schedule of fees", "schedule of charges",
+)
+
+
+def _official_texts(texts: Sequence[Mapping] | None,
+                    whitelist: Sequence[str] | None) -> list[str]:
+    """Bodies of the given [{url, text}] whose URL is on the zone's State whitelist."""
+    out = []
+    for item in texts or []:
+        if not isinstance(item, Mapping):
+            continue
+        body = item.get("text")
+        if isinstance(body, str) and body.strip() and is_official(item.get("url") or "", whitelist):
+            out.append(body)
+    return out
+
+
+def _name_spans(text: str, tokens, name) -> list[tuple[int, int]]:
+    """(start, end) of the port name in text, contact addresses excluded."""
+    from app.agents import registry_check as rc
+
+    out = []
+    for variant in rc.grounding_variants(name):
+        for ns, ne in rc._spans(tokens, variant, plural_s=True):
+            if not rc._in_address(text, tokens, ns, ne):
+                out.append((ns, ne))
+    return out
+
+
+def entry_mentions(name, texts: Sequence[str]) -> list[tuple[str, int, int]]:
+    """(text, name_start, name_end) per text where registry_check.entry_mention finds the
+    port name next to entry wording (port of entry, clearance, customs / alfândega /
+    douane / aduana with a port word, "ouvert au trafic international", designated /
+    approved port). A mention inside a tariff or port-dues schedule never counts."""
+    if is_name_fragment(name):
+        return []
+    from app.agents import registry_check as rc
+
+    variants = rc.grounding_variants(name)
+    out = []
+    for text in texts or []:
+        m = rc.entry_mention(text, variants, extra_strong=ENTRY_TERMS_STRONG,
+                             extra_weak=ENTRY_TERMS_WEAK, exclude=TARIFF_TERMS)
+        if m:
+            out.append((text, m["name_start"], m["name_end"]))
+    return out
+
+
+def all_mentions(name, texts: Sequence[str]) -> list[tuple[str, int, int]]:
+    if is_name_fragment(name):
+        return []
+    from app.agents import registry_check as rc
+
+    out = []
+    for text in texts or []:
+        tokens = rc._tokens(text)
+        out += [(text, ns, ne) for ns, ne in _name_spans(text, tokens, name)]
+    return out
+
+
+def _territory_names(rec: Mapping) -> set[str]:
+    names = set()
+    for key in ("name_fr", "name_en"):
+        raw = rec.get(key)
+        if isinstance(raw, str) and raw.strip():
+            names.add(raw)
+            names.add(re.sub(r"\(.*?\)", " ", raw))  # "Saint-Martin (French)"
+            names |= set(re.findall(r"\(([^)]*)\)", raw))  # "(TAAF)"
+    code = rec.get("code")
+    if isinstance(code, str) and code:
+        names.add(code.replace("_", " "))
+    return names
+
+
+def _all_territories() -> list[dict]:
+    try:
+        from app.services import territory_ref
+        return list(territory_ref._territories().values())
+    except Exception:  # noqa: BLE001 — no table: zone terms come from the zone itself
+        return []
+
+
+def zone_terms(port: Mapping, zone: Mapping | None = None) -> set[str]:
+    """Names of this zone's territory: the VLIZ name and the territories.json record
+    (name_fr, name_en, aliases) for the zone's mrgid."""
+    zone = zone or {}
+    names: set[str] = set()
+    for raw in (zone.get("name"), zone.get("geoname"), zone.get("territory"),
+                port.get("zone_name")):
+        if isinstance(raw, str) and raw.strip():
+            names.add(raw)
+    for raw in list(zone.get("aliases") or []) + list(port.get("zone_aliases") or []):
+        if isinstance(raw, str) and raw.strip():
+            names.add(raw)
+    mrgid = zone.get("mrgid", port.get("mrgid"))
+    if mrgid is not None:
+        try:
+            from app.services.territory_ref import territory_for_mrgid
+            rec = territory_for_mrgid(mrgid)
+        except Exception:  # noqa: BLE001
+            rec = {}
+        if rec:
+            names |= _territory_names(rec)
+    return _term_keys(names)
+
+
+def _term_keys(names) -> set[str]:
+    from app.agents import registry_check as rc
+
+    out = set()
+    for raw in names:
+        key = " ".join(t for t, _, _ in rc._tokens(raw))
+        if len(key) >= 4:
+            out.add(key)
+    return out
+
+
+def _other_territory_terms(own: set[str]) -> set[str]:
+    out: set[str] = set()
+    for rec in _all_territories():
+        keys = _term_keys(_territory_names(rec))
+        if not keys & own:
+            out |= keys
+    # A term that is a sub-phrase of this zone's name is not another territory.
+    return {k for k in out if not any(k in o for o in own)}
+
+
+def _territory_hits(text: str, own: set[str], other: set[str]) -> list[tuple[int, int, bool]]:
+    from app.agents import registry_check as rc
+
+    tokens = rc._tokens(text)
+    hits = []
+    for keys, mine in ((own, True), (other, False)):
+        for key in keys:
+            for s, e in rc._spans(tokens, tuple(key.split())):
+                hits.append((s, e, mine))
+    # Longest match wins on overlap ("saint martin" inside "saint martin de ...").
+    hits.sort(key=lambda h: (h[0], -(h[1] - h[0])))
+    kept: list[tuple[int, int, bool]] = []
+    for h in hits:
+        if kept and h[0] < kept[-1][1]:
+            continue
+        kept.append(h)
+    return kept
+
+
+def _mention_in_zone(text: str, ns: int, ne: int, own: set[str], other: set[str]) -> bool:
+    """The row (the name's line) or, failing that, the section (nearest territory
+    named before the mention) is this zone's territory."""
+    hits = [h for h in _territory_hits(text, own, other) if h[1] <= ns or h[0] >= ne]
+    if not hits:
+        return False
+    from app.agents.registry_check import _line_bounds
+
+    lo, hi = _line_bounds(text, ns, ne)
+    row = [h for h in hits if lo <= h[0] and h[1] <= hi]
+    if row:
+        before = [h for h in row if h[1] <= ns]
+        chosen = before[-1] if before else min(row, key=lambda h: h[0])
+        return chosen[2]
+    before = [h for h in hits if h[1] <= ns]
+    return bool(before) and before[-1][2]
+
+
+def geo_in_zone(port: Mapping) -> bool:
+    """Placed in this zone by the pipeline's existing polygon check (8face05,
+    poe_zone_label.placed_in_zone): coordinates are only written for a point kept in
+    this mrgid."""
+    from app.services.poe_zone_label import placed_in_zone
+
+    return placed_in_zone(dict(port))
+
+
+def zone_attributable(port: Mapping, *, whitelist: Sequence[str] | None = None,
+                      texts: Sequence[Mapping] | None = None,
+                      zone: Mapping | None = None) -> bool:
+    """C2 guard: this port's evidence belongs to this zone.
+
+    True when the pipeline placed the port in this zone (8face05: a GPS outside the
+    mrgid is never written, see `geo_in_zone`), or an evidence mention in an official
+    text sits in a row/section naming this zone's territory. A point kept without a
+    polygon check (zone without geometry) is not a placement. Evidence mentions:
+    entry-context mentions, the verified judge excerpt and, when LLM∩NER agree, any
+    mention of the name. Mentions under another territory's row of a national decree
+    do not count.
+    """
+    if geo_in_zone(port):
+        return True
+    own = zone_terms(port, zone)
+    if not own:
+        return False
+    other = _other_territory_terms(own)
+    official = _official_texts(texts, whitelist)
+    name = port.get("name")
+    mentions = entry_mentions(name, official)
+    if port.get("extraction_agreement") is True:
+        mentions += all_mentions(name, official)
+    if any(_mention_in_zone(t, s, e, own, other) for t, s, e in mentions):
+        return True
+    judge = port.get("judge") if isinstance(port.get("judge"), Mapping) else {}
+    excerpt = judge.get("quoted_excerpt")
+    if judge_outcome(dict(port)) == JUDGE_SUPPORTED and isinstance(excerpt, str):
+        # Located in an official text: the row/section around it decides.
+        quote = excerpt.strip().lower()
+        for text in official:
+            at = text.lower().find(quote)
+            if at >= 0 and _mention_in_zone(text, at, at + len(quote), own, other):
+                return True
+        # Otherwise the excerpt itself must name this zone and no other territory.
+        hits = _territory_hits(excerpt, own, other)
+        if any(h[2] for h in hits) and not any(not h[2] for h in hits):
+            return True
+    # Prototype entity: evidence quotes are the rows.
+    for e in _evidence(dict(port)):
+        quote = e.get("quote")
+        if isinstance(quote, str) and quote.strip():
+            hits = _territory_hits(quote, own, other)
+            if any(h[2] for h in hits) and not any(not h[2] for h in hits):
+                return True
+    return False
 
 
 # Words that are never a port name on their own (articles, saint, port types).
@@ -300,10 +572,30 @@ def judge_outcome(port: dict) -> str | None:
     return None
 
 
-def _lifts_above_c1(port: dict, whitelist: Sequence[str] | None) -> bool:
+def _lifts_above_c1(port: dict, whitelist: Sequence[str] | None,
+                    texts: Sequence[Mapping] | None = None) -> bool:
     if judge_outcome(port) == JUDGE_SUPPORTED:
         return True
-    return _corroborated_llm_extraction(port, whitelist)
+    return _corroborated_llm_extraction(port, whitelist, texts)
+
+
+def _cap_zone(result: dict, port: dict, whitelist: Sequence[str] | None,
+              texts: Sequence[Mapping] | None, zone: Mapping | None) -> dict:
+    """C2+ whose evidence is not attributable to this zone goes down to C1."""
+    lvl = result["confidence_level"]
+    if _RANK[lvl] <= _RANK["C1"]:
+        if (lvl == "C1" and "confidence_cap_reason" not in result
+                and _two_hosts_without_context(port, whitelist, texts)):
+            result = dict(result)
+            result["confidence_cap_reason"] = CAP_NO_ENTRY_CONTEXT
+        return result
+    if zone_attributable(port, whitelist=whitelist, texts=texts, zone=zone):
+        return result
+    out = dict(result)
+    out["confidence_level"] = "C1"
+    out.setdefault("downgraded_from", lvl)
+    out["confidence_cap_reason"] = CAP_NOT_IN_ZONE
+    return out
 
 
 def _cap(result: dict, port: dict) -> dict:
@@ -345,12 +637,13 @@ def _geo_from_v2(port: dict) -> dict:
             "agreement_km": km, "spatial_kind": port.get("spatial_kind")}
 
 
-def _from_v2(port: dict, whitelist: Sequence[str] | None) -> dict:
+def _from_v2(port: dict, whitelist: Sequence[str] | None,
+             texts: Sequence[Mapping] | None = None) -> dict:
     """Shape a scored V2 port as a certify entity. Does not mutate `port`."""
     urls = _urls(port)
     synthesis = bool(port.get("from_synthesis"))
     extracted = bool(urls) and not synthesis
-    lift = _lifts_above_c1(port, whitelist)
+    lift = _lifts_above_c1(port, whitelist, texts)
     quote = port.get("quote") if isinstance(port.get("quote"), str) else ""
     page = port.get("page_text") if isinstance(port.get("page_text"), str) else ""
     evidence = []
@@ -376,39 +669,56 @@ def _from_v2(port: dict, whitelist: Sequence[str] | None) -> dict:
 
 
 def assess_port(port: dict, *, whitelist: Sequence[str] | None = None,
-                pages: Mapping[str, str] | None = None) -> dict:
-    """Map a prototype entity or a V2 scored port, then apply the quote check."""
+                pages: Mapping[str, str] | None = None,
+                texts: Sequence[Mapping] | None = None,
+                zone: Mapping | None = None) -> dict:
+    """Map a prototype entity or a V2 scored port, then apply the quote check and the
+    caps: judge "not_poe" -> C1, evidence not attributable to this zone -> C1.
+
+    texts: the zone's fetched documents [{url, text}] (only whitelisted URLs are read),
+    used for the per-port entry context and the row/section zone check. zone: the VLIZ
+    zone ({mrgid, name, ...}); defaults to the port's own mrgid / zone_name.
+    """
     if not isinstance(port, dict):
         return {"confidence_level": "C0"}
     if is_name_fragment(port.get("name")):
         # "Saint" from "Saint Lucia", "nterior": not a port, never certified.
         return {"confidence_level": "C0", "name_fragment": True}
     if isinstance(port.get("evidence"), list):
-        return _cap(assess_level(port, pages, whitelist=whitelist), port)
-    entity = _from_v2(port, whitelist)
-    before = level(entity)
-    checked = _with_verified_quotes(entity, pages)
-    return _cap(_pack(before, level(checked), checked), port)
+        result = _cap(assess_level(port, pages, whitelist=whitelist), port)
+    else:
+        entity = _from_v2(port, whitelist, texts)
+        before = level(entity)
+        checked = _with_verified_quotes(entity, pages)
+        result = _cap(_pack(before, level(checked), checked), port)
+    return _cap_zone(result, port, whitelist, texts, zone)
 
 
 def level_from_v2(port: dict, *, whitelist: Sequence[str] | None = None,
-                  pages: Mapping[str, str] | None = None) -> str:
+                  pages: Mapping[str, str] | None = None,
+                  texts: Sequence[Mapping] | None = None,
+                  zone: Mapping | None = None) -> str:
     """C0–C4 for a pipeline port or a prototype entity.
 
     A whitelisted (State) host is required for C1+. An LLM-only reading (single extractor,
     or two LLM readers) and a catalogue-only port never go above C1. A judge "poe"
-    with excerpt_verified, or an LLM extraction with LLM∩NER agreement or two
-    official hosts, can; a judge "not_poe" caps at C1. A name fragment is C0.
+    with excerpt_verified, an LLM extraction with LLM∩NER agreement, or two official
+    hosts plus a per-port entry context can; a judge "not_poe" caps at C1, and so does
+    evidence not attributable to this zone. A name fragment is C0.
     `human == "confirmed"` lifts only C3 to C4.
     """
-    return assess_port(port, whitelist=whitelist, pages=pages)["confidence_level"]
+    return assess_port(port, whitelist=whitelist, pages=pages, texts=texts,
+                       zone=zone)["confidence_level"]
 
 
 def attach_confidence_level(port: dict, *, whitelist: Sequence[str] | None = None,
-                            pages: Mapping[str, str] | None = None) -> dict:
+                            pages: Mapping[str, str] | None = None,
+                            texts: Sequence[Mapping] | None = None,
+                            zone: Mapping | None = None) -> dict:
     """Set `confidence_level` on a port. Does not change the numeric score."""
     try:
-        assessed = assess_port(port, whitelist=whitelist, pages=pages)
+        assessed = assess_port(port, whitelist=whitelist, pages=pages, texts=texts,
+                               zone=zone)
     except Exception:
         port["confidence_level"] = "C0"
         return port
@@ -422,6 +732,10 @@ def attach_confidence_level(port: dict, *, whitelist: Sequence[str] | None = Non
         port["confidence_downgraded_from"] = assessed["downgraded_from"]
     else:
         port.pop("confidence_downgraded_from", None)
+    if assessed.get("confidence_cap_reason"):
+        port["confidence_cap_reason"] = assessed["confidence_cap_reason"]
+    else:
+        port.pop("confidence_cap_reason", None)
     if "quote_verified" in assessed:
         port["quote_verified"] = assessed["quote_verified"]
     else:

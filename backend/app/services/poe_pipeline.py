@@ -2970,6 +2970,7 @@ async def _extract_and_geocode(zone: dict, context: str, used_sources: list[dict
             log(f"H-MEM recall: {type(e).__name__}: {str(e)[:100]}")
         await emit(rec, "hmem_recall", ports=len(built), memories=sum(len(m) for m in memories))
 
+    cert_texts = None  # the zone's fetched documents, for the per-port C2 guards
     for (doc, p, geo, lat, lon, validated, dist_km, spatial_kind, arbitration), recalled in zip(built, memories):
         port_official = official_source
         if not official_source:
@@ -2990,7 +2991,10 @@ async def _extract_and_geocode(zone: dict, context: str, used_sources: list[dict
                                     listing_ports=listing_ports))
         if run is not None:
             # C0-C4 lives in the run space only (poe_run_ports), never in poe_ports.
-            attach_confidence_level(doc, whitelist=whitelist)
+            if cert_texts is None:
+                cert_texts = certify_texts(catalog_text if catalog_text is not None else context,
+                                           used_sources)
+            attach_confidence_level(doc, whitelist=whitelist, texts=cert_texts, zone=zone)
         docs.append(doc)
         agree_note = ""
         if geo.get("agree") is True:
@@ -3149,6 +3153,17 @@ async def _persist_zone(db, zone: dict, docs: list[dict], status: str,
 JUDGE_MIN_TIME_S = 5.0  # below this, no judge call before the zone deadline
 
 
+def certify_texts(raw: str | None, used_sources: list[dict]) -> list[dict]:
+    """[{url, text}] full fetched documents of this zone for the C2 guards (v3_certify):
+    per-port entry context and the row/section zone check. The certify library keeps
+    only whitelisted URLs. Synthesis blocks are not documents."""
+    try:
+        docs = evidence_store.documents_from_context(raw, used_sources)
+    except Exception:  # noqa: BLE001 — no texts: the guards fall back to the geocode
+        return []
+    return [{"url": d.get("url"), "text": d.get("text")} for d in docs if d.get("text")]
+
+
 def judge_texts(zone: dict, docs: list[dict], raw: str, used_sources: list[dict]) -> list[dict]:
     """[{url, text}] for the judge: the official snippets this zone already fetched
     (evidence_store.build_records on the collected text), once each, as poe_judge reads them."""
@@ -3284,6 +3299,7 @@ async def _judge_zone_run(zone: dict, docs: list[dict], raw: str, used_sources: 
         return done(summary)
 
     name = zone.get("name") or zone.get("geoname") or str(zone.get("mrgid"))
+    cert_texts = certify_texts(raw, used_sources)
     llm, judged, reason = await poe_judge.ask(
         name, docs, texts, run.run_id, timeout_s, gate=_take_judge_call)
     summary.update(provider=llm.get("provider"), served_model=llm.get("served_model"))
@@ -3294,7 +3310,7 @@ async def _judge_zone_run(zone: dict, docs: list[dict], raw: str, used_sources: 
             summary["verdicts"][judgment["verdict"]] = summary["verdicts"].get(judgment["verdict"], 0) + 1
         else:
             d.pop("judge", None)
-        attach_confidence_level(d, whitelist=whitelist)
+        attach_confidence_level(d, whitelist=whitelist, texts=cert_texts, zone=zone)
     summary["judged"] = sum(summary["verdicts"].values())
     if not reason and not summary["judged"]:
         reason = "no usable answer"
@@ -3499,7 +3515,9 @@ async def generate_zone_poe(db, mrgid: int, logger=None, force: bool = False,
                             d, official_source=False,
                             listing_ports=None))
                         if run is not None:
-                            attach_confidence_level(d, whitelist=whitelist)
+                            attach_confidence_level(
+                                d, whitelist=whitelist, zone=zone,
+                                texts=certify_texts(context_retry, used_sources))
 
         # Run mode: NemotronJudge on the official snippets already fetched (PLAN-V3 §5:
         # poe + verified excerpt -> C2, not_poe -> C1), then the level again.
