@@ -32,6 +32,7 @@ import logging
 import math
 import re
 import unicodedata
+from functools import lru_cache
 from urllib.parse import urlparse
 
 from app.adapters.zetaris import ZetarisClient, ZetarisUnavailable
@@ -342,27 +343,51 @@ def _port_word_near(tokens: list[tuple[str, int, int]], start: int, end: int, te
                and not (term[0] <= s < term[1]) for t, s, e in tokens)
 
 
-def entry_mention(text: str | None, variants: list[tuple[str, ...]]) -> dict | None:
+@lru_cache(maxsize=32)
+def _extra_phrases(terms: tuple[str, ...]) -> list[tuple[str, ...]]:
+    return _phrases(terms)
+
+
+def _line_bounds(text: str, start: int, end: int) -> tuple[int, int]:
+    lo = text.rfind("\n", 0, start) + 1
+    hi = text.find("\n", end)
+    return lo, (len(text) if hi < 0 else hi)
+
+
+def entry_mention(text: str | None, variants: list[tuple[str, ...]], *,
+                  extra_strong: tuple[str, ...] = (), extra_weak: tuple[str, ...] = (),
+                  exclude: tuple[str, ...] = ()) -> dict | None:
     """Closest mention of a variant within PROXIMITY_CHARS of an entry term, outside addresses.
 
     A strong term (port of entry, clear customs, designated marina, ...) is enough. A weak
     term (customs, immigration, quarantine, harbour master) also needs a port word in the
     window and a full-name match, not a variant that is only the place left after stripping
-    facility words. Returns {matched_name, entry_term, strength, gap, snippet}: snippet is a
-    verbatim slice of at most SNIPPET_CHARS around both. A bare name gives None.
+    facility words. Returns {matched_name, entry_term, strength, gap, snippet, name_start,
+    name_end}: snippet is a verbatim slice of at most SNIPPET_CHARS around both, name_start /
+    name_end the name's offsets in text. A bare name gives None.
+
+    Callers may add terms (``extra_strong`` / ``extra_weak``) and ``exclude`` phrases: a
+    mention with an excluded phrase within PROXIMITY_CHARS of the name and term, or on the
+    name's line, does not count (v3_certify: tariff and port-dues schedules). The defaults
+    keep the evidence-store behaviour unchanged.
     """
     if not text or not variants:
         return None
     tokens = _tokens(text)
-    terms = ([(" ".join(p), s, e, "strong") for p in _STRONG_PHRASES for s, e in _spans(tokens, p)]
-             + [(" ".join(p), s, e, "weak") for p in _WEAK_PHRASES for s, e in _spans(tokens, p)])
+    strong = _STRONG_PHRASES + (_extra_phrases(tuple(extra_strong)) if extra_strong else [])
+    weak = _WEAK_PHRASES + (_extra_phrases(tuple(extra_weak)) if extra_weak else [])
+    terms = ([(" ".join(p), s, e, "strong") for p in strong for s, e in _spans(tokens, p)]
+             + [(" ".join(p), s, e, "weak") for p in weak for s, e in _spans(tokens, p)])
     if not terms:
         return None
+    excluded = ([(s, e) for p in _extra_phrases(tuple(exclude)) for s, e in _spans(tokens, p)]
+                if exclude else [])
     best = None
     for variant in variants:
         for ns, ne in _spans(tokens, variant, plural_s=True):
             if _in_address(text, tokens, ns, ne):
                 continue
+            line_lo, line_hi = _line_bounds(text, ns, ne) if excluded else (0, 0)
             for term, ts, te, strength in terms:
                 gap = max(ts - ne, ns - te, 0)
                 if gap > PROXIMITY_CHARS:
@@ -370,18 +395,25 @@ def entry_mention(text: str | None, variants: list[tuple[str, ...]]) -> dict | N
                 if strength == "weak" and (getattr(variant, "stripped", False)
                                            or not _port_word_near(tokens, ns, ne, (ts, te))):
                     continue
+                if excluded:
+                    lo = min(ns, ts) - PROXIMITY_CHARS
+                    hi = max(ne, te) + PROXIMITY_CHARS
+                    if any((lo <= xs and xe <= hi) or (line_lo <= xs and xe <= line_hi)
+                           for xs, xe in excluded):
+                        continue
                 rank = (strength != "strong", gap)
                 if best is None or rank < best[0]:
-                    best = (rank, " ".join(variant), term, strength, min(ns, ts), max(ne, te))
+                    best = (rank, " ".join(variant), term, strength, min(ns, ts), max(ne, te),
+                            ns, ne)
     if best is None:
         return None
-    (_, gap), matched, term, strength, core_start, core_end = best
+    (_, gap), matched, term, strength, core_start, core_end, ns, ne = best
     pad = max(0, (SNIPPET_CHARS - (core_end - core_start)) // 2)
     start = max(0, core_start - pad)
     end = min(len(text), start + max(SNIPPET_CHARS, core_end - core_start))
     start = max(0, min(start, end - SNIPPET_CHARS))
     return dict(matched_name=matched, entry_term=term, strength=strength, gap=gap,
-                snippet=text[start:end].strip())
+                snippet=text[start:end].strip(), name_start=ns, name_end=ne)
 
 
 def _domain(url: str) -> str:
