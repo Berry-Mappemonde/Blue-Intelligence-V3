@@ -85,7 +85,7 @@ def _norm(urls):
 
 # --- _find_sources -----------------------------------------------------------------
 
-def test_canaries_without_port_authority_candidate_pins_the_audited_ones(search):
+def test_canaries_without_port_authority_candidate_gets_the_audited_ones_last(search):
     search[:] = CANARIES_HITS
     urls, logs, rec = _find(CANARIES)
     auths = ar.zone_authorities(CANARIES)
@@ -95,7 +95,11 @@ def test_canaries_without_port_authority_candidate_pins_the_audited_ones(search)
     # only the port authority was missing: nothing else is added
     off, _l, _r = _find(CANARIES, overrides={"formalities.authority_seed_fallback": False})
     assert _norm(urls) - _norm(off) == _norm(audited)
-    assert any("source d'autorité ajoutée (port_authority sans candidat" in m
+    # ordinary candidates at the END: the ranked candidates keep the head of the list
+    first_audited = min(i for i, u in enumerate(urls) if poe._normalize_url(u) in _norm(audited))
+    assert all(poe._normalize_url(u) in _norm(audited) for u in urls[first_audited:])
+    assert urls[:first_audited] == off
+    assert any("source d'autorité ajoutée en fin de liste (port_authority sans candidat" in m
                and "puertosdetenerife.org" in m for m in logs)
     (step, payload), = [e for e in rec.events if e[0] == "authority_seed"]
     assert payload["roles"] == ["port_authority"]
@@ -173,27 +177,89 @@ def _collect(monkeypatch, failing, overrides=None):
     return calls, [u["url"] for u in used], logs
 
 
-def test_role_given_up_tries_its_audited_url_once(monkeypatch):
-    calls, used, logs = _collect(monkeypatch, failing=set(PA_PAGES))
-    audited = ar.audited_urls(ar.zone_authorities(CANARIES), "port_authority")[0]
-    assert set(PA_PAGES) <= set(calls)
-    assert audited in calls and audited in used
-    assert calls.count(audited) == 1
-    assert any("URL auditée tentée une fois" in m for m in logs)
+def _collect_list(monkeypatch, ranked, behave, overrides=None):
+    """``behave(url)`` -> None (good page), "timeout" or a text to return."""
+    calls: list[str] = []
+
+    async def fake_cascade(url, min_chars=200, log=None):
+        calls.append(url)
+        b = behave(url)
+        if b == "timeout":
+            raise TimeoutError("read timeout")
+        return {"text": b if isinstance(b, str) else "Información oficial. " * 40,
+                "html": "", "md5": url, "level": "N1", "blocked": False}
+
+    monkeypatch.setattr(poe, "extract_cascade", fake_cascade)
+    official = [{"url": u, "domain": poe.domain_of(u), "official": True} for u in ranked]
+    logs: list[str] = []
+    token = bind_rules(snapshot_for_run(mode="formalities", overrides=overrides or {}))
+    try:
+        _t, _h, used, _e = asyncio.run(poe._collect_texts(official, logs.append,
+                                                           zone=CANARIES))
+    finally:
+        reset_rules(token)
+    return calls, [u["url"] for u in used], logs
 
 
-def test_audited_url_failing_too_is_not_retried(monkeypatch):
+# Real Canaries pattern (run 20261102-224042-f9be8d, review of #36).
+REAL = [
+    "https://www.transportes.gob.es/marina-mercante",
+    "https://www.transportes.gob.es/marina-mercante/nautica-de-recreo",
+    "https://www.mitma.gob.es/el-ministerio/normativa",
+    "https://www.agenciatributaria.es/AEAT.internet/Aduanas.shtml",
+    "https://www.palmasport.es/es/servicios/",
+    "https://www.palmasport.es/en/who-are-we/",
+    "https://solicitudes.puertoscanarios.es/Ocupacion/Consulta",
+    "https://www.gobiernodecanarias.org/transportes/",
+]
+FORM_687 = ("Solicitud de ocupación. Rellene el formulario. Campos obligatorios. " * 11)[:687]
+
+
+def _real(url):
+    if "palmasport.es" in url:
+        return "timeout"
+    if "solicitudes.puertoscanarios.es" in url:
+        return FORM_687
+    return None
+
+
+def test_real_canaries_pattern_reads_a_port_authority_other_than_palmasport(monkeypatch):
+    calls, used, logs = _collect_list(monkeypatch, REAL, _real)
     auths = ar.zone_authorities(CANARIES)
-    audited = ar.audited_urls(auths, "port_authority")
-    calls, used, _logs = _collect(monkeypatch, failing=set(PA_PAGES) | set(audited))
-    tried = [u for u in calls if u in audited]
-    assert len(tried) == 1  # once, then the role stays given up
-    assert not {r for u in used for r in ar.roles_of(u, auths)} & {"port_authority"}
+    assert len(calls) == 8
+    assert calls[:2] == REAL[:2]  # the ranking head is untouched
+    assert sum("palmasport.es" in u for u in calls) <= 1  # no retry on the host that timed out
+    pa_used = [u for u in used if "port_authority" in ar.roles_of(u, auths)]
+    assert pa_used and not any("palmasport.es" in u for u in pa_used)
+    assert any("créneau réservé port_authority" in m for m in logs)
 
 
-def test_rule_off_does_not_try_the_audited_url(monkeypatch):
-    calls, _used, logs = _collect(monkeypatch, failing=set(PA_PAGES),
-                                  overrides={"formalities.authority_seed_fallback": False})
-    audited = set(ar.audited_urls(ar.zone_authorities(CANARIES), "port_authority"))
-    assert not audited & set(calls)
+def test_retry_of_a_role_goes_to_another_host(monkeypatch):
+    """palmasport times out: the role's next slot skips palmasport's other page and
+    goes to another port authority (search's candidate first, then audited)."""
+    ranked = REAL[:4] + ["https://www.palmasport.es/es/servicios/",
+                         "https://www.palmasport.es/en/who-are-we/",
+                         "https://www.puertosdetenerife.org/es/tasas/"]
+    calls, used, _logs = _collect_list(monkeypatch, ranked,
+                                       lambda u: "timeout" if "palmasport.es" in u else None)
+    assert sum("palmasport.es" in u for u in calls) == 1
+    assert "https://www.puertosdetenerife.org/es/tasas/" in used
+
+
+def test_audited_url_is_in_the_role_pool_when_search_has_none(monkeypatch):
+    """Only ministry pages: every role is served from its audited URLs, after the head."""
+    ranked = REAL[:3] + ["https://www.gobiernodecanarias.org/transportes/"]
+    calls, used, logs = _collect_list(monkeypatch, ranked, lambda u: None)
+    auths = ar.zone_authorities(CANARIES)
+    assert calls[:2] == ranked[:2]
+    assert {r for u in used for r in ar.roles_of(u, auths)} == {
+        "customs", "immigration", "maritime_authority", "port_authority"}
+    assert any("(URL auditée)" in m for m in logs)
+
+
+def test_rule_off_keeps_audited_urls_out_of_the_pool(monkeypatch):
+    calls, _used, logs = _collect_list(monkeypatch, REAL, _real,
+                                       overrides={"formalities.authority_seed_fallback": False})
+    audited = _norm(a["url"] for a in ar.zone_authorities(CANARIES)) - _norm(REAL)
+    assert not _norm(calls) & audited
     assert not any("URL auditée" in m for m in logs)
