@@ -4020,7 +4020,8 @@ def judge_texts(zone: dict, docs: list[dict], raw: str, used_sources: list[dict]
     from app.agents import poe_judge
     records = evidence_store.build_records(
         zone.get("mrgid"), [d.get("name") for d in docs or []],
-        evidence_store.documents_from_context(raw, used_sources))
+        evidence_store.documents_from_context(raw, used_sources),
+        places=registry_check.zone_names(zone))
     out, seen = [], set()
     for r in records:
         key = (r.get("url"), r.get("snippet"))
@@ -4180,7 +4181,8 @@ async def _store_evidence(db, zone: dict, docs: list[dict], raw: str,
     try:
         records = await asyncio.to_thread(lambda: evidence_store.build_records(
             zone.get("mrgid"), [d.get("name") for d in docs or []],
-            evidence_store.documents_from_context(raw, used_sources)))
+            evidence_store.documents_from_context(raw, used_sources),
+            places=registry_check.zone_names(zone)))
         stored = await evidence_store.store(db, records, run_id=run_id)
     except Exception as e:  # noqa: BLE001 — evidence is optional, generation must finish
         log(f"evidence: non stockée ({type(e).__name__}: {str(e)[:100]})")

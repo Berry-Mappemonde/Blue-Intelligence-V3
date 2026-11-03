@@ -406,6 +406,24 @@ This is not official truth. It is a bundle, 0–100:
 
 A port seen only in a web synthesis stays low. A decree + two agreeing GPS + OSM + listing rises.
 
+### 10.1 Certification level C2
+
+The certification ladder C0–C4 is separate from the score above (`PLAN-V3.md`, `app/services/v3_certify.py`). C2 lifts a port above an official extraction (C1) when the judge supports a verified excerpt, or when two official hosts and the port's own entry context in an official text agree.
+
+**C2 needs designating context** (Clément, 3 Nov 2026). The evidence must be a decree, an order, an official list, or a row of one: "CUSTOMS (PORT OF SOUFRIERE BAY) ORDER", or a row of the douane *liste des points de clearance agréés* for Martinique. The following are not enough:
+
+- **A customs office's name, or a study describing its scope.** Examples are "ALFÂNDEGA DA PRAIA" in the title of the WCO clearance-time study, and "… até a saída efetiva da mercadoria no Porto da Praia" in its scope.
+- **A study as source.** Studies are excluded the way tariff and port-dues schedules are (`STUDY_TERMS`, `TARIFF_TERMS`). If such a word is within 200 characters of the mention, or on its line, the mention is not entry context. The judge's excerpt is treated the same way: a "poe" verdict on an excerpt that sits in a study does not lift the port. The port stays C1 with the reason "evidence from a study, not a designation".
+- **"Report" does not count as a study.** In a customs act it is a verb ("report to the proper officer").
+
+**A zone, territory or sovereign name is never a port-name variant.** "Martinique" in "Fort-de-France (Martinique)" names the zone, so a sentence about the region of Martinique is not evidence for Fort-de-France. The names covered are:
+
+- every `territories.json` name and island-group short form ("Canarias");
+- every ISO 3166 country name in English, French, Spanish, Portuguese, Italian, Dutch and German;
+- the zone's own names, such as the VLIZ name "Cape Verde".
+
+A port whose whole name is the zone's name keeps it ("Gibraltar", "Monaco").
+
 Listing control (outside extraction):
 
 - listing PoE ∩ run → `confident` (signal);

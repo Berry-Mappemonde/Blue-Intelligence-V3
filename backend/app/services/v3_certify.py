@@ -38,6 +38,7 @@ LEVEL_FIELDS = ("confidence_level", "confidence_downgraded_from", "quote_verifie
                 "judge_contradicted", "name_fragment", "confidence_cap_reason")
 CAP_NOT_IN_ZONE = "evidence not attributable to zone"
 CAP_NO_ENTRY_CONTEXT = "no per-port port-of-entry context"
+CAP_NOT_DESIGNATING = "evidence from a study, not a designation"
 _RANK = {name: i for i, name in enumerate(LEVELS)}
 
 GEO_AGREE_KM = 0.5
@@ -235,7 +236,8 @@ def _official_hosts(port: dict, whitelist: Sequence[str] | None) -> set[str]:
 
 
 def _corroborated_llm_extraction(port: dict, whitelist: Sequence[str] | None,
-                                 texts: Sequence[Mapping] | None = None) -> bool:
+                                 texts: Sequence[Mapping] | None = None,
+                                 zone: Mapping | None = None) -> bool:
     """C2 without the judge: an LLM extraction plus an independent source.
 
     Independent source = the local NER found the same name in the text
@@ -253,18 +255,21 @@ def _corroborated_llm_extraction(port: dict, whitelist: Sequence[str] | None,
         return True
     if len(_official_hosts(port, whitelist)) < 2:
         return False
-    return bool(entry_mentions(port.get("name"), _official_texts(texts, whitelist)))
+    return bool(entry_mentions(port.get("name"), _official_texts(texts, whitelist),
+                               places=_places(port, zone)))
 
 
 def _two_hosts_without_context(port: dict, whitelist: Sequence[str] | None,
-                               texts: Sequence[Mapping] | None) -> bool:
+                               texts: Sequence[Mapping] | None,
+                               zone: Mapping | None = None) -> bool:
     """The old two-hosts rule would have lifted this port; the new one does not."""
     engine = (port.get("extraction_engine") or "").strip().lower()
     return (bool(engine) and engine not in NON_LLM_ENGINES
             and port.get("extraction_agreement") is not True
             and judge_outcome(port) != JUDGE_SUPPORTED
             and len(_official_hosts(port, whitelist)) >= 2
-            and not entry_mentions(port.get("name"), _official_texts(texts, whitelist)))
+            and not entry_mentions(port.get("name"), _official_texts(texts, whitelist),
+                                   places=_places(port, zone)))
 
 
 # --- per-port evidence: entry context and zone attribution ---------------------------
@@ -294,6 +299,16 @@ TARIFF_TERMS = (
     "taxes portuaires", "tasas portuarias", "tasa portuaria", "taxa portuária",
     "taxas portuárias", "fee schedule", "schedule of fees", "schedule of charges",
 )
+# Clément, 3 Nov 2026: a study describing its scope (the WCO clearance-time study, "Estudo
+# de Tempo de Desalfandegamento", for Porto da Praia / Praia) is not designation; C2 needs
+# a decree, an order, an official list or a row of one. Studies are excluded like tariff
+# schedules: such a word near the mention, or on its line, and the mention does not count.
+# Nouns only, never "report" (a customs act's "report to the proper officer").
+STUDY_TERMS = (
+    "study", "studies", "estudo", "estudos", "étude", "études", "estudio", "estudios",
+    "studio di", "studie",
+)
+NOT_DESIGNATING_TERMS = TARIFF_TERMS + STUDY_TERMS
 
 
 def _official_texts(texts: Sequence[Mapping] | None,
@@ -309,38 +324,45 @@ def _official_texts(texts: Sequence[Mapping] | None,
     return out
 
 
-def _name_spans(text: str, tokens, name) -> list[tuple[int, int]]:
+def _places(port: Mapping, zone: Mapping | None) -> tuple[str, ...]:
+    """The zone's own names, never a port-name variant (grounding_variants ``places``)."""
+    return tuple(sorted(zone_terms(port, zone)))
+
+
+def _name_spans(text: str, tokens, name, places: tuple = ()) -> list[tuple[int, int]]:
     """(start, end) of the port name in text, contact addresses excluded."""
     from app.agents import registry_check as rc
 
     out = []
-    for variant in rc.grounding_variants(name):
+    for variant in rc.grounding_variants(name, places=places):
         for ns, ne in rc.name_spans(text, tokens, variant):
             if not rc._in_address(text, tokens, ns, ne):
                 out.append((ns, ne))
     return out
 
 
-def entry_mentions(name, texts: Sequence[str]) -> list[tuple[str, int, int]]:
+def entry_mentions(name, texts: Sequence[str], places: tuple = (),
+                   exclude: tuple = NOT_DESIGNATING_TERMS) -> list[tuple[str, int, int]]:
     """(text, name_start, name_end) per text where registry_check.entry_mention finds the
     port name next to entry wording (port of entry, clearance, customs / alfândega /
     douane / aduana with a port word, "ouvert au trafic international", designated /
-    approved port). A mention inside a tariff or port-dues schedule never counts."""
+    approved port). A mention inside a tariff or port-dues schedule, or a study, never
+    counts. ``places``: the zone's names, never a variant of the port's name."""
     if is_name_fragment(name):
         return []
     from app.agents import registry_check as rc
 
-    variants = rc.grounding_variants(name)
+    variants = rc.grounding_variants(name, places=places)
     out = []
     for text in texts or []:
         m = rc.entry_mention(text, variants, extra_strong=ENTRY_TERMS_STRONG,
-                             extra_weak=ENTRY_TERMS_WEAK, exclude=TARIFF_TERMS)
+                             extra_weak=ENTRY_TERMS_WEAK, exclude=exclude)
         if m:
             out.append((text, m["name_start"], m["name_end"]))
     return out
 
 
-def all_mentions(name, texts: Sequence[str]) -> list[tuple[str, int, int]]:
+def all_mentions(name, texts: Sequence[str], places: tuple = ()) -> list[tuple[str, int, int]]:
     if is_name_fragment(name):
         return []
     from app.agents import registry_check as rc
@@ -348,8 +370,47 @@ def all_mentions(name, texts: Sequence[str]) -> list[tuple[str, int, int]]:
     out = []
     for text in texts or []:
         tokens = rc._tokens(text)
-        out += [(text, ns, ne) for ns, ne in _name_spans(text, tokens, name)]
+        out += [(text, ns, ne) for ns, ne in _name_spans(text, tokens, name, places)]
     return out
+
+
+def _near_phrase(text: str, start: int, end: int, phrases: tuple[str, ...]) -> bool:
+    """One of ``phrases`` within PROXIMITY_CHARS of [start, end) or on its line: the
+    window registry_check.entry_mention uses for ``exclude``."""
+    from app.agents import registry_check as rc
+
+    tokens = rc._tokens(text)
+    lo, hi = start - rc.PROXIMITY_CHARS, end + rc.PROXIMITY_CHARS
+    line_lo, line_hi = rc._line_bounds(text, start, end)
+    return any((lo <= xs and xe <= hi) or (line_lo <= xs and xe <= line_hi)
+               for p in rc._extra_phrases(tuple(phrases)) for xs, xe in rc._spans(tokens, p))
+
+
+def judge_excerpt_in_study(port: Mapping, texts: Sequence[Mapping] | None,
+                           whitelist: Sequence[str] | None) -> bool:
+    """The judge's verified excerpt sits in a study (STUDY_TERMS around it, located in an
+    official text): the judge read a study's scope, not a designation. An excerpt that is
+    not found in the texts is not judged here."""
+    judge = port.get("judge") if isinstance(port.get("judge"), Mapping) else {}
+    excerpt = judge.get("quoted_excerpt")
+    if not isinstance(excerpt, str) or not excerpt.strip():
+        return False
+    quote = excerpt.strip().lower()
+    for text in _official_texts(texts, whitelist):
+        at = text.lower().find(quote)
+        if at >= 0:
+            return _near_phrase(text, at, at + len(quote), STUDY_TERMS)
+    return False
+
+
+def _study_only(port: Mapping, texts: Sequence[Mapping] | None,
+                whitelist: Sequence[str] | None, zone: Mapping | None) -> bool:
+    """The port's only entry context (or its judge excerpt) is a study."""
+    if judge_outcome(dict(port)) == JUDGE_SUPPORTED:
+        return judge_excerpt_in_study(port, texts, whitelist)
+    official, places = _official_texts(texts, whitelist), _places(port, zone)
+    return (bool(entry_mentions(port.get("name"), official, places, exclude=TARIFF_TERMS))
+            and not entry_mentions(port.get("name"), official, places))
 
 
 def _territory_names(rec: Mapping) -> set[str]:
@@ -486,9 +547,10 @@ def zone_attributable(port: Mapping, *, whitelist: Sequence[str] | None = None,
     other = _other_territory_terms(own)
     official = _official_texts(texts, whitelist)
     name = port.get("name")
-    mentions = entry_mentions(name, official)
+    places = _places(port, zone)
+    mentions = entry_mentions(name, official, places)
     if port.get("extraction_agreement") is True:
-        mentions += all_mentions(name, official)
+        mentions += all_mentions(name, official, places)
     if any(_mention_in_zone(t, s, e, own, other) for t, s, e in mentions):
         return True
     judge = port.get("judge") if isinstance(port.get("judge"), Mapping) else {}
@@ -575,10 +637,12 @@ def judge_outcome(port: dict) -> str | None:
 
 
 def _lifts_above_c1(port: dict, whitelist: Sequence[str] | None,
-                    texts: Sequence[Mapping] | None = None) -> bool:
-    if judge_outcome(port) == JUDGE_SUPPORTED:
+                    texts: Sequence[Mapping] | None = None,
+                    zone: Mapping | None = None) -> bool:
+    if judge_outcome(port) == JUDGE_SUPPORTED and not judge_excerpt_in_study(port, texts,
+                                                                             whitelist):
         return True
-    return _corroborated_llm_extraction(port, whitelist, texts)
+    return _corroborated_llm_extraction(port, whitelist, texts, zone)
 
 
 def _cap_zone(result: dict, port: dict, whitelist: Sequence[str] | None,
@@ -586,10 +650,13 @@ def _cap_zone(result: dict, port: dict, whitelist: Sequence[str] | None,
     """C2+ whose evidence is not attributable to this zone goes down to C1."""
     lvl = result["confidence_level"]
     if _RANK[lvl] <= _RANK["C1"]:
-        if (lvl == "C1" and "confidence_cap_reason" not in result
-                and _two_hosts_without_context(port, whitelist, texts)):
-            result = dict(result)
-            result["confidence_cap_reason"] = CAP_NO_ENTRY_CONTEXT
+        if lvl == "C1" and "confidence_cap_reason" not in result:
+            if _study_only(port, texts, whitelist, zone):
+                result = dict(result)
+                result["confidence_cap_reason"] = CAP_NOT_DESIGNATING
+            elif _two_hosts_without_context(port, whitelist, texts, zone):
+                result = dict(result)
+                result["confidence_cap_reason"] = CAP_NO_ENTRY_CONTEXT
         return result
     if zone_attributable(port, whitelist=whitelist, texts=texts, zone=zone):
         return result
@@ -640,12 +707,13 @@ def _geo_from_v2(port: dict) -> dict:
 
 
 def _from_v2(port: dict, whitelist: Sequence[str] | None,
-             texts: Sequence[Mapping] | None = None) -> dict:
+             texts: Sequence[Mapping] | None = None,
+             zone: Mapping | None = None) -> dict:
     """Shape a scored V2 port as a certify entity. Does not mutate `port`."""
     urls = _urls(port)
     synthesis = bool(port.get("from_synthesis"))
     extracted = bool(urls) and not synthesis
-    lift = _lifts_above_c1(port, whitelist, texts)
+    lift = _lifts_above_c1(port, whitelist, texts, zone)
     quote = port.get("quote") if isinstance(port.get("quote"), str) else ""
     page = port.get("page_text") if isinstance(port.get("page_text"), str) else ""
     evidence = []
@@ -689,7 +757,7 @@ def assess_port(port: dict, *, whitelist: Sequence[str] | None = None,
     if isinstance(port.get("evidence"), list):
         result = _cap(assess_level(port, pages, whitelist=whitelist), port)
     else:
-        entity = _from_v2(port, whitelist, texts)
+        entity = _from_v2(port, whitelist, texts, zone)
         before = level(entity)
         checked = _with_verified_quotes(entity, pages)
         result = _cap(_pack(before, level(checked), checked), port)
