@@ -205,9 +205,10 @@
       "gov.tk"
     ],
     "LC": [
-      "rslpf.com",
       "govt.lc",
-      "slaspa.com"
+      "rslpf.com",
+      "slaspa.com",
+      "stlucia.org"
     ]
   },
   "auto": {
@@ -353,6 +354,11 @@
     ],
     "MA": [
       "https://www.douane.gov.ma/dms/loadDocument?documentId=79088"
+    ]
+  },
+  "seed_urls_mrgid": {
+    "33178": [
+      "https://www.douane.gouv.fr/sites/default/files/2026-01/30/liste-points-clearance-agrees-mise-a-jour.pdf"
     ]
   },
   "search_hints": {
