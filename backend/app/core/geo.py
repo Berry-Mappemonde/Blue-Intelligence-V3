@@ -1056,6 +1056,20 @@ async def _collect_nominatim_candidates(port: dict, zone: dict) -> list[dict]:
     return pool[:cap]
 
 
+async def cached_nominatim_candidates(port: dict, zone: dict) -> list[dict]:
+    """Nominatim candidates already in the geocode cache for this port's queries (same
+    queries, countrycodes and limit as ``_collect_nominatim_candidates``): no HTTP call,
+    no throttle. Empty when nothing is cached."""
+    queries, _ctx = _port_queries(port, zone)
+    cc = nominatim_countrycodes(zone)
+    cap = _geocode_candidate_limit()
+    pool: list[dict] = []
+    for q in queries:
+        for row in await _geocode_cache_get("nominatim", q, cc, cap) or []:
+            _add_unique_cand(pool, _nominatim_cand(row))
+    return pool[:cap]
+
+
 async def _collect_geonames_candidates(port: dict, zone: dict) -> list[dict]:
     name = port["name"]
     territory = zone.get("name") or ""

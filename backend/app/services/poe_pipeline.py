@@ -46,11 +46,13 @@ from app.core.events import ZoneRecorder, emit
 from app.core.extract import (
     audit_serp_filter, catalog_is_sufficient, catalog_ports_to_keep,
     catalog_ports_with_coords, extract_cascade, extract_structured_ports,
-    fold_place_name, split_territory_rows,
+    _PORT_OF_RE, fold_place_name, split_territory_rows,
     internal_followups, is_geocodeable_name, looks_like_port_catalog,
     official_attachments, serp_filter, should_follow_attachments,
 )
-from app.core.geo import classify_poe_point, geocode_port_dual, inland_exception_flags
+from app.core.geo import (
+    cached_nominatim_candidates, classify_poe_point, geocode_port_dual, inland_exception_flags,
+)
 from app.core.llm import (
     LLM_CONTEXT_CHARS, extract_call_gate, extract_ports, extract_ports_per_answer,
     grounded_search, llm_context_chars, llm_geocode_port,
@@ -864,14 +866,108 @@ def zone_row_names(zone: dict | None) -> tuple[set[str], set[str]]:
 def zone_catalog(text: str, zone: dict | None) -> tuple[list[dict], bool]:
     """Catalog ports for this zone, and True when a per-territory list in the text has
     no row for it. Such a list gives the zone its own row; the other parsers read the
-    rest of the text as before."""
+    rest of the text as before. A "port de X" name (legal phrasing) that is only a
+    territory's name is dropped, and on a curated territory it must be in this zone
+    (``legal_phrase_in_zone``)."""
     rest, row_ports, missed = split_territory_rows(text, *zone_row_names(zone))
     ports, seen = list(row_ports), {p["name"].casefold() for p in row_ports}
+    scope = legal_phrase_scope(zone)
     for p in extract_structured_ports(rest) if rest.strip() else []:
-        if p["name"].casefold() not in seen:
-            seen.add(p["name"].casefold())
-            ports.append(p)
+        if p["name"].casefold() in seen:
+            continue
+        if _is_legal_phrase(p) and (is_territory_name(p["name"])
+                                    or (scope and not legal_phrase_in_zone(rest, p["name"], scope))):
+            continue
+        seen.add(p["name"].casefold())
+        ports.append(p)
     return ports, missed
+
+
+# A "port de X" match on a national document (extract._PORT_OF_RE) counts for a curated
+# territory when the territory is named at most this many characters before it, the
+# nearest territory named there being this one.
+LEGAL_PHRASE_ZONE_WINDOW = 600
+
+
+def _is_legal_phrase(port: dict) -> bool:
+    return (port.get("note") or "").startswith("tournure légale")
+
+
+def is_territory_name(name: str | None) -> bool:
+    """The name is only a curated territory's name ("Canarias", "Martinique"): a territory
+    of several ports, never one port. A country's own name is not checked: Gibraltar,
+    Monaco or Singapore name their port."""
+    from app.services import v3_certify
+    keys = v3_certify._term_keys([name or ""])
+    if not keys:
+        return False
+    words = set(next(iter(keys)).split())
+    terms: set[str] = set()
+    for rec in v3_certify._all_territories():
+        terms |= v3_certify._term_keys(v3_certify._territory_names(rec))
+    return any(words <= set(t.split()) for t in terms)
+
+
+def legal_phrase_scope(zone: dict | None) -> dict | None:
+    """What a "port de X" match must satisfy on this polygon, or None when legal phrases
+    are not scoped: only a curated territory whose sovereign is another country (the
+    Canaries, Martinique, New Caledonia…) is scoped, since its sovereign's national
+    documents list every province's or territory's ports (1948 Ordenanzas de Aduanas:
+    Santander, Barcelona, Alcudia; mer.gouv.fr annex: Bayonne)."""
+    from app.services import v3_certify
+    from app.services.territory_ref import territory_for_mrgid
+    zone = zone or {}
+    terr = territory_for_mrgid(zone.get("mrgid"))
+    sov = str(terr.get("sovereign_iso2") or "").upper()
+    if not terr or not sov or str(terr.get("iso2") or "").upper() == sov:
+        return None
+    own = v3_certify.zone_terms({}, zone)
+    # Host words that name the territory: each name run together, and its last word when
+    # it is distinctive ("canarias" in gobiernodecanarias.org, not "nouvelle" or "islands").
+    words = {t.replace(" ", "") for t in own} | {
+        t.split()[-1] for t in own
+        if len(t.split()[-1]) >= 6 and t.split()[-1] not in v3_certify.GENERIC_NAME_WORDS}
+    return {"own": own, "other": v3_certify._other_territory_terms(own), "words": words,
+            "iso2": str(terr.get("iso2") or "").lower(),
+            "national": sorted(_national_labels(sov, load_exceptions(), eez_iso2_set()))}
+
+
+def _national_document(url: str | None, scope: dict) -> bool:
+    """Published by the sovereign's national services (its government label, manual / auto
+    domains), not by this territory: a host naming the territory (martinique.gouv.fr,
+    gobiernodecanarias.org) or on its ccTLD is the territory's own."""
+    host = (urlparse(url or "").hostname or "").lower()
+    if not host:
+        return True  # no publisher: read as a national text
+    if scope["iso2"] and (host == scope["iso2"] or host.endswith("." + scope["iso2"])):
+        return False
+    folded = re.sub(r"[^a-z]", "", fold_place_name(host))
+    if any(w in folded for w in scope["words"]):
+        return False
+    return url_allowed(url, scope["national"])
+
+
+def legal_phrase_in_zone(text: str, name: str, scope: dict) -> bool:
+    """This "port de X" name is the zone's: one of its matches is on a document that is not
+    national, or has this territory named within LEGAL_PHRASE_ZONE_WINDOW characters before
+    it with no other territory in between."""
+    from app.agents import registry_check
+    from app.services import v3_certify
+    blocks = registry_check.source_texts_from_context(text) or {"": text}
+    key = name.casefold()
+    for url, body in blocks.items():
+        hits = None
+        for m in _PORT_OF_RE.finditer(body):
+            if m.group(1).strip().rstrip(".").casefold() != key:
+                continue
+            if not _national_document(url, scope):
+                return True
+            if hits is None:
+                hits = v3_certify._territory_hits(body, scope["own"], scope["other"])
+            before = [h for h in hits if h[1] <= m.start()]
+            if before and before[-1][2] and m.start() - before[-1][1] <= LEGAL_PHRASE_ZONE_WINDOW:
+                return True
+    return False
 
 
 def save_exceptions(exc: dict):
@@ -3190,6 +3286,26 @@ def _hmem_remember(docs: list[dict], run_id: str) -> dict:
     return outcomes
 
 
+async def deferred_outside_zone(port: dict, port_ev: dict, zone: dict, geom, prepared) -> str | None:
+    """Why a name kept without geocoding (7bde9c2: long catalogue, geocode deferred) is not
+    in this polygon, or None to keep it. Cheap: a territory's own name is not a port, and a
+    point already in the geocode cache (no HTTP) that falls outside the polygon drops it.
+    No cached point: kept, as before."""
+    if is_territory_name(port.get("name")):
+        return "nom de territoire"
+    if geom is None and prepared is None:
+        return None
+    cands = await cached_nominatim_candidates(port, zone)
+    if not cands:
+        return None
+    inland = inland_exception_flags(port_ev, zone, official_list=True)
+    checked = [_spatial_cand(c["lat"], c["lon"], "nominatim", geom, prepared, inland)
+               for c in cands if c.get("lat") is not None]
+    if not checked or any(c.get("validated") for c in checked):
+        return None
+    return "géocode en cache hors du polygone"
+
+
 async def _extract_and_geocode(zone: dict, context: str, used_sources: list[dict], log,
                                rec=None, run=None, catalog_text: str | None = None,
                                settings: dict | None = None,
@@ -3264,6 +3380,13 @@ async def _extract_and_geocode(zone: dict, context: str, used_sources: list[dict
             })
             continue
         if defer_geocode:
+            outside = await deferred_outside_zone(p, port_ev, zone, geom, prepared)
+            if outside:
+                log(f"  ⚓ {p['name']} → hors de ce polygone VLIZ (mrgid {mrgid}) — non rattaché "
+                    f"(géocode différé, {outside})")
+                await emit(rec, "geocode", port=p["name"], arbitration="spatial_rejected",
+                           deferred=True, reason=outside, kept=False)
+                continue
             rows.append({
                 "port": p, "norm": norm, "geo": empty_geo, "hint": "geocode_deferred",
                 "cands": [],

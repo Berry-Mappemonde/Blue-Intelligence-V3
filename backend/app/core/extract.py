@@ -1821,6 +1821,10 @@ def _extract_structured_ports_one(text: str) -> list[dict]:
             continue
         if len(name) < 3 or len(name) > 60:
             continue
+        # A place name ends on a capitalized word: "port of Registration in the Special
+        # Registry" (REBECA guide, transportes.gob.es) gives "Registration in", not a port.
+        if name.split()[-1][:1].islower():
+            continue
         if re.search(r"\b(airport|aeropuerto|aéroport|zarpe)\b", name, re.I):
             continue
         seen.add(name.casefold())
