@@ -2067,7 +2067,7 @@
         5000000
       ],
       "vary": true,
-      "principle": "Plafond par source collectée. L'ancienne coupe dure à 60 000 chars perdait les ports nommés plus loin (Bermudes : passage désignant à l'offset 71 457, gardé). Calcul : un lot de 20 000 chars avec 1 500 de chevauchement avance de 18 500 ; un appel ≤ 90 s (REQUEST_TIMEOUT_S) ; 3 lots en parallèle ; ZEE 900 s − 300 s de réserve (formalities.extract_deadline_reserve_s) − ~120 s de recherche et collecte (estimé) ≈ 480 s d'extraction = 5 tours = 15 lots. 120 000 chars = 7 lots = 3 tours = 270 s ; deux sources pleines = 14 lots = 5 tours = 450 s. 500 000 chars = 27 lots = 9 tours = 810 s pour une seule source : hors délai. Au-delà de 15 lots, le délai d'extraction garde les lots terminés et marque la ZEE partielle.",
+      "principle": "Plafond par source collectée. L'ancienne coupe dure à 60 000 chars perdait les ports nommés plus loin (Bermudes : passage désignant à l'offset 71 457, gardé). Calcul : un lot de 20 000 chars avec 1 500 de chevauchement avance de 18 500 ; un appel ≤ 90 s (REQUEST_TIMEOUT_S) ; 3 lots en parallèle ; ZEE 900 s − 300 s de réserve (formalities.extract_deadline_reserve_s) − ~120 s de recherche et collecte (estimé) ≈ 480 s d'extraction = 5 tours = 15 lots. 120 000 chars = 7 lots = 3 tours = 270 s ; deux sources pleines = 14 lots = 5 tours = 450 s. 500 000 chars = 27 lots = 9 tours = 810 s pour une seule source : hors délai. Au-delà de 15 lots, le délai d'extraction garde les lots terminés et marque la ZEE partielle. Au-delà du plafond, la tête est complétée par des fenêtres autour des termes d'entrée (formalities.source_window_chars).",
       "cdc": "PLAN-V3.md §4 P0-3",
       "code": [
         "app/services/poe_pipeline.py:_collect_texts"
@@ -2159,6 +2159,34 @@
       "help": {
         "fr": "Ajoute l'URL officielle auditée d'une autorité (douane, immigration, maritime, portuaire) que la recherche n'a pas trouvée, ou qui n'a pas pu être lue.",
         "en": "Adds the audited official URL of an authority (customs, immigration, maritime, port) that search did not find, or that could not be read."
+      },
+      "group": "budget"
+    },
+    {
+      "id": "formalities.source_window_chars",
+      "mode": "formalities",
+      "kind": "budget",
+      "value": 1500,
+      "numeric": "int",
+      "unit": "chars",
+      "interval": [
+        300,
+        5000
+      ],
+      "vary": true,
+      "principle": "Une source plus longue que formalities.source_max_chars n'est plus coupée à la seule tête : on garde la tête (au moins la moitié du plafond) plus des fenêtres de ± cette valeur autour de chaque terme d'entrée trouvé après elle (registry_check.STRONG_ENTRY_TERMS, plus « clearance », « boarding station(s) »…), fusionnées, dans l'ordre du document, avec un marqueur « […] » à chaque trou, le tout dans le plafond. Leçon Sainte-Lucie : le Customs Control and Management Act fait 565 541 caractères ; le règlement 136(2)(h) qui désigne Castries, Vieux-Fort, Rodney Bay Marina et Marigot Bay Marina comme « boarding stations … for boarding and clearance of vessels » est au caractère 346 978, perdu par la coupe à 120 000. 1 500 : un alinéa de règlement qui liste quatre ports tient en ~500 caractères, l'article qui l'introduit ~1 000 ; registry_check.PROXIMITY_CHARS (200) est la preuve, pas le contexte de lecture. Plus haut = moins de fenêtres tiennent dans le plafond.",
+      "cdc": "PLAN-V3.md §4 P0-3",
+      "code": [
+        "app/services/poe_pipeline.py:SOURCE_WINDOW_CHARS",
+        "app/services/poe_pipeline.py:cap_source_text"
+      ],
+      "title": {
+        "fr": "Fenêtre autour d'un terme d'entrée (source longue)",
+        "en": "Window around an entry term (long source)"
+      },
+      "help": {
+        "fr": "Caractères gardés de part et d'autre d'un terme comme « port of entry » ou « boarding station » quand une source dépasse le plafond. Plus haut = plus de contexte, moins de fenêtres.",
+        "en": "Characters kept on each side of a term such as “port of entry” or “boarding station” when a source exceeds the cap. Higher keeps more context, fewer windows."
       },
       "group": "budget"
     },

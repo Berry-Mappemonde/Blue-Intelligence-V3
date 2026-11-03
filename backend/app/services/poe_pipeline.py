@@ -1411,6 +1411,68 @@ EXTRACT_BATCH_OVERLAP_CHARS = 1500
 EXTRACT_BATCH_CONCURRENCY = 3
 EXTRACT_MAX_LLM_CALLS = 1000
 SOURCE_MAX_CHARS = 120_000  # per fetched source; was a hard 60,000 cut before batching
+SOURCE_WINDOW_CHARS = 1_500  # ± chars kept around an entry term past the cap (formalities.source_window_chars)
+# Terms that open a window in the part of a source past the cap: the strong entry terms of
+# registry_check (they designate on their own), plus the clearance / boarding-station
+# wording of acts that list where a vessel is boarded and cleared (Saint Lucia, Customs
+# Control and Management Act reg. 136(2)(h): "boarding stations ... for boarding and
+# clearance of vessels" at char 346,978 of 565,541).
+WINDOW_EXTRA_TERMS = (
+    "clearance", "boarding station", "boarding stations", "port of clearance",
+    "ports of clearance", "station d'arraisonnement", "stations d'arraisonnement",
+    "estación de visita", "estaciones de visita",
+)
+_WINDOW_MARK = "\n\n[… {n} caractères omis …]\n\n"
+
+
+@functools.lru_cache(maxsize=1)
+def _window_term_re() -> re.Pattern:
+    terms = sorted({t.casefold() for t in registry_check.STRONG_ENTRY_TERMS + WINDOW_EXTRA_TERMS},
+                   key=len, reverse=True)
+    return re.compile(r"(?<!\w)(?:" + "|".join(re.escape(t) for t in terms) + r")(?!\w)")
+
+
+def cap_source_text(text: str, cap: int, window: int) -> tuple[str, int]:
+    """A source within ``cap`` chars: the head, plus ±``window`` chars around each entry
+    term found past it (``_window_term_re``), merged and in document order, with a marker
+    for each gap. The head keeps at least half the cap; when the windows do not all fit,
+    the ones nearest the head are kept. Returns (text, number of windows kept). A source
+    within the cap, or without a term past the head, is cut as before (head only)."""
+    if not text or len(text) <= cap:
+        return text, 0
+    head_min = cap // 2
+    mark = len(_WINDOW_MARK.format(n=len(text)))  # upper bound of one marker
+    spans: list[list[int]] = []
+    for m in _window_term_re().finditer(text.casefold(), head_min):
+        lo, hi = max(head_min, m.start() - window), min(len(text), m.end() + window)
+        if spans and lo <= spans[-1][1]:
+            spans[-1][1] = max(spans[-1][1], hi)
+        else:
+            spans.append([lo, hi])
+    kept, room = [], cap - head_min
+    for lo, hi in spans:
+        if (hi - lo) + mark > room:
+            break
+        kept.append([lo, hi])
+        room -= (hi - lo) + mark
+    # The head takes the room the windows leave; a window it reaches is clipped (no
+    # marker when contiguous), one it covers is dropped. The head only grows: it settles.
+    head = head_min
+    while True:
+        new_head = cap - sum((hi - lo) + (mark if lo > head else 0) for lo, hi in kept)
+        if new_head <= head:
+            break
+        head = new_head
+        kept = [[max(lo, head), hi] for lo, hi in kept if hi > head]
+    if not kept:
+        return text[:cap], 0
+    body, pos = [text[:head]], head
+    for lo, hi in kept:
+        if lo > pos:
+            body.append(_WINDOW_MARK.format(n=lo - pos))
+        body.append(text[lo:hi])
+        pos = hi
+    return "".join(body)[:cap], sum(1 for lo, _hi in kept if lo > head)
 MAX_FETCH = 8  # pages / PDFs fetched per zone (formalities.max_fetch)
 FETCH_SLOTS_PER_ROLE = 1  # reserved per authority role within MAX_FETCH (formalities.fetch_slots_per_role)
 ROLE_FETCH_RETRIES = 1  # failed fetches of a role re-reserved (and spare slot kept) before it is given up
@@ -3053,10 +3115,17 @@ async def _collect_texts(official: list[dict], log, rec=None, max_fetch: int | N
         if (text and len(text) > 200) or keep_short_pdf:
             # Whole text: the primary reader batches long sources. Only a safety
             # ceiling (formalities.source_max_chars) bounds a runaway document.
+            kept_text, n_windows = cap_source_text(
+                text or "", source_max,
+                int(get_rule("formalities.source_window_chars", SOURCE_WINDOW_CHARS)))
             if text and len(text) > source_max:
                 log(f"source {domain_of(url)}: {len(text)} chars, coupée au plafond "
-                    f"de sécurité {source_max}")
-            texts.append(f"[SOURCE: {url}]\n{(text or '')[:source_max]}")
+                    f"de sécurité {source_max}"
+                    + (f" — tête + {n_windows} fenêtre(s) autour des termes d'entrée gardées"
+                       if n_windows else " (tête seule, aucun terme d'entrée après)"))
+                await emit(rec, "source_windows", url=url, chars=len(text), cap=source_max,
+                           windows=n_windows)
+            texts.append(f"[SOURCE: {url}]\n{kept_text}")
             # A role is served by a source actually kept, not by an attempt: a failed,
             # blocked or empty fetch still uses one fetch of the cap, but its role stays
             # in deficit and the next candidate of that role is reserved.
