@@ -283,13 +283,79 @@ def _full_keys(*names: str | None) -> set[str]:
     return out
 
 
-def grounding_variants(name: str | None, alternates: tuple = ()) -> list[Variant]:
+def _place_key(name: str | None) -> str:
+    return " ".join(_TOKENS.get(t, t) for t in name_key(_POSSESSIVE.sub("", name or "")).split())
+
+
+# Languages of the country names that are never a port-name variant (with English).
+PLACE_NAME_LANGUAGES = ("fr", "es", "pt", "it", "nl", "de")
+
+
+@lru_cache(maxsize=1)
+def place_name_keys() -> frozenset[str]:
+    """Keys of territory and country names: every territories.json record (name_fr /
+    name_en / name_es, a parenthesised short name, the code) and every ISO 3166-1 country
+    (name, common and official names, in English and PLACE_NAME_LANGUAGES). A variant
+    equal to one of these names the zone or its sovereign, not the port."""
+    names: list[str] = []
+    try:
+        from app.services import territory_ref
+        for rec in territory_ref._table().get("territories") or []:
+            for key, raw in rec.items():
+                if key.startswith("name_") and isinstance(raw, str):
+                    names += [raw, re.sub(r"\(.*?\)", " ", raw)] + re.findall(r"\(([^)]*)\)", raw)
+            if rec.get("code"):
+                names.append(str(rec["code"]).replace("_", " "))
+    except Exception:  # noqa: BLE001 — no table: country names only
+        pass
+    # Short forms of island groups: "Canarias" for "Islas Canarias", "Açores" for "Ilhas dos Açores".
+    names += [m.group(1) for n in list(names)
+              if (m := re.match(r"(?i)\s*(?:islas|iles|îles|ilhas|isole)\s+(?:(?:de|des|du|dos|das|del|di)\s+)?(.+)", n))]
+    pyc = _pycountry()
+    if pyc is not None:
+        import gettext
+        translations = []
+        for lang in PLACE_NAME_LANGUAGES:
+            try:
+                translations.append(gettext.translation("iso3166-1", pyc.LOCALES_DIR, languages=[lang]))
+            except (OSError, AttributeError):
+                continue
+        for country in pyc.countries:
+            for attr in ("name", "common_name", "official_name"):
+                raw = getattr(country, attr, None)
+                if raw:
+                    names += [raw] + [t.gettext(raw) for t in translations]
+    return frozenset(k for k in map(_place_key, names) if k)
+
+
+def zone_names(zone: dict | str | None) -> tuple[str, ...]:
+    """The zone's own names for ``grounding_variants(places=...)``: VLIZ name, geoname,
+    territory, aliases (territory and country names are already in place_name_keys)."""
+    if isinstance(zone, str):
+        return (zone,)
+    if not isinstance(zone, dict):
+        return ()
+    names = [zone.get(k) for k in ("name", "geoname", "territory", "zone_name")]
+    names += list(zone.get("aliases") or [])
+    return tuple(n for n in names if isinstance(n, str) and n.strip())
+
+
+def grounding_variants(name: str | None, alternates: tuple = (),
+                       places: tuple = ()) -> list[Variant]:
     """Name variants as token tuples, longest first: whole words, 4+ characters, not generic.
     A one-word singular made from another one-word variant ("canne" from "Cannes", "ingle"
-    from "Inglês") is not a variant: it is a fragment, often a common word."""
+    from "Inglês") is not a variant: it is a fragment, often a common word.
+
+    A territory or country name (place_name_keys) or one of ``places`` (the zone's own
+    names, from the caller) is never a variant: "martinique" from "Fort-de-France
+    (Martinique)" names the zone, not the port. The port's whole name is kept even then
+    ("Gibraltar", "Monaco")."""
     keys = {" ".join(_TOKENS.get(t, t) for t in v.split()) for v in name_variants(name, *alternates)}
     keys = {k for k in keys if len(k) >= 4 and k not in _GENERIC}
     keys = {k for k in keys if " " in k or k + "s" not in keys}
+    whole = {_place_key(n) for n in (name, *alternates) if n}
+    zone_places = place_name_keys() | {_place_key(p) for p in places if p}
+    keys = {k for k in keys if k in whole or k not in zone_places}
     full = _full_keys(name, *alternates)
     out = []
     for key in sorted(keys, key=len, reverse=True):
@@ -459,7 +525,8 @@ def _official_url(url: str, whitelist: list[str] | None) -> bool:
 
 def official_source_evidence(port: dict, source_texts: dict[str, str] | None,
                              alternates: tuple = (), *,
-                             whitelist: list[str] | None = None) -> list[dict]:
+                             whitelist: list[str] | None = None,
+                             places: tuple = ()) -> list[dict]:
     """Evidence from text fetched now: official URLs whose text designates the port.
 
     Candidate URLs are the port's source_urls (else every fetched document). A URL counts
@@ -470,7 +537,7 @@ def official_source_evidence(port: dict, source_texts: dict[str, str] | None,
     """
     if not source_texts:
         return []
-    variants = grounding_variants(port.get("name"), alternates)
+    variants = grounding_variants(port.get("name"), alternates, places)
     out = []
     for url in port.get("source_urls") or list(source_texts):
         text = source_texts.get(url)
@@ -485,7 +552,8 @@ def official_source_evidence(port: dict, source_texts: dict[str, str] | None,
 
 
 def stored_snippet_evidence(port: dict, records: list[dict] | None, alternates: tuple = (), *,
-                            whitelist: list[str] | None = None) -> list[dict]:
+                            whitelist: list[str] | None = None,
+                            places: tuple = ()) -> list[dict]:
     """Evidence from stored records (an earlier fetch): the same check, run on each snippet.
 
     Records are those of the port's zone; one applies when its port_key is one of the
@@ -493,7 +561,7 @@ def stored_snippet_evidence(port: dict, records: list[dict] | None, alternates: 
     """
     if not records:
         return []
-    variants = grounding_variants(port.get("name"), alternates)
+    variants = grounding_variants(port.get("name"), alternates, places)
     keys = {" ".join(v) for v in variants}
     out = []
     for record in records:
@@ -666,13 +734,15 @@ def fetch_for_zone(zone: dict | str | None, ports: list[dict], run_id: str,
 def annotate(ports: list[dict], registry: dict, run_id: str,
              source_texts: dict[str, str] | None = None,
              stored_records: list[dict] | None = None, *,
-             whitelist: list[str] | None = None) -> tuple[list[dict], dict]:
+             whitelist: list[str] | None = None,
+             places: tuple = ()) -> tuple[list[dict], dict]:
     """Tier copies of ports and trace one registry_check event per port.
 
     Official evidence comes from source_texts (fetched now) or stored_records (stored
     snippets of the zone, see app/adapters/evidence_store.py), each passing the same check.
     ``whitelist`` (the zone's poe_pipeline.build_whitelist) scopes "official" to the zone;
-    without it the naming heuristic is_official_source() applies.
+    without it the naming heuristic is_official_source() applies. ``places``: the zone's
+    own names (zone_names), never a port-name variant.
 
     Each port gets ``registry`` {tier, label, validation, matches, official_evidence,
     coord_mismatch, first_port_of_entry, reasons}, plus the backward-compatible
@@ -690,8 +760,10 @@ def annotate(ports: list[dict], registry: dict, run_id: str,
                            if any(_entry_code(e) == m["code"] and e.get("source") == m["source"]
                                   for m in matches))
         official = _merge_evidence(
-            official_source_evidence(port, source_texts, alternates, whitelist=whitelist),
-            stored_snippet_evidence(port, stored_records, alternates, whitelist=whitelist))
+            official_source_evidence(port, source_texts, alternates, whitelist=whitelist,
+                                     places=places),
+            stored_snippet_evidence(port, stored_records, alternates, whitelist=whitelist,
+                                    places=places))
         tier = tier_for(official, matches)
         fpoe = next((m["first_port_of_entry"] for m in matches if m.get("first_port_of_entry")), None)
         port["registry"] = dict(
@@ -725,4 +797,5 @@ def check_ports(ports: list[dict], zone: dict | str | None, run_id: str,
                 whitelist: list[str] | None = None) -> tuple[list[dict], dict]:
     """fetch_for_zone + annotate: the registry check step of the run pipeline."""
     return annotate(ports, fetch_for_zone(zone, ports, run_id, live_failed), run_id,
-                    source_texts, stored_records, whitelist=whitelist)
+                    source_texts, stored_records, whitelist=whitelist,
+                    places=zone_names(zone))
