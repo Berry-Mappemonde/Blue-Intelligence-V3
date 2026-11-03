@@ -137,6 +137,23 @@ async def _probe(client, base, key, headers):
         return status
 
 
+async def nightshift_ready() -> bool:
+    """True when ``generate`` would call Nightshift now: not SAMPLE_MODE, Token Factory
+    not active, and the /models probe (cached PROBE_TTL_S) answers."""
+    if _env('SAMPLE_MODE').lower() == 'true':
+        return False
+    from app.core import tokenfactory
+    if tokenfactory.active():
+        return False
+    base = _setting('METERLESS_BASE_URL', 'MODEL_BASE_URL', DEFAULT_BASE_URL).rstrip('/')
+    key = _setting('METERLESS_RUNTIME_TOKEN', 'MODEL_API_KEY')
+    headers = {'meterless-app': 'blue-intelligence', 'meterless-scope': 'user'}
+    if key:
+        headers['Authorization'] = f'Bearer {key}'
+    async with httpx.AsyncClient(timeout=httpx.Timeout(PROBE_TIMEOUT_S, connect=PROBE_TIMEOUT_S)) as client:
+        return await _probe(client, base, key, headers) == 'ready'
+
+
 def _output_tokens(role):
     """max_tokens of one completion; the port-extraction role reads its run rule."""
     if role != 'extract':
