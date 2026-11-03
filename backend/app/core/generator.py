@@ -137,6 +137,21 @@ async def _probe(client, base, key, headers):
         return status
 
 
+def _is_outage(reason: str) -> bool:
+    """A provider outage, not a bad request: 5xx, timeout, connection refused."""
+    return reason.startswith('http_5') or reason in ('timeout', 'offline')
+
+
+def _mark_down(base: str, key: str, reason: str) -> None:
+    """Back off from Nightshift after an outage answer to a completion (run d7963f: its
+    /models probe stayed "ready" while every completion returned 502, so each port of a
+    zone waited out its own retries). The cached probe is set to the failure: for
+    PROBE_TTL_S, generate() and nightshift_ready() skip Nightshift without a call."""
+    identity = (base, hashlib.sha256((key or '').encode()).hexdigest())
+    _probe_cache.clear()
+    _probe_cache[identity] = (time.monotonic(), f'down_{reason}')
+
+
 async def nightshift_ready() -> bool:
     """True when ``generate`` would call Nightshift now: not SAMPLE_MODE, Token Factory
     not active, and the /models probe (cached PROBE_TTL_S) answers."""
@@ -288,6 +303,8 @@ async def generate(prompt, system=None, *, json_mode=False, role='json', run_id=
                         provider = 'nightshift'
                     except _ProviderFailure as exc:
                         reasons.append(f'nightshift: {exc}')
+                        if _is_outage(str(exc)):
+                            _mark_down(base, key, str(exc))
                 else:
                     reasons.append(f'nightshift: {status}')
             if result is None and use_tf:
