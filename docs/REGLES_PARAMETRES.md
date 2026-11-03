@@ -120,6 +120,8 @@ Already in Mongo `settings`: inland, scores, partners, URLs, saturation, Agent. 
 | `formalities.catalog_looks_like_min_coords` | 1 | geometry | Catalogue already recognised + 1 GPS. |
 | `formalities.catalog_lat_hits` | 8 | geometry | SCT-like table (`latitud:`). |
 | `formalities.max_ports_per_zone` | 150 | budget | Anti-hallucination LLM, not a business cap. |
+| `formalities.max_fetch` | 8 | budget | Pages / PDFs fetched per EEZ (official attachments and failed fetches count; depth-2 does not). Was the hidden `_collect_texts(max_fetch=8)`. Interval 4–20. |
+| `formalities.fetch_slots_per_role` | 1 | budget | Slots of `max_fetch` kept for each authority role (customs, immigration, maritime authority, port authority) that has a candidate, per `backend/data/whitelist_sources.json`. Handed out port authority → maritime authority → customs → immigration, never past the cap. Kicks in only when the slots left just cover the roles not yet served, plus one spare slot: the rest follows the current ranking. A role is served only by a source actually kept; a failed, blocked or too-short fetch uses one fetch of the cap, the role stays in deficit and its next candidate is reserved; after 2 failures the role is given up. Canaries lesson (run 20261102-224042-f9be8d): 8 fetches on transport and tax pages, no port authority read. Interval 1–3. |
 | `formalities.inland_far_km` | 30 km | geometry | GPS audit beyond the hinterland. |
 | `formalities.other_water_far_km` | 8 km | geometry | Sea outside the sliver, other EEZ. |
 | `formalities.group_outlier_km` | 300 km | geometry | Coastal cluster of a country listing. |

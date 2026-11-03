@@ -2083,6 +2083,62 @@
       "group": "budget"
     },
     {
+      "id": "formalities.max_fetch",
+      "mode": "formalities",
+      "kind": "budget",
+      "value": 8,
+      "numeric": "int",
+      "unit": "fetches",
+      "interval": [
+        4,
+        20
+      ],
+      "vary": true,
+      "principle": "Plafond de pages / PDF récupérés par ZEE (pièces jointes officielles et échecs compris ; le depth-2 n'en consomme pas). C'est une règle de run, pas une constante cachée : chaque fetch coûte une cascade N1∥N2 (≤ 90 s) puis des lots d'extraction, et la ZEE a 900 s (formalities.zone_timeout_s). 8 = valeur historique de _collect_texts(max_fetch=8). Le plafond garde au moins formalities.fetch_slots_per_role créneau(x) par rôle d'autorité qui a un candidat (backend/data/whitelist_sources.json) ; le reste suit le classement courant. Leçon Canaries (run 20261102-224042-f9be8d) : 15 candidats officiels, les 8 fetchs pris par les pages du ministère des Transports et de l'Agencia Tributaria, Puertos del Estado / Puertos Canarios / Puertos de Tenerife jamais lus.",
+      "cdc": "CAHIER_DES_CHARGES_POE.md §5 (Official source)",
+      "code": [
+        "app/services/poe_pipeline.py:MAX_FETCH",
+        "app/services/poe_pipeline.py:_collect_texts"
+      ],
+      "title": {
+        "fr": "Pages récupérées par ZEE",
+        "en": "Pages fetched per EEZ"
+      },
+      "help": {
+        "fr": "Nombre de pages ou PDF officiels lus pour une ZEE. Plus haut = plus de sources, plus de temps et d'appels d'extraction.",
+        "en": "Official pages or PDFs read for one EEZ. Higher means more sources, more time and more extraction calls."
+      },
+      "group": "budget"
+    },
+    {
+      "id": "formalities.fetch_slots_per_role",
+      "mode": "formalities",
+      "kind": "budget",
+      "value": 1,
+      "numeric": "int",
+      "unit": "fetches",
+      "interval": [
+        1,
+        3
+      ],
+      "vary": true,
+      "principle": "Créneaux de formalities.max_fetch réservés à chaque rôle d'autorité (douane, immigration, autorité maritime, autorité portuaire) qui a un candidat dans la ZEE, d'après backend/data/whitelist_sources.json. Distribués tour par tour dans l'ordre autorité portuaire, autorité maritime, douane, immigration (qui publie la liste des ports d'abord) sans dépasser le plafond. La réserve n'intervient que quand les créneaux restants ne couvrent plus que les rôles pas encore lus : sans pression sur le plafond, l'ordre de fetch est inchangé. Un rôle n'est servi que par une source gardée (texte retenu) : un fetch en échec, bloqué ou trop court consomme un fetch du plafond mais laisse le rôle en déficit, et le candidat suivant du rôle est réservé ; un créneau de marge est gardé pour cet échec, et après 2 échecs le rôle est abandonné pour ne pas prendre les créneaux des autres. Au moins 1 : un rôle avec candidat ne peut pas rester non lu.",
+      "cdc": "CAHIER_DES_CHARGES_POE.md §5 (Official source)",
+      "code": [
+        "app/services/poe_pipeline.py:FETCH_SLOTS_PER_ROLE",
+        "app/services/authority_roles.py:role_quotas"
+      ],
+      "title": {
+        "fr": "Créneaux réservés par rôle d'autorité",
+        "en": "Fetch slots reserved per authority role"
+      },
+      "help": {
+        "fr": "Pages garanties à chaque autorité (douane, immigration, maritime, portuaire) dans le plafond de fetch. Plus haut = plusieurs autorités portuaires lues, moins de place pour le reste du classement.",
+        "en": "Pages guaranteed to each authority (customs, immigration, maritime, port) within the fetch cap. Higher reads several port authorities, leaving less room for the rest of the ranking."
+      },
+      "group": "budget"
+    },
+    {
       "id": "formalities.stale_days",
       "mode": "formalities",
       "kind": "budget",
