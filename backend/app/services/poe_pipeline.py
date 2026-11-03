@@ -1414,6 +1414,7 @@ SOURCE_MAX_CHARS = 120_000  # per fetched source; was a hard 60,000 cut before b
 MAX_FETCH = 8  # pages / PDFs fetched per zone (formalities.max_fetch)
 FETCH_SLOTS_PER_ROLE = 1  # reserved per authority role within MAX_FETCH (formalities.fetch_slots_per_role)
 ROLE_FETCH_RETRIES = 1  # failed fetches of a role re-reserved (and spare slot kept) before it is given up
+AUTHORITY_SEED_FALLBACK = True  # audited authority URL when search leaves a role empty (formalities.authority_seed_fallback)
 _SOURCE_BLOCK_RE = re.compile(r"\n\n(?=\[(?:SOURCE: |SYNTHÈSE DE RECHERCHE))")
 
 
@@ -2433,6 +2434,37 @@ def site_list_page_query(domain: str, zone: dict) -> str:
             f"OR pleasure craft OR first arrival OR porteve detare)")
 
 
+def authority_seed_candidates(zone: dict, candidates: list[dict], blocked: set[str],
+                              pinned_norm: set[str] | None = None, log=None) -> list[dict]:
+    """Audited authority URLs (backend/data/whitelist_sources.json) for each authority
+    role of the zone that no candidate holds after search: added at the end of the
+    official list, after the ranked candidates (never pinned ahead). A URL dropped in Review (``blocked``, normalized) or already pinned is skipped.
+    Off with ``formalities.authority_seed_fallback``. A zone without an audit gets none."""
+    from app.services.authority_roles import audited_urls, missing_roles, zone_authorities
+    auths = zone_authorities(zone)
+    if not auths:
+        return []
+    seen = set(pinned_norm or ())
+    out: list[dict] = []
+    for role in missing_roles(candidates, auths):
+        for u in audited_urls(auths, role):
+            n = _normalize_url(u)
+            if not n or n in seen:
+                continue
+            seen.add(n)
+            if n in blocked:
+                if log:
+                    log(f"source d'autorité écartée ({role} sans candidat, URL retirée en "
+                        f"Review): {u}")
+                continue
+            if log:
+                log(f"source d'autorité ajoutée en fin de liste ({role} sans candidat après "
+                    f"recherche, URL auditée whitelist_sources.json): {u}")
+            out.append({"url": u, "domain": domain_of(u), "authority_role": role,
+                        "authority_seed": True})
+    return out
+
+
 def landing_url_candidates(zone: dict) -> list[dict]:
     """State landing page for THIS mrgid (territories.json) — crawl, do not display."""
     from app.services.territory_ref import curated_landing_urls
@@ -2790,6 +2822,15 @@ async def _find_sources(zone: dict, whitelist: list[str], exceptions: dict, log,
         pinned_norm.add(n)
         pinned.append(c)
     blocked = set(review_blacklist_urls(zone, exceptions))
+    from app.core.run_rules import get_rule
+    audited: list[dict] = []
+    if get_rule("formalities.authority_seed_fallback", AUTHORITY_SEED_FALLBACK):
+        # Ordinary candidates of their role, at the END of the list (not pinned): the
+        # per-role reservation of _collect_texts pulls one in when the cap gets tight.
+        audited = authority_seed_candidates(
+            zone, [c for c in official
+                   if _normalize_url(c.get("url") or "") not in blocked] + pinned,
+            blocked, pinned_norm, log)
     if blocked:
         official = [c for c in official
                     if _normalize_url(c.get("url") or "") not in blocked]
@@ -2804,6 +2845,11 @@ async def _find_sources(zone: dict, whitelist: list[str], exceptions: dict, log,
         log(f"sources épinglées: {[c['url'] for c in pinned]}")
     else:
         official = _best_per_domain(official)
+    if audited:
+        have = {_normalize_url(c.get("url") or "") for c in official}
+        official = official + [c for c in audited if _normalize_url(c["url"]) not in have]
+        await emit(rec, "authority_seed", urls=[c["url"] for c in audited],
+                   roles=sorted({c["authority_role"] for c in audited}))
     strictly_official = bool(official)
     cc_low = (zone.get("iso2") or "").lower()
     if not official:
@@ -2857,7 +2903,22 @@ async def _collect_texts(official: list[dict], log, rec=None, max_fetch: int | N
     seen_urls: set[str] = set()
     fetched = 0
     authorities = zone_authorities(zone) if zone else []
-    quotas = role_quotas(queue, authorities, max_fetch,
+    seed_fallback = bool(authorities) and bool(
+        get_rule("formalities.authority_seed_fallback", AUTHORITY_SEED_FALLBACK))
+    # Audited URLs of each role (whitelist_sources.json) are always in that role's pool:
+    # the reservation reaches them only after the role's own candidates from search.
+    pool: list[dict] = []
+    if seed_fallback:
+        blocked_norm = set(review_blacklist_urls(zone))
+        in_queue = {_normalize_url(q.get("url") or "") for q in queue}
+        for a in authorities:
+            n = _normalize_url(a.get("url") or "")
+            if n and n not in in_queue and n not in blocked_norm:
+                in_queue.add(n)
+                pool.append({"url": a["url"], "domain": domain_of(a["url"]),
+                             "authority_role": a["role"], "authority_seed": True,
+                             "official": True})
+    quotas = role_quotas(queue + pool, authorities, max_fetch,
                          int(get_rule("formalities.fetch_slots_per_role", FETCH_SLOTS_PER_ROLE))
                          ) if authorities else {}
     got: dict[str, int] = {}
@@ -2867,46 +2928,72 @@ async def _collect_texts(official: list[dict], log, rec=None, max_fetch: int | N
         await emit(rec, "fetch_reservation", cap=max_fetch, quotas=quotas)
 
     failed_roles: dict[str, int] = {}
+    failed_hosts: dict[str, set[str]] = {}
     kept: set[str] = set()
     last_url = None
 
+    def _host(url: str) -> str:
+        h = (urlparse(url).hostname or "").lower()
+        return h[4:] if h.startswith("www.") else h
+
     def _deficit_roles() -> list[str]:
-        return [r for r in ROLE_PRIORITY + tuple(sorted(set(quotas) - set(ROLE_PRIORITY)))
-                if got.get(r, 0) < quotas.get(r, 0)]
+        """Roles still owed a slot: those never failed first, in ROLE_PRIORITY order, so a
+        role being retried does not take an untried role's slot."""
+        order = ROLE_PRIORITY + tuple(sorted(set(quotas) - set(ROLE_PRIORITY)))
+        owed = [r for r in order if got.get(r, 0) < quotas.get(r, 0)]
+        return sorted(owed, key=lambda r: failed_roles.get(r, 0) > 0)
 
     def _settle(url: str | None) -> None:
         """After a fetch: a role whose source was not kept (failed, blocked, too short)
-        stays in deficit; past ROLE_FETCH_RETRIES failures it stops being reserved, so
-        one dead authority cannot spend the slots of the others."""
+        stays in deficit and its retry goes to another host; past ROLE_FETCH_RETRIES
+        failures it stops being reserved, so one dead authority cannot spend the slots
+        of the others."""
         if not url or url in kept:
             return
         for r in roles_of(url, authorities):
             if got.get(r, 0) >= quotas.get(r, 0):
                 continue
             failed_roles[r] = failed_roles.get(r, 0) + 1
+            failed_hosts.setdefault(r, set()).add(_host(url))
             if failed_roles[r] > ROLE_FETCH_RETRIES:
                 quotas[r] = got.get(r, 0)
                 log(f"collecte: rôle {r} abandonné après {failed_roles[r]} fetch(s) en échec")
 
-    while queue and fetched < max_fetch:
+    def _pick(role: str) -> dict | None:
+        """Best candidate of ``role``: search's own first, then its audited URLs; never
+        on a host that already failed for this role (a timeout usually repeats)."""
+        tried = {_normalize_url(u) for u in seen_urls}
+        bad = failed_hosts.get(role, set())
+        for src in (queue, pool):
+            for q in src:
+                u = q.get("url") or ""
+                if (u and _normalize_url(u) not in tried and _host(u) not in bad
+                        and role in roles_of(u, authorities)):
+                    src.remove(q)
+                    return q
+        return None
+
+    while fetched < max_fetch:
         _settle(last_url)
         last_url = None
         need = _deficit_roles()
         c = None
         deficit = sum(quotas[r] - got.get(r, 0) for r in need)
-        # One spare slot (ROLE_FETCH_RETRIES) so a failed reserved fetch does not
-        # cost another role its slot.
-        if need and max_fetch - fetched <= deficit + ROLE_FETCH_RETRIES:
+        # One spare slot (ROLE_FETCH_RETRIES) so a failed reserved fetch does not cost
+        # another role its slot. With the queue empty, owed roles still use their pool.
+        if need and (not queue or max_fetch - fetched <= deficit + ROLE_FETCH_RETRIES):
             for r in need:
-                c = next((q for q in queue if (q.get("url") or "") not in seen_urls
-                          and r in roles_of(q.get("url") or "", authorities)), None)
+                c = _pick(r)
                 if c is not None:
-                    queue.remove(c)
-                    log(f"collecte: créneau réservé {r} → {(c.get('url') or '')[:90]}")
-                    await emit(rec, "fetch_reserved", role=r, url=c.get("url"))
+                    log(f"collecte: créneau réservé {r} → {(c.get('url') or '')[:90]}"
+                        + (" (URL auditée)" if c.get("authority_seed") else ""))
+                    await emit(rec, "fetch_reserved", role=r, url=c.get("url"),
+                               audited=bool(c.get("authority_seed")))
                     break
                 quotas[r] = got.get(r, 0)  # no candidate left for this role
         if c is None:
+            if not queue:
+                break
             c = queue.pop(0)
         url = c.get("url") or ""
         if not url or url in seen_urls:

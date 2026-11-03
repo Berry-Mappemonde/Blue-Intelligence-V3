@@ -2122,7 +2122,7 @@
         3
       ],
       "vary": true,
-      "principle": "Créneaux de formalities.max_fetch réservés à chaque rôle d'autorité (douane, immigration, autorité maritime, autorité portuaire) qui a un candidat dans la ZEE, d'après backend/data/whitelist_sources.json. Distribués tour par tour dans l'ordre autorité portuaire, autorité maritime, douane, immigration (qui publie la liste des ports d'abord) sans dépasser le plafond. La réserve n'intervient que quand les créneaux restants ne couvrent plus que les rôles pas encore lus : sans pression sur le plafond, l'ordre de fetch est inchangé. Un rôle n'est servi que par une source gardée (texte retenu) : un fetch en échec, bloqué ou trop court consomme un fetch du plafond mais laisse le rôle en déficit, et le candidat suivant du rôle est réservé ; un créneau de marge est gardé pour cet échec, et après 2 échecs le rôle est abandonné pour ne pas prendre les créneaux des autres. Au moins 1 : un rôle avec candidat ne peut pas rester non lu.",
+      "principle": "Créneaux de formalities.max_fetch réservés à chaque rôle d'autorité (douane, immigration, autorité maritime, autorité portuaire) qui a un candidat dans la ZEE, d'après backend/data/whitelist_sources.json. Distribués tour par tour dans l'ordre autorité portuaire, autorité maritime, douane, immigration (qui publie la liste des ports d'abord) sans dépasser le plafond. La réserve n'intervient que quand les créneaux restants ne couvrent plus que les rôles pas encore lus : sans pression sur le plafond, l'ordre de fetch est inchangé. Un rôle n'est servi que par une source gardée (texte retenu) : un fetch en échec, bloqué ou trop court consomme un fetch du plafond mais laisse le rôle en déficit, et le candidat suivant du rôle est réservé ; un créneau de marge est gardé pour cet échec, un rôle en nouvel essai passe après les rôles pas encore tentés et va sur un autre hôte que celui qui a échoué (un timeout se répète), et après 2 échecs le rôle est abandonné pour ne pas prendre les créneaux des autres. Au moins 1 : un rôle avec candidat ne peut pas rester non lu.",
       "cdc": "CAHIER_DES_CHARGES_POE.md §5 (Official source)",
       "code": [
         "app/services/poe_pipeline.py:FETCH_SLOTS_PER_ROLE",
@@ -2135,6 +2135,30 @@
       "help": {
         "fr": "Pages garanties à chaque autorité (douane, immigration, maritime, portuaire) dans le plafond de fetch. Plus haut = plusieurs autorités portuaires lues, moins de place pour le reste du classement.",
         "en": "Pages guaranteed to each authority (customs, immigration, maritime, port) within the fetch cap. Higher reads several port authorities, leaving less room for the rest of the ranking."
+      },
+      "group": "budget"
+    },
+    {
+      "id": "formalities.authority_seed_fallback",
+      "mode": "formalities",
+      "kind": "budget",
+      "value": true,
+      "unit": "bool",
+      "interval": null,
+      "vary": true,
+      "principle": "Filet des rôles d'autorité (backend/data/whitelist_sources.json). Les URL auditées d'un rôle font toujours partie du vivier de ce rôle : si, après la recherche, un rôle de la ZEE (douane, immigration, autorité maritime, autorité portuaire) n'a aucun candidat officiel, ses URL auditées sont ajoutées en FIN de liste officielle, comme candidats ordinaires (jamais épinglées devant le classement) ; à la collecte, la réservation par rôle (formalities.fetch_slots_per_role) les atteint après les candidats du rôle issus de la recherche. Une URL retirée en Review (blacklist_urls_mrgid) est écartée. Une ZEE sans audit est inchangée. Le plafond formalities.max_fetch reste la loi du run. Éteint : la recherche seule décide, comme avant.",
+      "cdc": "CAHIER_DES_CHARGES_POE.md §5 (Official source)",
+      "code": [
+        "app/services/poe_pipeline.py:authority_seed_candidates",
+        "app/services/poe_pipeline.py:_collect_texts"
+      ],
+      "title": {
+        "fr": "URL auditée si un rôle d'autorité manque",
+        "en": "Audited URL when an authority role is missing"
+      },
+      "help": {
+        "fr": "Ajoute l'URL officielle auditée d'une autorité (douane, immigration, maritime, portuaire) que la recherche n'a pas trouvée, ou qui n'a pas pu être lue.",
+        "en": "Adds the audited official URL of an authority (customs, immigration, maritime, port) that search did not find, or that could not be read."
       },
       "group": "budget"
     },

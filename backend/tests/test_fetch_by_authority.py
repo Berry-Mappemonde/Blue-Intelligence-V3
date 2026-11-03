@@ -152,8 +152,9 @@ def test_role_with_every_candidate_failing_gives_its_slots_back(monkeypatch):
     fail = {h: "timeout" for h in PORT_AUTHORITIES}
     calls, used, logs = _run(monkeypatch, zone=CANARIES, fail=fail)
     assert len(calls) == 8
-    assert len(_hosts(calls) & set(PORT_AUTHORITIES)) == 2
-    assert any("rôle port_authority abandonné" in m for m in logs)
+    pa_calls = [u for u in calls if poe.domain_of(u) in PORT_AUTHORITIES]
+    assert len(pa_calls) == 2  # one retry, then given up
+    assert len(_hosts(pa_calls)) == 2  # the retry went to another host
     auths = ar.zone_authorities(CANARIES)
     assert {r for u in used for r in ar.roles_of(u, auths)} == {
         "customs", "immigration", "maritime_authority"}
@@ -166,7 +167,8 @@ def test_cap_rule_changes_the_number_of_fetches(monkeypatch):
 
 
 def test_no_pressure_keeps_the_ranking_order(monkeypatch):
-    """When the cap holds every candidate the order is unchanged."""
+    """When the cap holds every candidate the ranked order is unchanged; a role the
+    list does not cover (customs here) reads its audited URL after it, with a spare slot."""
     short = RANKED[9:]
 
     async def fake_cascade(url, min_chars=200, log=None):
@@ -177,7 +179,9 @@ def test_no_pressure_keeps_the_ranking_order(monkeypatch):
     monkeypatch.setattr(poe, "extract_cascade", fake_cascade)
     official = [{"url": u, "domain": poe.domain_of(u)} for u in short]
     asyncio.run(poe._collect_texts(official, lambda m: None, zone=CANARIES))
-    assert calls == short
+    assert calls[:len(short)] == short
+    audited = {a["url"] for a in ar.zone_authorities(CANARIES)}
+    assert set(calls[len(short):]) <= audited
 
 
 def test_zone_without_audit_has_no_reservation(monkeypatch):
