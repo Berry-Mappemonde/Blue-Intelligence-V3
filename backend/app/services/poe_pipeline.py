@@ -3696,6 +3696,9 @@ async def deferred_outside_zone(port: dict, port_ev: dict, zone: dict, geom, pre
     return "géocode en cache hors du polygone"
 
 
+LLM_GEOCODE_PORT_TIMEOUT_S = 30.0  # one port's LLM geocode (formalities.llm_geocode_port_timeout_s)
+LLM_GEOCODE_ZONE_BUDGET_S = 180.0  # all of a zone's LLM geocodes (formalities.llm_geocode_zone_budget_s)
+GEOCODE_DEADLINE_RESERVE_S = 120.0  # zone time kept after geocoding: judge (JUDGE_MIN_TIME_S) and writing
 PORT_MERGE_KM = 5.0  # same port, two records: farthest apart they may be (formalities.port_merge_km)
 # Facility words: "Porto da Praia" = "Praia" + a facility. Articles and prepositions are
 # dropped with them ("La marina du Marin" -> "marin").
@@ -3789,6 +3792,101 @@ def merge_same_ports(docs: list[dict], max_km: float = PORT_MERGE_KM
     return out, merges
 
 
+# An island, island group or region of the zone named alone is not a port (run d7963f:
+# Cape Verde's "Santiago", "Fogo", "S. Vicente" were sent to the LLM geocoder for 44 min).
+_AREA_PREFIX = re.compile(r"^(?:ilha|ilhas|isla|islas|ile|iles|isle|island|isola|isole)"
+                          r"(?: (?:de|do|da|dos|das|del|des|du|d|of|di))? ")
+_AREA_SUFFIX = re.compile(r" (?:island|islands|isle|group)$")
+_SAINT_FORMS = ("sao", "san", "santa", "santo", "saint", "sainte", "st")
+_REGION_TYPES = ("region", "island", "autonomous community", "archipelago")
+_AREA_OSM_TYPES = frozenset({"island", "islet", "archipelago", "region", "state", "province",
+                             "county", "administrative"})
+_AREA_GN_CODES = frozenset({"ISL", "ISLS", "ISLET", "ADM1", "ADM2", "ADM3", "ADMD", "RGN"})
+
+
+def _area_key(name: str | None) -> str:
+    key = registry_check.name_key(name)
+    key = _AREA_PREFIX.sub("", key)
+    return _AREA_SUFFIX.sub("", key).strip()
+
+
+def _area_key_forms(name: str | None) -> set[str]:
+    """The name's area key, with a leading "S." spelled out (S. Vicente = São Vicente)."""
+    key = _area_key(name)
+    out = {key} if key else set()
+    head, _, rest = key.partition(" ")
+    if head == "s" and rest:
+        out |= {f"{form} {rest}" for form in _SAINT_FORMS}
+    return out
+
+
+def zone_area_names(zone: dict | None, listing_ports: list[dict] | None = None) -> set[str]:
+    """Area keys of islands, island groups and regions of the zone. No per-zone island
+    table exists, so a name counts only when two independent sources agree:
+      - pycountry subdivisions of region / island type (island groups, autonomous
+        regions) count on their own;
+      - an island the zone's listing names (the qualifier in "Praia (Santiago)", or a bare
+        "other" entry such as "Fogo") counts when it is also a pycountry subdivision of
+        the zone's country, or the "de / do X" part of one ("Ribeira Grande de Santiago",
+        "Santa Catarina do Fogo"). Listing qualifiers alone are not enough: many are
+        ports or alternate names ("Christchurch (Lyttelton)", "Cochin (Kochi)").
+    A known port of the zone (its listing bases, the country's WPI ports) is never an
+    area: "Praia" is a municipality and the port. Zone, territory and country names are
+    not added: a city-state's port carries the zone's name (Gibraltar, Monaco)."""
+    zone = zone or {}
+    iso = (zone.get("iso2") or zone.get("sov_iso2") or "").upper()
+    pyc = registry_check._pycountry()
+    subs = list(pyc.subdivisions.get(country_code=iso) or []) if iso and pyc is not None else []
+    areas = {k for sub in subs if any(t in (sub.type or "").lower() for t in _REGION_TYPES)
+             for k in _area_key_forms(sub.name)}
+    areas |= {re.sub(r"^(?:northern|southern|eastern|western) ", "", k) for k in areas}
+    sub_forms: set[str] = set()
+    for sub in subs:
+        sub_forms |= _area_key_forms(sub.name)
+        for m in re.finditer(r" (?:de|do|da|dos|das|del|di|du) (.+)$", registry_check.name_key(sub.name)):
+            sub_forms |= _area_key_forms(m.group(1))
+    known: set[str] = set()
+    listed: list[str] = []
+    for lp in listing_ports or []:
+        raw = lp.get("name") or ""
+        base = re.sub(r"\(.*?\)", " ", raw).strip()
+        quals = re.findall(r"\(([^)]*)\)", raw)
+        if quals or lp.get("role") == "poe":
+            known |= {_port_name_parts(base)[1], _area_key(base)}
+        listed += quals if quals else ([base] if lp.get("role") == "other" else [])
+    from app.services.wpi_ports import load_wpi_ports
+    countries = {fold_place_name(n) for n in (zone.get("name"), zone.get("geoname"),
+                                              zone.get("sovereign")) if n}
+    for wp in load_wpi_ports().get("ports") or []:
+        if fold_place_name(wp.get("country")) in countries:
+            known |= {_port_name_parts(wp.get("name") or "")[1], _area_key(wp.get("name"))}
+    for q in listed:
+        forms = _area_key_forms(q)
+        if forms & sub_forms and not forms & known:
+            areas |= forms
+    return {k for k in areas if k} - known
+
+
+def is_area_name(name: str | None, area_keys: set[str]) -> bool:
+    """True when the whole name is an island / group / region of the zone (or the zone,
+    its territory or its country): "Santiago", "S. Vicente", "Ilha do Fogo". A port that
+    carries such a name with more ("Praia (Santiago)", "Porto Novo") is not."""
+    plain = re.sub(r"\(.*?\)", " ", name or "")
+    return bool(_area_key_forms(plain) & area_keys) if plain.strip() else False
+
+
+def only_area_hits(geo: dict, name: str | None) -> bool:
+    """The geocoders found the name, and only as an island or a region (OSM place=island,
+    GeoNames ISL / ADM*): an area, not a port. A name with a facility word never is."""
+    if _port_name_parts(name or "")[2]:
+        return False
+    cands = geo.get("candidates") or []
+    if not cands:
+        return False
+    return all((c.get("osm_type") or "").lower() in _AREA_OSM_TYPES
+               or (c.get("geonames_fcode") or "").upper() in _AREA_GN_CODES for c in cands)
+
+
 async def _extract_and_geocode(zone: dict, context: str, used_sources: list[dict], log,
                                rec=None, run=None, catalog_text: str | None = None,
                                settings: dict | None = None,
@@ -3837,11 +3935,16 @@ async def _extract_and_geocode(zone: dict, context: str, used_sources: list[dict
 
     rows = []
     seen_names = set()
+    area_keys = zone_area_names(zone, listing_ports)
     for p in ports:
         norm = normalize_name(p["name"])
         if not norm or norm in seen_names:
             continue
         seen_names.add(norm)
+        if p.get("lat") is None and is_area_name(p["name"], area_keys):
+            log(f"  ⚓ {p['name']} → île / région de la zone, pas un port — écarté avant géocodage")
+            await emit(rec, "geocode", port=p["name"], arbitration="area_name", kept=False)
+            continue
         role = listing_role(p.get("name") or "", listing_ports)
         port_ev = {**p, "listing_role": role}
         empty_geo = {"nominatim": None, "geonames": None, "agree": None,
@@ -3876,6 +3979,11 @@ async def _extract_and_geocode(zone: dict, context: str, used_sources: list[dict
             })
             continue
         geo = await geocode_port_dual(p, zone, log)
+        if only_area_hits(geo, p["name"]):
+            log(f"  ⚓ {p['name']} → les géocodeurs n'y voient qu'une île / région — pas un port, "
+                f"écarté (pas de géocode LLM)")
+            await emit(rec, "geocode", port=p["name"], arbitration="area_hit", kept=False)
+            continue
         cands = []
         for source in ("nominatim", "geonames"):
             coords = geo.get(source)
@@ -3888,13 +3996,40 @@ async def _extract_and_geocode(zone: dict, context: str, used_sources: list[dict
         rows.append({"port": p, "norm": norm, "geo": geo, "hint": None,
                      "cands": cands, "port_ev": port_ev})
 
+    # LLM geocode budget (run d7963f: Cape Verde took 3,960 s for an 1,800 s zone, ~44 min
+    # in llm_geocode_port during a Nightshift outage): each port gets at most
+    # formalities.llm_geocode_port_timeout_s, the zone at most
+    # formalities.llm_geocode_zone_budget_s, and never past the zone deadline minus
+    # GEOCODE_DEADLINE_RESERVE_S. A port out of time stays unplaced, logged; the zone goes on.
+    from app.core.run_rules import get_rule
+    port_timeout = float(get_rule("formalities.llm_geocode_port_timeout_s",
+                                  LLM_GEOCODE_PORT_TIMEOUT_S))
+    zone_budget = float(get_rule("formalities.llm_geocode_zone_budget_s",
+                                 LLM_GEOCODE_ZONE_BUDGET_S))
+    loop = asyncio.get_running_loop()
+    geo_t0 = loop.time()
+    bound = zone_deadline.get()
+    out_of_time: list[str] = []
+    timed_out: list[str] = []
     for row in rows:
         if row.get("hint") or row["cands"]:
             continue
         if row["geo"].get("nominatim") or row["geo"].get("geonames"):
             continue
-        xy = await llm_geocode_port(
-            row["port"], zone, settings=settings, log=log)
+        now = loop.time()
+        left = min(port_timeout, zone_budget - (now - geo_t0),
+                   (bound[0] - now - GEOCODE_DEADLINE_RESERVE_S) if bound else float("inf"))
+        if left <= 0.05:
+            out_of_time.append(row["port"]["name"])
+            continue
+        try:
+            xy = await asyncio.wait_for(
+                llm_geocode_port(row["port"], zone, settings=settings, log=log), timeout=left)
+        except asyncio.TimeoutError:
+            timed_out.append(row["port"]["name"])
+            log(f"  ⚓ {row['port']['name']} → géocode LLM: pas de réponse en {left:.0f} s, "
+                f"non placé")
+            continue
         if not xy:
             continue
         inland = inland_exception_flags(
@@ -3904,6 +4039,18 @@ async def _extract_and_geocode(zone: dict, context: str, used_sources: list[dict
             xy[0], xy[1], "llm", geom, prepared, inland))
         await emit(rec, "geocode_llm", port=row["port"]["name"],
                    lat=xy[0], lon=xy[1])
+
+    if out_of_time or timed_out:
+        spent = round(loop.time() - geo_t0, 1)
+        log(f"géocode LLM: budget de zone ({zone_budget:.0f} s) ou délai de zone atteint après "
+            f"{spent} s — {len(timed_out)} port(s) sans réponse, {len(out_of_time)} non tenté(s), "
+            f"laissés non placés: {', '.join((timed_out + out_of_time)[:8])}")
+        await emit(rec, "geocode_budget", spent_s=spent, port_timeout_s=port_timeout,
+                   zone_budget_s=zone_budget, timed_out=timed_out, not_tried=out_of_time)
+        state = _zone_extract.get()
+        if state is not None:
+            state["geocode_budget"] = {"spent_s": spent, "timed_out": timed_out,
+                                       "not_tried": out_of_time}
 
     disagreements = [
         r for r in rows
@@ -4099,6 +4246,8 @@ async def _persist_zone_run(db, zone: dict, docs: list[dict], status: str,
         "extraction_gaps": gaps or None,
         # NemotronJudge outcome for the zone (_judge_zone_run), or None when it did not run.
         "judge": (_zone_extract.get() or {}).get("judge"),
+        # Ports the LLM geocode budget left unplaced (_extract_and_geocode), or None.
+        "geocode_budget": (_zone_extract.get() or {}).get("geocode_budget"),
     }
     await db[run.zones_coll].update_one(
         {"run_id": run.run_id, "mrgid": mrgid}, {"$set": zone_doc}, upsert=True)

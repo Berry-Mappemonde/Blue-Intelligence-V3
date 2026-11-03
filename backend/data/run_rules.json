@@ -2276,6 +2276,62 @@
       "group": "identity"
     },
     {
+      "id": "formalities.llm_geocode_port_timeout_s",
+      "mode": "formalities",
+      "kind": "budget",
+      "value": 30.0,
+      "numeric": "float",
+      "unit": "s",
+      "interval": [
+        5.0,
+        120.0
+      ],
+      "vary": true,
+      "principle": "Temps maximal du géocode LLM d'un port (llm_geocode_port, après Nominatim et GeoNames muets). Au-delà, le port reste non placé (journal, événement geocode_budget) et la ZEE continue. Leçon run 20261103-181506-d7963f : panne Nightshift (502), llm_geocode_port a pris ~44 min sur des noms d'îles (24 min sur « Santiago »), Cap-Vert 3 960 s pour une ZEE de 1 800 s. 30 s = une réponse Nightshift normale (quelques secondes) avec marge ; une chaîne NIM qui réessaie ne tient pas dedans, c'est voulu.",
+      "cdc": "PLAN-V3.md §4 P0-3",
+      "code": [
+        "app/services/poe_pipeline.py:LLM_GEOCODE_PORT_TIMEOUT_S",
+        "app/services/poe_pipeline.py:_extract_and_geocode"
+      ],
+      "title": {
+        "fr": "Géocode LLM : délai par port",
+        "en": "LLM geocode: timeout per port"
+      },
+      "help": {
+        "fr": "Secondes laissées au géocode LLM d'un port. Au-delà, le port reste sans GPS.",
+        "en": "Seconds given to one port's LLM geocode. Past it, the port stays without GPS."
+      },
+      "group": "budget"
+    },
+    {
+      "id": "formalities.llm_geocode_zone_budget_s",
+      "mode": "formalities",
+      "kind": "budget",
+      "value": 180.0,
+      "numeric": "float",
+      "unit": "s",
+      "interval": [
+        30.0,
+        900.0
+      ],
+      "vary": true,
+      "principle": "Temps total des géocodes LLM d'une ZEE. Les ports suivants ne sont pas tentés et restent non placés. Le géocodage s'arrête aussi au délai de la ZEE moins GEOCODE_DEADLINE_RESERVE_S (120 s, pour le juge et l'écriture). 180 s = six ports à plein délai, ou des dizaines à une réponse normale ; la réserve de 300 s (formalities.extract_deadline_reserve_s) couvre géocodage et écriture après l'extraction.",
+      "cdc": "PLAN-V3.md §4 P0-3",
+      "code": [
+        "app/services/poe_pipeline.py:LLM_GEOCODE_ZONE_BUDGET_S",
+        "app/services/poe_pipeline.py:_extract_and_geocode"
+      ],
+      "title": {
+        "fr": "Géocode LLM : budget par ZEE",
+        "en": "LLM geocode: budget per EEZ"
+      },
+      "help": {
+        "fr": "Secondes de géocode LLM pour toute une ZEE. Au-delà, les ports restants ne sont pas tentés.",
+        "en": "Seconds of LLM geocoding for a whole EEZ. Past it, the remaining ports are not tried."
+      },
+      "group": "budget"
+    },
+    {
       "id": "formalities.stale_days",
       "mode": "formalities",
       "kind": "budget",
