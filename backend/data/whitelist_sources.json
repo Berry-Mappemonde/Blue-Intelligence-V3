@@ -42,7 +42,8 @@
           "added": true,
           "source": "https://www.govt.lc/news/slaspa-online-appointment-system"
         }
-      ]
+      ],
+      "notes": "stlucia.org (Saint Lucia Tourism Authority, a statutory body) is whitelisted too, approved by Clément: its navigation-clearance page (https://www.stlucia.org/en/experiences/yachting-sailing/navigation-clearance) lists the ports of entry. Run 20261103-004818-e80c7c found it through Tavily and dropped it as not whitelisted. It is not an arrival authority, so it is not listed above."
     },
     "8362": {
       "zone": "Cape Verde",

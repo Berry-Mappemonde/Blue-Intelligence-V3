@@ -78,7 +78,7 @@ no customs post) is listed under "no authority" with the official text that says
 | 5688 | Portugal | Portugal | PT | `gov.pt`, `portaldasfinancas.gov.pt` | not checked |  |
 | 8343 | Republic of Mauritius | Republic of Mauritius | MU | `gov.mu` | not checked |  |
 | 8413 | Saint Kitts and Nevis | Saint Kitts and Nevis | KN | `gov.kn` | not checked |  |
-| 8416 | Saint Lucia | Saint Lucia | LC | `gov.lc`, `govt.lc`, `rslpf.com`, `slaspa.com` | no | audited; was missing immigration, port authority |
+| 8416 | Saint Lucia | Saint Lucia | LC | `gov.lc`, `govt.lc`, `rslpf.com`, `slaspa.com`, `stlucia.org` | no | audited; was missing immigration, port authority |
 | 8421 | Saint Vincent and the Grenadines | Saint Vincent and the Grenadines | VC | `gov.vc` | not checked |  |
 | 8445 | Samoa | Samoa | WS | `gov.ws` | not checked |  |
 | 8337 | Seychelles | Seychelles | SC | `gov.sc` | not checked |  |
@@ -107,6 +107,8 @@ no customs post) is listed under "no authority" with the official text that says
 | immigration | Immigration Department, Royal Saint Lucia Police Force | `rslpf.com` | yes | https://www.rslpf.com/ | https://externalaffairs.gov.lc/visiting-saint-lucia/ |
 | immigration | Government of Saint Lucia, Online Immigration & Customs Portal | `govt.lc` | yes | https://travelslu.govt.lc/en | https://www.govt.lc/news/saint-lucia-introduces-a-more-seamless-entry-process-with-online-ed-form |
 | port authority | Saint Lucia Air and Sea Ports Authority (SLASPA), incl. Maritime Affairs | `slaspa.com` | yes | https://storage.slaspa.com/contentPages/view/maritime-affairs | https://www.govt.lc/news/slaspa-online-appointment-system |
+
+Notes: stlucia.org (Saint Lucia Tourism Authority, a statutory body) is whitelisted too, approved by Clément: its navigation-clearance page (https://www.stlucia.org/en/experiences/yachting-sailing/navigation-clearance) lists the ports of entry. Run 20261103-004818-e80c7c found it through Tavily and dropped it as not whitelisted. It is not an arrival authority, so it is not listed above.
 
 ### Cape Verde (8362, whitelist key `CV`)
 
