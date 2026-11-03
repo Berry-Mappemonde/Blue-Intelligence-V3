@@ -1414,6 +1414,7 @@ SOURCE_MAX_CHARS = 120_000  # per fetched source; was a hard 60,000 cut before b
 MAX_FETCH = 8  # pages / PDFs fetched per zone (formalities.max_fetch)
 FETCH_SLOTS_PER_ROLE = 1  # reserved per authority role within MAX_FETCH (formalities.fetch_slots_per_role)
 ROLE_FETCH_RETRIES = 1  # failed fetches of a role re-reserved (and spare slot kept) before it is given up
+AUTHORITY_SEED_FALLBACK = True  # audited authority URL when search leaves a role empty (formalities.authority_seed_fallback)
 _SOURCE_BLOCK_RE = re.compile(r"\n\n(?=\[(?:SOURCE: |SYNTHÈSE DE RECHERCHE))")
 
 
@@ -2433,6 +2434,37 @@ def site_list_page_query(domain: str, zone: dict) -> str:
             f"OR pleasure craft OR first arrival OR porteve detare)")
 
 
+def authority_seed_candidates(zone: dict, candidates: list[dict], blocked: set[str],
+                              pinned_norm: set[str] | None = None, log=None) -> list[dict]:
+    """Audited authority URLs (backend/data/whitelist_sources.json) for each authority
+    role of the zone that no candidate holds after search: pinned after the existing
+    seeds. A URL dropped in Review (``blocked``, normalized) or already pinned is skipped.
+    Off with ``formalities.authority_seed_fallback``. A zone without an audit gets none."""
+    from app.services.authority_roles import audited_urls, missing_roles, zone_authorities
+    auths = zone_authorities(zone)
+    if not auths:
+        return []
+    seen = set(pinned_norm or ())
+    out: list[dict] = []
+    for role in missing_roles(candidates, auths):
+        for u in audited_urls(auths, role):
+            n = _normalize_url(u)
+            if not n or n in seen:
+                continue
+            seen.add(n)
+            if n in blocked:
+                if log:
+                    log(f"source d'autorité écartée ({role} sans candidat, URL retirée en "
+                        f"Review): {u}")
+                continue
+            if log:
+                log(f"source d'autorité ajoutée ({role} sans candidat après recherche, "
+                    f"URL auditée whitelist_sources.json): {u}")
+            out.append({"url": u, "domain": domain_of(u), "authority_role": role,
+                        "authority_seed": True})
+    return out
+
+
 def landing_url_candidates(zone: dict) -> list[dict]:
     """State landing page for THIS mrgid (territories.json) — crawl, do not display."""
     from app.services.territory_ref import curated_landing_urls
@@ -2790,6 +2822,18 @@ async def _find_sources(zone: dict, whitelist: list[str], exceptions: dict, log,
         pinned_norm.add(n)
         pinned.append(c)
     blocked = set(review_blacklist_urls(zone, exceptions))
+    from app.core.run_rules import get_rule
+    if get_rule("formalities.authority_seed_fallback", AUTHORITY_SEED_FALLBACK):
+        audited = authority_seed_candidates(
+            zone, [c for c in official
+                   if _normalize_url(c.get("url") or "") not in blocked] + pinned,
+            blocked, pinned_norm, log)
+        for c in audited:
+            pinned_norm.add(_normalize_url(c["url"]))
+            pinned.append(c)
+        if audited:
+            await emit(rec, "authority_seed", urls=[c["url"] for c in audited],
+                       roles=sorted({c["authority_role"] for c in audited}))
     if blocked:
         official = [c for c in official
                     if _normalize_url(c.get("url") or "") not in blocked]
@@ -2848,7 +2892,8 @@ async def _collect_texts(official: list[dict], log, rec=None, max_fetch: int | N
     8 fetches on transport and tax pages, no port authority read). A role counts as
     served only once one of its sources is kept in ``texts``."""
     from app.core.run_rules import get_rule
-    from app.services.authority_roles import ROLE_PRIORITY, role_quotas, roles_of, zone_authorities
+    from app.services.authority_roles import (ROLE_PRIORITY, audited_urls, role_quotas, roles_of,
+                                              zone_authorities)
     source_max = int(get_rule("formalities.source_max_chars", SOURCE_MAX_CHARS))
     if max_fetch is None:
         max_fetch = int(get_rule("formalities.max_fetch", MAX_FETCH))
@@ -2868,11 +2913,18 @@ async def _collect_texts(official: list[dict], log, rec=None, max_fetch: int | N
 
     failed_roles: dict[str, int] = {}
     kept: set[str] = set()
+    audited_tried: set[str] = set()
+    seed_fallback = bool(authorities) and bool(
+        get_rule("formalities.authority_seed_fallback", AUTHORITY_SEED_FALLBACK))
+    blocked_norm = set(review_blacklist_urls(zone)) if seed_fallback else set()
     last_url = None
 
     def _deficit_roles() -> list[str]:
-        return [r for r in ROLE_PRIORITY + tuple(sorted(set(quotas) - set(ROLE_PRIORITY)))
-                if got.get(r, 0) < quotas.get(r, 0)]
+        """Roles still owed a slot: those never failed first, in ROLE_PRIORITY order, so a
+        role being retried (or tried on its audited URL) does not take an untried role's slot."""
+        order = ROLE_PRIORITY + tuple(sorted(set(quotas) - set(ROLE_PRIORITY)))
+        owed = [r for r in order if got.get(r, 0) < quotas.get(r, 0)]
+        return sorted(owed, key=lambda r: failed_roles.get(r, 0) > 0)
 
     def _settle(url: str | None) -> None:
         """After a fetch: a role whose source was not kept (failed, blocked, too short)
@@ -2887,10 +2939,30 @@ async def _collect_texts(official: list[dict], log, rec=None, max_fetch: int | N
             if failed_roles[r] > ROLE_FETCH_RETRIES:
                 quotas[r] = got.get(r, 0)
                 log(f"collecte: rôle {r} abandonné après {failed_roles[r]} fetch(s) en échec")
+                _audited_fallback(r)
 
-    while queue and fetched < max_fetch:
-        _settle(last_url)
+    def _audited_fallback(role: str) -> None:
+        """Once per role given up: its audited URL (whitelist_sources.json), if it was
+        not attempted, goes to the queue head with one reserved slot."""
+        if role in audited_tried or not seed_fallback or fetched >= max_fetch:
+            return
+        audited_tried.add(role)
+        tried = {_normalize_url(u) for u in seen_urls}
+        for u in audited_urls(authorities, role):
+            n = _normalize_url(u)
+            if not n or n in tried or n in blocked_norm:
+                continue
+            queue.insert(0, {"url": u, "domain": domain_of(u), "authority_role": role,
+                             "authority_seed": True, "official": True})
+            quotas[role] = got.get(role, 0) + 1
+            log(f"collecte: rôle {role} abandonné — URL auditée tentée une fois: {u}")
+            return
+
+    while fetched < max_fetch:
+        _settle(last_url)  # may put a given-up role's audited URL in the queue
         last_url = None
+        if not queue:
+            break
         need = _deficit_roles()
         c = None
         deficit = sum(quotas[r] - got.get(r, 0) for r in need)
@@ -2984,6 +3056,7 @@ async def _collect_texts(official: list[dict], log, rec=None, max_fetch: int | N
                                  "level": res.get("level")})
             await emit(rec, "source_used", url=url, domain=c.get("domain"),
                        chars=len(text or ""))
+    _settle(last_url)  # the last fetch too: a role given up there is logged
     return texts, hashes, used_sources, excerpts
 
 

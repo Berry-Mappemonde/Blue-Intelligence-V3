@@ -77,8 +77,27 @@ def zone_authorities(zone: dict | None) -> list[dict]:
     for a in (rec or {}).get("authorities") or []:
         role, key = a.get("role"), _match_key(a)
         if role and key:
-            out.append({"role": role, "key": key})
+            out.append({"role": role, "key": key, "url": a.get("url") or "",
+                        "name": a.get("name") or ""})
     return out
+
+
+def audited_urls(authorities: list[dict], role: str) -> list[str]:
+    """The audited official URLs of one role, in whitelist_sources.json order."""
+    out: list[str] = []
+    for a in authorities:
+        u = a.get("url") or ""
+        if a.get("role") == role and u and u not in out:
+            out.append(u)
+    return out
+
+
+def missing_roles(candidates: list[dict], authorities: list[dict]) -> list[str]:
+    """Roles of the zone (ROLE_PRIORITY order) that no candidate URL holds."""
+    held = {r for c in candidates or [] for r in roles_of(c.get("url") or "", authorities)}
+    roles = list(dict.fromkeys(a["role"] for a in authorities))
+    order = [r for r in ROLE_PRIORITY if r in roles] + sorted(r for r in roles if r not in ROLE_PRIORITY)
+    return [r for r in order if r not in held]
 
 
 def roles_of(url: str, authorities: list[dict]) -> set[str]:
