@@ -2248,6 +2248,34 @@
       "group": "budget"
     },
     {
+      "id": "formalities.port_merge_km",
+      "mode": "formalities",
+      "kind": "geometrie",
+      "value": 5.0,
+      "numeric": "float",
+      "unit": "km",
+      "interval": [
+        1.0,
+        15.0
+      ],
+      "vary": true,
+      "principle": "Deux fiches d'un même port (même nom à la ponctuation près, ou l'un = l'autre + un mot d'équipement : « Praia » / « Porto da Praia », « Le Marin » / « La marina du Marin ») sont fusionnées si elles sont à moins de cette distance (ou si l'une n'est pas placée). Leçons runs f3993a / 608d85 : « Soufriere Bay » / « Soufrière » à 4,7 km, « Le Marin » / « La marina du Marin » à 0,6 km. 5 km = un port et son bourg ou sa baie ; au-delà, deux lieux distincts portent le même nom. Deux équipements différents d'une même commune ne fusionnent jamais, même sur le point de la commune (Baie des Tourelles, aire de carénage / Étang Z'Abricot, marina) : le nom propre diffère. La fiche gardée est celle qui a la meilleure preuve et le meilleur niveau (C0–C4). Distinct de shared.dedup_dist_km (500 m, même site d'action).",
+      "cdc": "CAHIER_DES_CHARGES_POE.md §17",
+      "code": [
+        "app/services/poe_pipeline.py:PORT_MERGE_KM",
+        "app/services/poe_pipeline.py:merge_same_ports"
+      ],
+      "title": {
+        "fr": "Fusion d'un même port (distance max)",
+        "en": "Same-port merge (max distance)"
+      },
+      "help": {
+        "fr": "Deux fiches du même port (« Praia » et « Porto da Praia ») sont fusionnées jusqu'à cette distance. Plus haut = plus de fusions.",
+        "en": "Two records of the same port (“Praia” and “Porto da Praia”) are merged up to this distance. Higher merges more."
+      },
+      "group": "identity"
+    },
+    {
       "id": "formalities.stale_days",
       "mode": "formalities",
       "kind": "budget",

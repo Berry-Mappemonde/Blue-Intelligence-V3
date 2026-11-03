@@ -703,9 +703,13 @@ def test_attachments_beat_remaining_serp_queue(monkeypatch):
     ]
 
     async def fake_cascade(url, min_chars=200, log=None):
-        if url in (liste, carte):
+        if url == liste:
             return {"text": "1.- Port Alpha latitude: 46.1 longitude: -1.1\n" * 8,
                     "html": "", "md5": "p", "level": "N1", "blocked": False}
+        if url == carte:
+            # Two different documents (the list, the PPF map): content dedupe keeps both.
+            return {"text": "Points de passage frontaliers maritimes: Port Alpha, Port Bravo.\n" * 8,
+                    "html": "", "md5": "c", "level": "N1", "blocked": False}
         if url == landing:
             return {"text": "Formalités plaisance. " * 40, "html": html,
                     "md5": "h", "level": "N1", "blocked": False}
