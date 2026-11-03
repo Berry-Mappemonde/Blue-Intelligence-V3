@@ -2191,6 +2191,63 @@
       "group": "budget"
     },
     {
+      "id": "formalities.search_hint_queries_max",
+      "mode": "formalities",
+      "kind": "budget",
+      "value": 5,
+      "numeric": "int",
+      "unit": "queries",
+      "interval": [
+        3,
+        10
+      ],
+      "vary": true,
+      "principle": "Requêtes épinglées par ZEE (search_hint_queries : indices par défaut dans chaque langue de zone_search_languages + search_hints de poe_exceptions.json), envoyées à chaque moteur. 5 = la coupe historique [:5] : deux indices locaux + deux indices de la langue du souverain + l'indice légal EN tiennent. Plus haut = plus de requêtes par ZEE (voir la ligne « volume de recherche » du journal).",
+      "cdc": "CAHIER_DES_CHARGES_POE.md §5 (Official source)",
+      "code": [
+        "app/services/poe_pipeline.py:SEARCH_HINT_QUERIES_MAX",
+        "app/services/poe_pipeline.py:search_hint_queries"
+      ],
+      "title": {
+        "fr": "Requêtes épinglées par ZEE",
+        "en": "Pinned queries per EEZ"
+      },
+      "help": {
+        "fr": "Nombre d'indices de recherche (lois, listes) envoyés pour une ZEE. Plus haut = plus de requêtes.",
+        "en": "Number of search hints (acts, lists) sent for one EEZ. Higher means more queries."
+      },
+      "group": "budget"
+    },
+    {
+      "id": "formalities.site_search_domains",
+      "mode": "formalities",
+      "kind": "budget",
+      "value": 3,
+      "numeric": "int",
+      "unit": "domains",
+      "interval": [
+        1,
+        6
+      ],
+      "vary": true,
+      "principle": "Domaines interrogés en site: (PDF puis page) quand la liste n'est pas encore trouvée : les premiers domaines officiels de la ZEE (coupe historique domains[:3]) et, pour un territoire d'outre-mer, autant de domaines de l'État souverain (sovereign_search_domains : .mq + gouv.fr, .vg + gov.uk, .pr/.vi + .gov…). sovereign_runs_entry met les domaines du souverain en tête. Recherche seulement : la whitelist et never_attach_to_sovereign ne changent pas. Chaque domaine = une requête par moteur et par saut.",
+      "cdc": "CAHIER_DES_CHARGES_POE.md §5 (Official source)",
+      "code": [
+        "app/services/poe_pipeline.py:SITE_SEARCH_DOMAINS_MAX",
+        "app/services/poe_pipeline.py:_site_hops",
+        "app/services/poe_pipeline.py:sovereign_search_domains"
+      ],
+      "title": {
+        "fr": "Domaines par saut site:",
+        "en": "Domains per site: hop"
+      },
+      "help": {
+        "fr": "Domaines officiels (et domaines du souverain pour un territoire d'outre-mer) cherchés avec site:. Plus haut = plus de requêtes.",
+        "en": "Official domains (and the sovereign's for an overseas territory) searched with site:. Higher means more queries."
+      },
+      "group": "budget"
+    },
+    {
       "id": "formalities.stale_days",
       "mode": "formalities",
       "kind": "budget",
