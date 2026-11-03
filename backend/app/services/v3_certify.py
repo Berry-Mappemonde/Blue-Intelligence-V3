@@ -55,9 +55,9 @@ def is_official(url: str, whitelist: Sequence[str] | None) -> bool:
     """
     if not isinstance(url, str) or not url.strip() or not whitelist:
         return False
-    from app.services.poe_pipeline import url_allowed
+    from app.agents.evaluator import is_official_source
 
-    return url_allowed(url, list(whitelist))
+    return is_official_source([url], list(whitelist))
 
 
 def _evidence(entity: dict) -> list[dict]:

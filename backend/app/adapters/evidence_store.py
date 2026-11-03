@@ -46,17 +46,20 @@ def sha256_text(text: str) -> str:
 
 
 def build_records(mrgid: int | None, port_names: list[str], documents: list[dict],
-                  places: tuple = ()) -> list[dict]:
+                  places: tuple = (), whitelist: list[str] | None = None) -> list[dict]:
     """Evidence records for each port name from official documents.
 
     documents: [{url, text, sha256, fetched_at, extract_level}], where sha256 is the hash of
     the page's full fetched text (text may be a section of it). Only official URLs count;
     each port keeps its closest match per URL, MAX_PER_PORT URLs at most. ``places``: the
-    zone's own names (registry_check.zone_names), never a port-name variant.
+    zone's own names (registry_check.zone_names), never a port-name variant. ``whitelist``:
+    the zone's PoE whitelist, which decides "official" (is_official_source); without it,
+    the naming heuristic.
     """
     if mrgid is None:
         return []
-    official = [d for d in documents if d.get("text") and is_official_source([d.get("url") or ""])]
+    official = [d for d in documents
+                if d.get("text") and is_official_source([d.get("url") or ""], whitelist)]
     records = []
     for name in dict.fromkeys(n for n in port_names if n):
         variants = registry_check.grounding_variants(name, places=places)

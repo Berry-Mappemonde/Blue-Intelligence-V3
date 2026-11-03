@@ -1247,11 +1247,13 @@ def zone_whitelist(zone: dict | None, exceptions: dict | None = None) -> list[st
 
 
 def registry_whitelist(zone: dict | None) -> list[str] | None:
-    """Whitelist registry_check uses for "official": the polygon's own for a curated
-    territory, None (naming heuristic, unchanged) for any other zone."""
+    """Whitelist registry_check uses for "official": the zone's PoE whitelist, the same
+    one the gatekeeper, the evidence store, the judge and the certification read (one
+    definition, is_official_source). None (naming heuristic) only when the zone has
+    neither a curated territory nor a country to build one from."""
     from app.services.territory_ref import territory_for_mrgid
     zone = zone or {}
-    if not territory_for_mrgid(zone.get("mrgid")):
+    if not (territory_for_mrgid(zone.get("mrgid")) or zone.get("iso2") or zone.get("sov_iso2")):
         return None
     return zone_whitelist(zone)
 
@@ -1613,8 +1615,8 @@ async def extract_ports_llm(context: str, zone: dict, log, rec=None,
                             settings: dict | None = None) -> list[dict]:
     """Extract (see ``_extract_ports_core``; long raw text in batches), then cross-reference Zetaris.
 
-    For a polygon curated in territories.json, official evidence is scoped to the
-    polygon's whitelist (``registry_whitelist``); other zones keep the naming heuristic."""
+    Official evidence is scoped to the zone's whitelist (``registry_whitelist``), the
+    same one the gatekeeper and the certification read."""
     ports = await _extract_ports_core(context, zone, log, rec=rec,
                                       catalog_text=catalog_text, settings=settings)
     run_id = _pipeline_run_id(rec, zone)
@@ -4027,14 +4029,16 @@ def certify_texts(raw: str | None, used_sources: list[dict]) -> list[dict]:
     return [{"url": d.get("url"), "text": d.get("text")} for d in docs if d.get("text")]
 
 
-def judge_texts(zone: dict, docs: list[dict], raw: str, used_sources: list[dict]) -> list[dict]:
+def judge_texts(zone: dict, docs: list[dict], raw: str, used_sources: list[dict],
+                whitelist: list[str] | None = None) -> list[dict]:
     """[{url, text}] for the judge: the official snippets this zone already fetched
-    (evidence_store.build_records on the collected text), once each, as poe_judge reads them."""
+    (evidence_store.build_records on the collected text), once each, as poe_judge reads them.
+    ``whitelist``: the zone's PoE whitelist, which decides "official" (is_official_source)."""
     from app.agents import poe_judge
     records = evidence_store.build_records(
         zone.get("mrgid"), [d.get("name") for d in docs or []],
         evidence_store.documents_from_context(raw, used_sources),
-        places=registry_check.zone_names(zone))
+        places=registry_check.zone_names(zone), whitelist=whitelist)
     out, seen = [], set()
     for r in records:
         key = (r.get("url"), r.get("snippet"))
@@ -4054,15 +4058,17 @@ def _take_one_call_quietly() -> bool:
     return granted
 
 
-def has_official_text(raw: str, used_sources: list[dict]) -> bool:
+def has_official_text(raw: str, used_sources: list[dict],
+                      whitelist: list[str] | None = None) -> bool:
     """True when the collected text holds at least one official source block, the input
     the judge reads later (same filter as evidence_store.build_records)."""
     from app.agents.evaluator import is_official_source
-    return any(d.get("text") and is_official_source([d.get("url") or ""])
+    return any(d.get("text") and is_official_source([d.get("url") or ""], whitelist)
                for d in evidence_store.documents_from_context(raw, used_sources))
 
 
-def _reserve_judge_call(raw: str, used_sources: list[dict], log) -> bool:
+def _reserve_judge_call(raw: str, used_sources: list[dict], log,
+                        whitelist: list[str] | None = None) -> bool:
     """Run mode, before extraction: set one call of the zone's share aside for the judge,
     so the readers can never use it. Only when the judge would run (rule on, not
     SAMPLE_MODE) and the zone has official text. The call is counted as used; the judge
@@ -4077,7 +4083,7 @@ def _reserve_judge_call(raw: str, used_sources: list[dict], log) -> bool:
         return False
     if (os.environ.get("SAMPLE_MODE") or "").strip().lower() == "true":
         return False
-    if not has_official_text(raw, used_sources):
+    if not has_official_text(raw, used_sources, whitelist):
         return False
     if not _take_one_call_quietly():
         log("juge Nemotron: aucun appel libre à réserver dans la part de la ZEE")
@@ -4151,7 +4157,7 @@ async def _judge_zone_run(zone: dict, docs: list[dict], raw: str, used_sources: 
         return done(summary)
 
     try:
-        texts = await asyncio.to_thread(judge_texts, zone, docs, raw, used_sources)
+        texts = await asyncio.to_thread(judge_texts, zone, docs, raw, used_sources, whitelist)
     except Exception as e:  # noqa: BLE001 — the judge is advisory, the zone must finish
         texts = []
         log(f"juge Nemotron: extraits non construits ({type(e).__name__})")
@@ -4185,7 +4191,8 @@ async def _judge_zone_run(zone: dict, docs: list[dict], raw: str, used_sources: 
 
 
 async def _store_evidence(db, zone: dict, docs: list[dict], raw: str,
-                          used_sources: list[dict], log, rec=None, run=None) -> int:
+                          used_sources: list[dict], log, rec=None, run=None,
+                          whitelist: list[str] | None = None) -> int:
     """Build evidence records from the collected official text and store them; never fails.
 
     In run mode the records go to the run-scoped ``poe_run_evidence`` with the run_id,
@@ -4195,7 +4202,7 @@ async def _store_evidence(db, zone: dict, docs: list[dict], raw: str,
         records = await asyncio.to_thread(lambda: evidence_store.build_records(
             zone.get("mrgid"), [d.get("name") for d in docs or []],
             evidence_store.documents_from_context(raw, used_sources),
-            places=registry_check.zone_names(zone)))
+            places=registry_check.zone_names(zone), whitelist=whitelist))
         stored = await evidence_store.store(db, records, run_id=run_id)
     except Exception as e:  # noqa: BLE001 — evidence is optional, generation must finish
         log(f"evidence: non stockée ({type(e).__name__}: {str(e)[:100]})")
@@ -4350,7 +4357,7 @@ async def generate_zone_poe(db, mrgid: int, logger=None, force: bool = False,
                    catalog_n=len(raw_catalog))
 
         # Run mode: the judge's call is set aside before the readers can use the share.
-        if run is not None and _reserve_judge_call(raw, used_sources, log):
+        if run is not None and _reserve_judge_call(raw, used_sources, log, whitelist):
             await emit(rec, "judge_call_reserved")
 
         # 4. Extraction + geocoding + spatial validation
@@ -4393,7 +4400,8 @@ async def generate_zone_poe(db, mrgid: int, logger=None, force: bool = False,
 
         # Official evidence records from the fetched text (never model output), stored for
         # the run pipeline and /api/poe/verify, which read ports from Zetaris.
-        await _store_evidence(db, zone, docs, raw, used_sources, log, rec, run=run)
+        await _store_evidence(db, zone, docs, raw, used_sources, log, rec, run=run,
+                              whitelist=whitelist)
 
         # 5. Write: confidence lives on each port, no longer a zone buffer.
         status = "ia" if docs else "erreur"
