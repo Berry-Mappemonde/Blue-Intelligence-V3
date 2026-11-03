@@ -6,6 +6,7 @@ extraction source: it is a control reference.
 """
 from __future__ import annotations
 
+import copy
 import json
 import re
 from functools import lru_cache
@@ -198,9 +199,51 @@ def _emit_port(country: dict, res: dict, port: dict, role: str,
     }
 
 
+# project_listing() on the default sources, kept per process (~17 s to build: the fuzzy
+# slug resolution against every EEZ; the pipeline asked for it once per zone). The key is
+# the three source files' (path, mtime, size): when one changes, the loader caches are
+# cleared and the projection is rebuilt. Callers get a deep copy (some add fields to the
+# ports or seeds built from them), so the cached projection is never mutated.
+_PROJECTION_CACHE: dict = {}
+
+
+def _sources_signature() -> tuple:
+    out = []
+    for path in (LISTING_FILE, OVERRIDES_FILE, EEZ_INDEX_FILE):
+        try:
+            st = path.stat()
+            out.append((str(path), st.st_mtime_ns, st.st_size))
+        except OSError:
+            out.append((str(path), None, None))
+    return tuple(out)
+
+
+def clear_projection_cache() -> None:
+    _PROJECTION_CACHE.clear()
+    load_listing_doc.cache_clear()
+    load_overrides.cache_clear()
+    load_eez_index.cache_clear()
+
+
 def project_listing(listing: dict | None = None, zones: list[dict] | None = None,
                     overrides: dict[str, list[int]] | None = None) -> dict:
-    """Build listing_ref: ports in run format + slug resolution."""
+    """Build listing_ref: ports in run format + slug resolution.
+
+    With the default sources (no argument), the result is cached per process and rebuilt
+    when all_countries.json, slug_overrides.json or eez_index.json changes on disk."""
+    if listing is None and zones is None and overrides is None:
+        sig = _sources_signature()
+        hit = _PROJECTION_CACHE.get("default")
+        if hit is None or hit[0] != sig:
+            if hit is not None:
+                clear_projection_cache()
+            _PROJECTION_CACHE["default"] = (sig, _project_listing(None, None, None))
+        return copy.deepcopy(_PROJECTION_CACHE["default"][1])
+    return _project_listing(listing, zones, overrides)
+
+
+def _project_listing(listing: dict | None, zones: list[dict] | None,
+                     overrides: dict[str, list[int]] | None) -> dict:
     listing = listing if listing is not None else load_listing_doc()
     zones = zones if zones is not None else load_eez_index()
     overrides = overrides if overrides is not None else load_overrides()
