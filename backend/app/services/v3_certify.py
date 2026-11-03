@@ -315,7 +315,7 @@ def _name_spans(text: str, tokens, name) -> list[tuple[int, int]]:
 
     out = []
     for variant in rc.grounding_variants(name):
-        for ns, ne in rc._spans(tokens, variant, plural_s=True):
+        for ns, ne in rc.name_spans(text, tokens, variant):
             if not rc._in_address(text, tokens, ns, ne):
                 out.append((ns, ne))
     return out
