@@ -121,7 +121,7 @@
           "source": "https://sede.transportes.gob.es/grupo-transportes/sociedad-salvamento-seguridad-maritima-sasemar"
         },
         {
-          "role": "maritime_authority",
+          "role": "port_authority",
           "name": "Puertos del Estado (state port system)",
           "url": "https://www.puertos.es/en",
           "domain": "puertos.es",

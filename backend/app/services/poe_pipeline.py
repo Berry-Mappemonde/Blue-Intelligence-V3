@@ -1323,6 +1323,7 @@ EXTRACT_MAX_LLM_CALLS = 1000
 SOURCE_MAX_CHARS = 120_000  # per fetched source; was a hard 60,000 cut before batching
 MAX_FETCH = 8  # pages / PDFs fetched per zone (formalities.max_fetch)
 FETCH_SLOTS_PER_ROLE = 1  # reserved per authority role within MAX_FETCH (formalities.fetch_slots_per_role)
+ROLE_FETCH_RETRIES = 1  # failed fetches of a role re-reserved (and spare slot kept) before it is given up
 _SOURCE_BLOCK_RE = re.compile(r"\n\n(?=\[(?:SOURCE: |SYNTHÈSE DE RECHERCHE))")
 
 
@@ -2758,7 +2759,8 @@ async def _collect_texts(official: list[dict], log, rec=None, max_fetch: int | N
     of the zone that has a candidate (backend/data/whitelist_sources.json): once the
     slots left only cover the roles not yet fetched, the next fetch is the
     best-ranked candidate of such a role instead of the queue head (Canaries lesson:
-    8 fetches on transport and tax pages, no port authority read)."""
+    8 fetches on transport and tax pages, no port authority read). A role counts as
+    served only once one of its sources is kept in ``texts``."""
     from app.core.run_rules import get_rule
     from app.services.authority_roles import ROLE_PRIORITY, role_quotas, roles_of, zone_authorities
     source_max = int(get_rule("formalities.source_max_chars", SOURCE_MAX_CHARS))
@@ -2778,14 +2780,37 @@ async def _collect_texts(official: list[dict], log, rec=None, max_fetch: int | N
             f"{r}={n}" for r, n in quotas.items()) + f" (plafond {max_fetch})")
         await emit(rec, "fetch_reservation", cap=max_fetch, quotas=quotas)
 
+    failed_roles: dict[str, int] = {}
+    kept: set[str] = set()
+    last_url = None
+
     def _deficit_roles() -> list[str]:
         return [r for r in ROLE_PRIORITY + tuple(sorted(set(quotas) - set(ROLE_PRIORITY)))
                 if got.get(r, 0) < quotas.get(r, 0)]
 
+    def _settle(url: str | None) -> None:
+        """After a fetch: a role whose source was not kept (failed, blocked, too short)
+        stays in deficit; past ROLE_FETCH_RETRIES failures it stops being reserved, so
+        one dead authority cannot spend the slots of the others."""
+        if not url or url in kept:
+            return
+        for r in roles_of(url, authorities):
+            if got.get(r, 0) >= quotas.get(r, 0):
+                continue
+            failed_roles[r] = failed_roles.get(r, 0) + 1
+            if failed_roles[r] > ROLE_FETCH_RETRIES:
+                quotas[r] = got.get(r, 0)
+                log(f"collecte: rôle {r} abandonné après {failed_roles[r]} fetch(s) en échec")
+
     while queue and fetched < max_fetch:
+        _settle(last_url)
+        last_url = None
         need = _deficit_roles()
         c = None
-        if need and max_fetch - fetched <= sum(quotas[r] - got.get(r, 0) for r in need):
+        deficit = sum(quotas[r] - got.get(r, 0) for r in need)
+        # One spare slot (ROLE_FETCH_RETRIES) so a failed reserved fetch does not
+        # cost another role its slot.
+        if need and max_fetch - fetched <= deficit + ROLE_FETCH_RETRIES:
             for r in need:
                 c = next((q for q in queue if (q.get("url") or "") not in seen_urls
                           and r in roles_of(q.get("url") or "", authorities)), None)
@@ -2802,8 +2827,7 @@ async def _collect_texts(official: list[dict], log, rec=None, max_fetch: int | N
             continue
         seen_urls.add(url)
         fetched += 1
-        for r in roles_of(url, authorities):
-            got[r] = got.get(r, 0) + 1
+        last_url = url
         try:
             res = await extract_cascade(url, min_chars=200, log=log)
         except Exception as e:
@@ -2860,6 +2884,12 @@ async def _collect_texts(official: list[dict], log, rec=None, max_fetch: int | N
                 log(f"source {domain_of(url)}: {len(text)} chars, coupée au plafond "
                     f"de sécurité {source_max}")
             texts.append(f"[SOURCE: {url}]\n{(text or '')[:source_max]}")
+            # A role is served by a source actually kept, not by an attempt: a failed,
+            # blocked or empty fetch still uses one fetch of the cap, but its role stays
+            # in deficit and the next candidate of that role is reserved.
+            kept.add(url)
+            for r in roles_of(url, authorities):
+                got[r] = got.get(r, 0) + 1
             excerpts[url] = (text or "")[:2500]
             used_sources.append({"url": url, "domain": c.get("domain") or domain_of(url),
                                  "md5": hashes.get(url), "collected_at": now_iso(),
