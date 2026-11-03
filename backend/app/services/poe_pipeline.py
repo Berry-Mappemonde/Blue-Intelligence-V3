@@ -145,7 +145,7 @@ LANG_BY_ISO2 = {
     "CD": "fr", "HT": "fr", "NC": "fr", "PF": "fr", "PM": "fr", "WF": "fr", "YT": "fr",
     "RE": "fr", "GP": "fr", "MQ": "fr", "GF": "fr", "BL": "fr", "MF": "fr",
     # es
-    "ES": "es", "MX": "es", "AR": "es", "CL": "es", "PE": "es", "CO": "es", "EC": "es",
+    "ES": "es", "PR": "es", "MX": "es", "AR": "es", "CL": "es", "PE": "es", "CO": "es", "EC": "es",
     "VE": "es", "UY": "es", "PA": "es", "CR": "es", "GT": "es", "HN": "es", "NI": "es",
     "SV": "es", "DO": "es", "CU": "es", "GQ": "es",
     # pt
@@ -182,10 +182,11 @@ QUERY_TEMPLATES = {
 LOCAL_SEARCH_TERMS = {
     "fr": {"hints": ("ports d'entrée officiels liste douane décret {place}",
                      "yacht marina plaisance liste officielle {place}"),
-           "site_pdf": "(liste ports d'entrée OR décret OR arrêté)",
-           "site_page": "(ports d'entrée OR liste douane)",
+           "site_pdf": "(liste ports d'entrée OR décret OR arrêté OR \"points de clearance agréés\")",
+           "site_page": "(ports d'entrée OR liste douane OR \"points de clearance agréés\")",
            "serper": "port d'entrée officiel liste plaisance",
-           "lessons": "formalités d'entrée navire de plaisance premier port d'arrivée"},
+           "lessons": ("formalités d'entrée navire de plaisance premier port d'arrivée "
+                       "points de clearance agréés")},
     "es": {"hints": ("{place} puertos habilitados decreto lista oficial",
                      "{place} yates marinas turismo náutico lista oficial"),
            "site_pdf": "(puertos habilitados OR decreto lista)",
@@ -326,6 +327,70 @@ def zone_search_lang(zone: dict) -> str | None:
     return None
 
 
+def zone_search_languages(zone: dict) -> list[str]:
+    """Search languages of a zone, ordered and unique: the polygon's own language, the
+    sovereign's when different (sov_iso2 filled by with_sovereign_iso2), always "en"
+    last. A polygon with an explicit entry in _POLYGON_SEARCH_LANG (SX, AW, CW, BQ:
+    English-speaking autonomous countries) gets neither: ["en"].
+    zone_search_lang (the first language, or None) stays for compatibility."""
+    from app.services.territory_ref import with_sovereign_iso2
+    zone = with_sovereign_iso2(zone or {})
+    iso = (zone.get("iso2") or "").upper()
+    out: list[str] = []
+    if iso in _POLYGON_SEARCH_LANG:
+        own = _POLYGON_SEARCH_LANG[iso]
+        out = [own] if own else []
+    else:
+        for cc in (iso, (zone.get("sov_iso2") or "").upper()):
+            lang = LANG_BY_ISO2.get(cc)
+            if lang and lang not in out:
+                out.append(lang)
+    return [l for l in out if l != "en"] + ["en"]
+
+
+def local_place_name(zone: dict, lang: str | None) -> str:
+    """The zone's name in ``lang`` for a local-language query, else the English one
+    (serp_place_name). Sources, in order: the curated territory's ``name_<lang>``
+    (territories.json: Martinique, Islas Canarias), then pycountry's ISO 3166-1 name in
+    ``lang`` when the polygon is the whole country (Cabo Verde, México) — never for a
+    polygon of a larger country (Galápagos stays Galápagos)."""
+    place = serp_place_name(zone) or ""
+    if not lang or lang == "en" or not place or is_france_mainland_eez(zone):
+        return place
+    from app.services.territory_ref import territory_for_mrgid
+    terr = territory_for_mrgid(zone.get("mrgid"))
+    if terr:
+        return str(terr.get(f"name_{lang}") or place)
+    iso = polygon_iso2(zone)
+    pyc = registry_check._pycountry()
+    if not iso or pyc is None:
+        return place
+    country = pyc.countries.get(alpha_2=iso)
+    if country is None:
+        return place
+    english = {fold_place_name(getattr(country, a, None))
+               for a in ("name", "common_name", "official_name")} - {""}
+    if fold_place_name(place) not in english | {fold_place_name(zone.get("sovereign"))}:
+        return place  # a polygon of the country, not the country
+    return _country_name_in(country.name, lang) or place
+
+
+@functools.lru_cache(maxsize=256)
+def _country_name_in(name: str, lang: str) -> str:
+    import gettext
+    pyc = registry_check._pycountry()
+    try:
+        tr = gettext.translation("iso3166-1", pyc.LOCALES_DIR, languages=[lang])
+    except (OSError, AttributeError):
+        return ""
+    return tr.gettext(name)
+
+
+def _local_languages(zone: dict) -> list[str]:
+    """zone_search_languages without "en", restricted to LOCAL_SEARCH_TERMS."""
+    return [l for l in zone_search_languages(zone) if l != "en" and l in LOCAL_SEARCH_TERMS]
+
+
 def is_france_mainland_eez(zone: dict) -> bool:
     """Mainland hexagon / joint metropolitan regimes — not Mayotte or the DROM."""
     if (zone.get("iso2") or "").upper() != "FR":
@@ -362,7 +427,7 @@ def localized_query(zone: dict) -> str | None:
     lang = zone_search_lang(zone)
     tpl = QUERY_TEMPLATES.get(lang or "")
     if tpl:
-        return tpl.format(name=place)
+        return tpl.format(name=local_place_name(zone, lang) or place)
     return family_classic_query(place, lang)
 
 
@@ -384,7 +449,7 @@ def family_default_hints(place: str) -> list[str]:
     generic = f"{place} customs act designated ports of entry official legislation gazette"
     return [
         f"{place} yacht marina small craft pleasure craft official list",
-        f"{place} first arrival points of entry clearance gazette",
+        f"{place} first arrival points of entry clearance gazette boarding stations",
         generic,
     ]
 
@@ -394,29 +459,95 @@ def lessons_learned_query(zone: dict) -> str:
     place = serp_place_name(zone) or search_polygon_name(zone) or ""
     q = (f"{place} yacht marina small craft pleasure craft "
          f"first arrival points de passage autorizim akcizë anije "
-         f"kartelë formalités plaisance sPCR")
-    local = LOCAL_SEARCH_TERMS.get(zone_search_lang(zone) or "")
-    return f"{q} {local['lessons']}" if local else q
+         f"kartelë formalités plaisance sPCR boarding stations clearance stations")
+    for lang in _local_languages(zone):
+        q = f"{q} {LOCAL_SEARCH_TERMS[lang]['lessons']}"
+    return q
+
+
+SEARCH_HINT_QUERIES_MAX = 5  # pinned hint queries per zone (formalities.search_hint_queries_max)
+SITE_SEARCH_DOMAINS_MAX = 3  # domains per site: hop, own and sovereign each (formalities.site_search_domains)
+
+
+def _overseas_sovereign(zone: dict | None) -> str:
+    """Sovereign ISO2 of an overseas territory (polygon ISO2 ≠ sovereign ISO2), filled
+    from territories.json when the zone doc has none (with_sovereign_iso2); else ""."""
+    from app.services.territory_ref import with_sovereign_iso2
+    zone = with_sovereign_iso2(zone or {})
+    iso = (zone.get("iso2") or "").strip().upper()
+    sov = (zone.get("sov_iso2") or "").strip().upper()
+    return sov if iso and sov and iso != sov else ""
+
+
+def _is_gov_label(label: str) -> bool:
+    return label in GOV_LABELS or label.split(".")[0] in GOV_LABELS
+
+
+def sovereign_search_domains(zone: dict | None, exceptions: dict | None = None) -> list[str]:
+    """Sovereign State domains an overseas territory's search also covers (Clément's
+    rule: .mq + gouv.fr, .vg + gov.uk, .pr / .vi + .gov). The sovereign's national labels
+    (``_national_labels``: PSL government label first, then poe_exceptions manual / auto
+    entries), at most ``formalities.site_search_domains``. Search only: build_whitelist, and so
+    what counts as the territory's authority (never_attach_to_sovereign, C2), is unchanged."""
+    sov = _overseas_sovereign(zone)
+    if not sov:
+        return []
+    from app.core.run_rules import get_rule
+    labels = _national_labels(sov, exceptions or load_exceptions(), eez_iso2_set()) - {"mil"}
+    ordered = sorted(labels, key=lambda d: (not _is_gov_label(d), len(d), d))
+    return ordered[:int(get_rule("formalities.site_search_domains", SITE_SEARCH_DOMAINS_MAX))]
+
+
+def sovereign_first(zone: dict | None) -> bool:
+    """sovereign_runs_entry (territories.json) sets the priority: the sovereign's domains
+    go before the territory's own in the site: hops and scoped Tavily (Martinique:
+    State customs run entry). Otherwise the territory's own domains go first."""
+    from app.services.territory_ref import sovereign_runs_entry, territory_for_mrgid
+    terr = territory_for_mrgid((zone or {}).get("mrgid"))
+    return bool(terr) and bool(sovereign_runs_entry(terr))
+
+
+def _sovereign_tld_token(sov: str) -> str:
+    """Google-style token for the sovereign: .fr for France (Légifrance is not on .yt),
+    else its PSL government label (.gov.uk, .gov, .gov.au, .govt.nz), else its ccTLD."""
+    if sov == "FR":
+        return ".fr"
+    gov = sorted(d for d in _national_labels(sov, load_exceptions(), eez_iso2_set())
+                 if _is_gov_label(d) and d != "mil")
+    return f".{min(gov, key=len)}" if gov else f".{sov.lower()}"
 
 
 def google_style_tld_tokens(zone: dict) -> str:
-    """Polygon ccTLD; + .fr for a DROM (Légifrance is not on .yt)."""
+    """Polygon ccTLD; + the sovereign's token for an overseas territory (_sovereign_tld_token)."""
     iso = (zone.get("iso2") or "").strip().lower()
-    sov = (zone.get("sov_iso2") or "").strip().lower()
     toks: list[str] = []
     if iso:
         toks.append(f".{iso}")
-    if sov == "fr" and iso and iso != "fr" and ".fr" not in toks:
-        toks.append(".fr")
+    sov = _overseas_sovereign(zone)
+    if sov:
+        tok = _sovereign_tld_token(sov)
+        if tok not in toks:
+            toks.append(tok)
     return " ".join(toks)
+
+
+def scoped_search_domains(whitelist: list[str], zone: dict | None) -> list[str]:
+    """include_domains of a scoped Tavily search: the zone's whitelist (first 8) plus,
+    for an overseas territory, its sovereign's search domains. Search only."""
+    sov = sovereign_search_domains(zone)
+    own = list(whitelist[:8])
+    first, then = (sov, own) if sovereign_first(zone) else (own, sov)
+    return list(dict.fromkeys(first + then))
 
 
 def google_style_query(zone: dict, lang: str | None = None) -> str:
     """Short Google-bar style phrase: place + PoE + sailing + official + TLD."""
     place = serp_place_name(zone) or search_polygon_name(zone) or ""
+    local = LOCAL_SEARCH_TERMS.get(lang or "")
+    if local:
+        place = local_place_name(zone, lang) or place
     place = place.replace("-", " ")
     tld_tok = google_style_tld_tokens(zone)
-    local = LOCAL_SEARCH_TERMS.get(lang or "")
     if local:
         q = f"{place} {local['serper']} {tld_tok}"
     else:
@@ -431,10 +562,9 @@ def google_style_shots(zone: dict) -> list[tuple[str, str]]:
     SX has zone_search_lang=None: a single EN shot, not Dutch.
     """
     shots = [("en", google_style_query(zone))]
-    lang = zone_search_lang(zone)
-    if lang in LOCAL_SEARCH_TERMS:
+    for lang in _local_languages(zone):  # local, then the sovereign's (zone_search_languages)
         loc = google_style_query(zone, lang)
-        if loc != shots[0][1]:
+        if all(loc != q for _l, q in shots):
             shots.append((lang, loc))
     return shots
 
@@ -690,9 +820,11 @@ def default_search_hints(zone: dict) -> list[str]:
             f"porteve detare {poly}",
             generic,
         ]
-    local = LOCAL_SEARCH_TERMS.get(zone_search_lang(zone) or "")
-    if local:
-        return [h.format(place=poly) for h in local["hints"]] + [generic]
+    langs = _local_languages(zone)  # local, then the sovereign's (zone_search_languages)
+    if langs:
+        hints = [h.format(place=local_place_name(zone, lang) or poly)
+                 for lang in langs for h in LOCAL_SEARCH_TERMS[lang]["hints"]]
+        return list(dict.fromkeys(hints)) + [generic]
     return family_default_hints(poly)
 
 
@@ -711,7 +843,8 @@ def search_hint_queries(zone: dict, exceptions: dict | None = None) -> list[str]
             if q and q not in seen:
                 seen.add(q)
                 out.append(q)
-    return out[:5]
+    from app.core.run_rules import get_rule
+    return out[:int(get_rule("formalities.search_hint_queries_max", SEARCH_HINT_QUERIES_MAX))]
 
 
 def list_url_bonus(url: str) -> float:
@@ -2530,7 +2663,8 @@ def site_list_pdf_query(domain: str, zone: dict) -> str:
         return f"site:{domain} filetype:pdf {local['site_pdf']}"
     return (f"site:{domain} filetype:pdf "
             f"(ports of entry OR yacht OR marina OR pleasure craft OR "
-            f"first arrival OR akcizë OR designated)")
+            f"first arrival OR akcizë OR designated OR \"boarding stations\" OR "
+            f"\"clearance stations\")")
 
 
 def site_list_page_query(domain: str, zone: dict) -> str:
@@ -2563,7 +2697,8 @@ def site_list_page_query(domain: str, zone: dict) -> str:
     if local:
         return f"site:{domain} {local['site_page']}"
     return (f"site:{domain} (ports of entry OR yacht tourism OR specialized marinas "
-            f"OR pleasure craft OR first arrival OR porteve detare)")
+            f"OR pleasure craft OR first arrival OR porteve detare OR \"boarding stations\" "
+            f"OR \"clearance stations\")")
 
 
 def authority_seed_candidates(zone: dict, candidates: list[dict], blocked: set[str],
@@ -2611,14 +2746,41 @@ def landing_url_candidates(zone: dict) -> list[dict]:
     return out
 
 
+def _site_hops(domains: list[str], zone: dict) -> list[tuple[str, bool]]:
+    """(domain, is_sovereign) of the site: hops: the zone's first official domains and,
+    for an overseas territory, its sovereign's search domains (each capped by
+    ``formalities.site_search_domains``), the sovereign's first when it runs entry."""
+    from app.core.run_rules import get_rule
+    cap = int(get_rule("formalities.site_search_domains", SITE_SEARCH_DOMAINS_MAX))
+    own = [(d, False) for d in domains[:cap] if d]
+    sov = [(d, True) for d in sovereign_search_domains(zone) if d not in {o for o, _ in own}]
+    hops = sov + own if sovereign_first(zone) else own + sov
+    counter = _site_hop_count.get()
+    if counter is not None:
+        counter["site"] += len(hops)
+        counter["sovereign"] += len(sov)
+    return hops
+
+
+# Per-zone count of site: hop queries (_find_sources sets it; the search-volume log).
+_site_hop_count: ContextVar[dict | None] = ContextVar("site_hop_count", default=None)
+
+
+def _sovereign_site_query(query: str, zone: dict) -> str:
+    """A site: query on a sovereign domain names the territory (gouv.fr is all France)."""
+    place = (serp_place_name(zone) or search_polygon_name(zone) or "").replace('"', "")
+    return f'{query} "{place}"' if place else query
+
+
 async def _site_list_pdf_search(domains: list[str], zone: dict, log) -> list[dict]:
     """Second hop: the state domain is known; the list is often a PDF
-    outside the generic SERP (France lesson: Liste-ports-de-plaisance-eligibles.pdf)."""
+    outside the generic SERP (France lesson: Liste-ports-de-plaisance-eligibles.pdf).
+    An overseas territory also searches its sovereign's domains (sovereign_search_domains)."""
     out: list[dict] = []
-    for dom in domains[:3]:
-        if not dom:
-            continue
+    for dom, sovereign in _site_hops(domains, zone):
         q = site_list_pdf_query(dom, zone)
+        if sovereign:
+            q = _sovereign_site_query(q, zone)
         res, engine = await _search_with_fallback(q, log)
         if res:
             log(f"site PDF {dom}: {len(res)} résultat(s) ({engine})")
@@ -2627,12 +2789,13 @@ async def _site_list_pdf_search(domains: list[str], zone: dict, log) -> list[dic
 
 
 async def _site_list_page_search(domains: list[str], zone: dict, log) -> list[dict]:
-    """HTML hop: INEA / MPI / douane.nc expose a page, not a PDF."""
+    """HTML hop: INEA / MPI / douane.nc expose a page, not a PDF. An overseas territory
+    also searches its sovereign's domains (sovereign_search_domains)."""
     out: list[dict] = []
-    for dom in domains[:3]:
-        if not dom:
-            continue
+    for dom, sovereign in _site_hops(domains, zone):
         q = site_list_page_query(dom, zone)
+        if sovereign:
+            q = _sovereign_site_query(q, zone)
         res, engine = await _search_with_fallback(q, log)
         if res:
             log(f"site page {dom}: {len(res)} résultat(s) ({engine})")
@@ -2667,6 +2830,8 @@ async def _find_sources(zone: dict, whitelist: list[str], exceptions: dict, log,
 
     searx_groups, tf_groups, serper_groups, tavily_groups = [], [], [], []
     served: dict[str, dict] = {}
+    hop_count = {"site": 0, "sovereign": 0}
+    _hop_token = _site_hop_count.set(hop_count)
 
     async def _emit_search(**kw) -> None:
         """emit(rec, "search", ...) plus a per-zone count of which engine served it."""
@@ -2830,7 +2995,7 @@ async def _find_sources(zone: dict, whitelist: list[str], exceptions: dict, log,
         if official:
             log(f"Tavily scoped: {len(official_hosts)} hôte(s) officiel(s) < {min_hosts}")
         scoped_tv = await _tavily_search_safe(
-            query_en, log, include_domains=whitelist[:8])
+            query_en, log, include_domains=scoped_search_domains(whitelist, zone))
         await _emit_search(engine="tavily", lang="en", query=query_en,
                            n=len(scoped_tv), results=scoped_tv, scoped=True, round="classic")
         if scoped_tv:
@@ -2868,7 +3033,7 @@ async def _find_sources(zone: dict, whitelist: list[str], exceptions: dict, log,
             extra_groups.append(scoped2 or [])
         if tavily_key and whitelist:
             scoped_tv2 = await _tavily_search_safe(
-                q2, log, include_domains=whitelist[:8])
+                q2, log, include_domains=scoped_search_domains(whitelist, zone))
             await _emit_search(engine="tavily", lang="en", query=q2,
                                n=len(scoped_tv2 or []), results=scoped_tv2 or [],
                                scoped=True, variant=variant, round="lessons")
@@ -2916,7 +3081,8 @@ async def _find_sources(zone: dict, whitelist: list[str], exceptions: dict, log,
         d = (c.get("domain") or domain_of(c.get("url") or "")).lower()
         if d and d not in domains:
             domains.append(d)
-    if official and not any(
+    sov_hops = bool(sovereign_search_domains(zone, exceptions))
+    if (official or sov_hops) and not any(
         (c.get("url") or "").lower().endswith(".pdf")
         and list_url_bonus(c.get("url") or "") >= 0.5
         for c in official
@@ -2931,7 +3097,8 @@ async def _find_sources(zone: dict, whitelist: list[str], exceptions: dict, log,
             candidates = _merge_candidates(candidates, extra_pdfs)
             official = [c for c in candidates if url_allowed(c.get("url") or "", whitelist)]
             log(f"site PDF: {len(extra_pdfs)} candidat(s) sur {domains[:3]}")
-    if official and not any(list_url_bonus(c.get("url") or "") >= 0.45 for c in official):
+    if (official or sov_hops) and not any(list_url_bonus(c.get("url") or "") >= 0.45
+                                          for c in official):
         extra_pages = await _site_list_page_search(domains, zone, log)
         await _emit_search(engine=_served_by(extra_pages), lang="site-page",
                            query="site:domain liste", n=len(extra_pages),
@@ -2999,6 +3166,16 @@ async def _find_sources(zone: dict, whitelist: list[str], exceptions: dict, log,
     for c in official:
         c["official"] = url_allowed(c.get("url") or "", whitelist) or bool(
             OFFICIAL_TOKENS.search(c.get("domain") or ""))
+    _site_hop_count.reset(_hop_token)
+    emitted = sum(v["queries"] for v in served.values())
+    # Search volume per zone (dual languages / dual domains change it): queries emitted
+    # to the engines, plus the site: hop queries behind them (own and sovereign domains).
+    log(f"volume de recherche: {emitted} requête(s) émise(s), {hop_count['site']} saut(s) "
+        f"site: dont {hop_count['sovereign']} sur domaines souverains; langues "
+        f"{'/'.join(zone_search_languages(zone))}")
+    await emit(rec, "search_volume", queries=emitted, site_hops=hop_count["site"],
+               sovereign_site_hops=hop_count["sovereign"],
+               languages=zone_search_languages(zone))
     if served:
         log("moteurs de recherche: " + ", ".join(
             f"{e} {v['queries']} requête(s) ({v['empty']} vide(s)"

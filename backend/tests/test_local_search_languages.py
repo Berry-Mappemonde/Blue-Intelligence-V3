@@ -62,8 +62,12 @@ def test_french_spanish_dutch_strings_are_the_ones_already_used():
     assert poe.default_search_hints(mq)[:2] == [
         "ports d'entrée officiels liste douane décret Martinique",
         "yacht marina plaisance liste officielle Martinique"]
-    assert poe.site_list_pdf_query("d.fr", mq) == "site:d.fr filetype:pdf (liste ports d'entrée OR décret OR arrêté)"
-    assert poe.site_list_page_query("d.fr", mq) == "site:d.fr (ports d'entrée OR liste douane)"
+    # + the French document-type name (fix/v3-sovereign-domains)
+    assert poe.site_list_pdf_query("d.fr", mq) == (
+        "site:d.fr filetype:pdf (liste ports d'entrée OR décret OR arrêté "
+        "OR \"points de clearance agréés\")")
+    assert poe.site_list_page_query("d.fr", mq) == (
+        "site:d.fr (ports d'entrée OR liste douane OR \"points de clearance agréés\")")
     co = {"mrgid": 8426, "name": "Colombia", "iso2": "CO", "sov_iso2": "CO"}
     assert poe.default_search_hints(co)[:2] == [
         "Colombia puertos habilitados decreto lista oficial",
@@ -72,7 +76,8 @@ def test_french_spanish_dutch_strings_are_the_ones_already_used():
     assert poe.site_list_page_query("d.co", co) == "site:d.co (puertos habilitados OR decreto)"
     assert ("es", "Colombia puertos habilitados lista oficial yates .co") in poe.google_style_shots(co)
     nl = {"mrgid": 5668, "name": "Netherlands", "iso2": "NL", "sov_iso2": "NL"}
-    assert ("nl", "Netherlands officiële lijst toegangshavens pleziervaartuigen .nl") in poe.google_style_shots(nl)
+    # local-language name in the local-language query (fix/v3-dual-domain-languages)
+    assert ("nl", "Nederland officiële lijst toegangshavens pleziervaartuigen .nl") in poe.google_style_shots(nl)
 
 
 def test_zones_without_a_language_keep_the_english_queries():
@@ -81,7 +86,8 @@ def test_zones_without_a_language_keep_the_english_queries():
         place = poe.serp_place_name(zone)
         assert poe.default_search_hints(zone) == poe.family_default_hints(place)
         assert [lang for lang, _ in poe.google_style_shots(zone)] == ["en"]
-        assert poe.lessons_learned_query(zone).endswith("formalités plaisance sPCR")
+        assert poe.lessons_learned_query(zone).endswith(
+            "formalités plaisance sPCR boarding stations clearance stations")
 
 
 @pytest.mark.parametrize("lang, name, text", [
