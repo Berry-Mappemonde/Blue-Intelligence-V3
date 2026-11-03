@@ -1,8 +1,16 @@
 # Minimal SearXNG configuration for Blue Intelligence.
 # - json format enabled (required by the PoE pipeline: /search?format=json)
 # - limiter disabled (private instance, no Valkey/Redis)
-# - duckduckgo / brave / wikipedia: engines without API keys
-# - google / bing disabled: without keys they often fail and empty the results
+# - engines without API keys. Checked on 2026-11-03 (image 2026.10.19), 12 pilot queries
+#   each: startpage and yahoo answered 12/12, mojeek 10/12, duckduckgo 4/12 (CAPTCHA
+#   after a few queries); brave answered 1 of 4, then "too many requests". SearXNG skips
+#   a suspended engine, so the others still answer.
+# - startpage / mojeek: inactive by default in SearXNG (proof-of-work CAPTCHA); both
+#   answered here, so they are loaded with inactive: false.
+# - wikipedia / wikidata: kept; they rarely match a ports-of-entry query.
+# - off: google, qwant ("access denied"), google cse ("too many requests"; on in the
+#   image defaults), bing ("HTTP connection error"), yep ("HTTP error"). presearch is
+#   not in the image.
 use_default_settings: true
 
 general:
@@ -27,6 +35,14 @@ valkey:
   url: false
 
 engines:
+  - name: startpage
+    disabled: false
+    inactive: false
+  - name: yahoo
+    disabled: false
+  - name: mojeek
+    disabled: false
+    inactive: false
   - name: duckduckgo
     disabled: false
   - name: brave
@@ -35,9 +51,13 @@ engines:
     disabled: false
   - name: wikidata
     disabled: false
-  - name: mojeek
-    disabled: false
   - name: google
     disabled: true
+  - name: google cse
+    disabled: true
   - name: bing
+    disabled: true
+  - name: qwant
+    disabled: true
+  - name: yep
     disabled: true
