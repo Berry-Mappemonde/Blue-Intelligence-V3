@@ -344,6 +344,17 @@ def zone_names(zone: dict | str | None) -> tuple[str, ...]:
     return tuple(n for n in names if isinstance(n, str) and n.strip())
 
 
+def _split_at_apostrophes(*names: str | None) -> list[str]:
+    """Names as ``_fold`` reads a text, where an apostrophe splits two words: name_key's
+    "letang zabricots" never matches "l'Étang Z'abricots" there. Possessives stay dropped."""
+    out = []
+    for name in names:
+        bare = _POSSESSIVE.sub("", name or "")
+        if _APOSTROPHES.search(bare):
+            out.append(_APOSTROPHES.sub(" ", bare))
+    return out
+
+
 def grounding_variants(name: str | None, alternates: tuple = (),
                        places: tuple = ()) -> list[Variant]:
     """Name variants as token tuples, longest first: whole words, 4+ characters, not generic.
@@ -354,13 +365,14 @@ def grounding_variants(name: str | None, alternates: tuple = (),
     names, from the caller) is never a variant: "martinique" from "Fort-de-France
     (Martinique)" names the zone, not the port. The port's whole name is kept even then
     ("Gibraltar", "Monaco")."""
-    keys = {" ".join(_TOKENS.get(t, t) for t in v.split()) for v in name_variants(name, *alternates)}
+    names = (name, *alternates, *_split_at_apostrophes(name, *alternates))
+    keys = {" ".join(_TOKENS.get(t, t) for t in v.split()) for v in name_variants(*names)}
     keys = {k for k in keys if len(k) >= 4 and k not in _GENERIC}
     keys = {k for k in keys if " " in k or k + "s" not in keys}
     whole = {_place_key(n) for n in (name, *alternates) if n}
     zone_places = place_name_keys() | {_place_key(p) for p in places if p}
     keys = {k for k in keys if k in whole or k not in zone_places}
-    full = _full_keys(name, *alternates)
+    full = _full_keys(*names)
     out = []
     for key in sorted(keys, key=len, reverse=True):
         variant = Variant(key.split())

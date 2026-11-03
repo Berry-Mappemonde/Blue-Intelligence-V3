@@ -455,6 +455,7 @@ The rule, in run mode, after the judge and the evidence (`poe_pipeline.group_cle
 - **The PoE takes the best level and evidence of its points**: level, judge verdict and GPS of the best point. It is not certified again, because the rows were judged and the commune's name was not.
 - **The commune is the one the list gives, not a distance and not the record's `city`.** Points are commune-level, and a reader can get the `city` wrong: Étang Z'abricots came back as "Le Lamentin", and the list has it under Fort-de-France. A table reaches us as flat text with the commune once before its rows, so a row belongs to the nearest commune above it, in the zone's own section.
 - **A designating list here** is an official source of the zone that says "point(s) de clearance" or "clearance point(s)".
+- **A clearance point is evidence without entry wording of its own.** The list designates, and a row is a name, an address and opening hours: "Port de plaisance communautaire de l'Étang Z'abricots Bureau du Port : ZAC de l'Etang Z'Abricots". Every clearance point of the zone's section reaches the judge (`v3_certify.clearance_row_mention`), and the other rows of the list do not. The judge decides: a row alone lifts nothing above C1.
 - **Rows of different communes or different documents stay apart**, unless the same-port merge joins them (`formalities.port_merge_km`): "Le Marin" and "La marina du Marin" do merge, "Fort-de-France" and "Fort-de-France (Martinique)" do not.
 
 Listing control (outside extraction):
