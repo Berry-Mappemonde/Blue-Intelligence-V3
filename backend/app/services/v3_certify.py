@@ -517,6 +517,101 @@ def _mention_in_zone(text: str, ns: int, ne: int, own: set[str], other: set[str]
     return bool(before) and before[-1][2]
 
 
+CLEARANCE_LIST_TERMS = ("points de clearance", "point de clearance",
+                        "clearance points", "clearance point")
+CLEARANCE_QUOTE_CHARS = 200
+_COMMUNE_ARTICLE = re.compile(r"^(?:l[ae]s?\s+|l['’])", re.I)
+_PRIVATE_USE = re.compile("[\ue000-\uf8ff]")  # PDF icon glyphs (phone, mail) in the list
+_HOURS = re.compile(r"\d{1,2}h(?:\d{2})?")
+
+
+def _row_quote(text: str, start: int, stop: int) -> str:
+    """The row as the list writes it: from its name to the next known row or commune, or
+    to its opening hours when an unread row follows them."""
+    window = text[start:min(stop, start + CLEARANCE_QUOTE_CHARS)]
+    hours = list(_HOURS.finditer(window))
+    if hours and stop > start + CLEARANCE_QUOTE_CHARS:
+        window = window[:hours[-1].end()]
+    return " ".join(_PRIVATE_USE.sub(" ", window).split())
+
+
+def _commune_headings(text: str, tokens, cities: Sequence[str]) -> list[tuple[int, int, tuple, str]]:
+    """(start, end, commune key, commune name) where the list heads a commune. The key
+    leaves out the article, which lists drop ("Trois-ilets" for "Les Trois-Îlets"); the
+    name is the records' spelling, without an article the list does not write."""
+    from app.agents import registry_check as rc
+
+    out = []
+    for city in cities:
+        bare = _COMMUNE_ARTICLE.sub("", city)
+        key = tuple(t for t, _, _ in rc._tokens(bare))
+        spans = list(rc.name_spans(text, tokens, tuple(t for t, _, _ in rc._tokens(city))))
+        name = city
+        if not spans:
+            spans, name = list(rc.name_spans(text, tokens, key)), bare
+        out += [(s, e, key, name) for s, e in spans]
+    return sorted(out)
+
+
+def clearance_rows(ports: Sequence[Mapping], texts: Sequence[Mapping] | None,
+                   zone: Mapping | None = None,
+                   whitelist: Sequence[str] | None = None) -> dict[int, dict]:
+    """{index in ``ports``: {commune, commune_key, url, quote, position}} for the ports that
+    are rows of an official clearance list, under a commune that the list heads.
+
+    The list gives the commune, not the records: a table reaches us as flat text, with the
+    commune once before its rows, so a row's commune is the nearest heading above it, in
+    the zone's own section. Headings are looked up from the records' ``city`` values. A
+    record's own ``city`` can be wrong (Étang Z'abricots: "Le Lamentin", under
+    Fort-de-France on the list), and only the position counts. A port is read on the first
+    list that has it."""
+    from app.agents import registry_check as rc
+
+    if not ports:
+        return {}
+    cities = list(dict.fromkeys(p.get("city") for p in ports if (p.get("city") or "").strip()))
+    own = zone_terms(ports[0], zone)
+    other = _other_territory_terms(own)
+    markers = [tuple(t for t, _, _ in rc._tokens(term)) for term in CLEARANCE_LIST_TERMS]
+    found: dict[int, dict] = {}
+    for item in texts or []:
+        url, text = item.get("url") or "", item.get("text")
+        if not isinstance(text, str) or not is_official(url, whitelist):
+            continue
+        tokens = rc._tokens(text)
+        if not any(next(rc._spans(tokens, m), None) for m in markers):
+            continue
+        heads = _commune_headings(text, tokens, cities)
+        rows = []
+        for i, port in enumerate(ports):
+            name = port.get("name") or ""
+            words = tuple(t for t, _, _ in rc._tokens(name))
+            bare = tuple(t for t, _, _ in rc._tokens(_COMMUNE_ARTICLE.sub("", name)))
+            if i in found or not words or is_name_fragment(name) or any(h[2] == bare for h in heads):
+                continue
+            span = next(rc.name_spans(text, tokens, words), None)
+            if span:
+                rows.append((span[0], span[1], i))
+        # "Antilles-Guyane" in an office's name opens no section: the head of a section
+        # is the territory's own word.
+        sections = [h for h in _territory_hits(text, own, other) if text[h[0] - 1:h[0]] != "-"]
+        for start, end, i in sorted(rows):
+            section = [h for h in sections if h[1] <= start]
+            if section and not section[-1][2]:
+                continue
+            floor = section[-1][1] if section else 0
+            above = [h for h in heads if floor <= h[0] and h[1] <= start
+                     and not any(r[0] <= h[0] and h[1] <= r[1] for r in rows)]
+            if not above:
+                continue
+            _, _, key, name = above[-1]
+            stop = min([s for s in [r[0] for r in rows] + [h[0] for h in heads + sections]
+                        if s >= end] or [len(text)])
+            found[i] = {"commune": name, "commune_key": key, "url": url, "position": start,
+                        "quote": _row_quote(text, start, stop)}
+    return found
+
+
 def geo_in_zone(port: Mapping) -> bool:
     """Placed in this zone by the pipeline's existing polygon check (8face05,
     poe_zone_label.placed_in_zone): coordinates are only written for a point kept in

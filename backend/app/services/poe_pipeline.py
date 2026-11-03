@@ -66,7 +66,7 @@ from app.adapters import evidence_store
 from app.adapters.zetaris import ZetarisClient
 from app.agents import registry_check
 from app.services.poe_confidence import apply_score, listing_role, score_port, zone_confidence_avg
-from app.services.v3_certify import LEVEL_FIELDS, attach_confidence_level
+from app.services.v3_certify import LEVEL_FIELDS, attach_confidence_level, clearance_rows
 from app.services.poe_zone_label import (
     keep_extracted_in_zone, search_polygon_name, serp_place_name,
     zone_qualifier, zone_search_location,
@@ -3752,10 +3752,11 @@ def _coords_of(doc: dict) -> tuple[float, float] | None:
 
 
 def _evidence_rank(doc: dict) -> tuple:
-    """Best record of a merged port: certification level, judge "poe", official
-    sources, a placed GPS, then the V2 score."""
+    """Best record of a merged port: certification level, judge "poe", a port named by
+    its clearance list, official sources, a placed GPS, then the V2 score."""
     judge = (doc.get("judge") or {}).get("verdict")
     return (_LEVEL_RANK.get(doc.get("confidence_level") or "", -1), judge == "poe",
+            bool(doc.get("clearance_points")),
             len(doc.get("source_urls") or []), _coords_of(doc) is not None,
             float(doc.get("confidence") or 0))
 
@@ -3885,6 +3886,74 @@ def only_area_hits(geo: dict, name: str | None) -> bool:
         return False
     return all((c.get("osm_type") or "").lower() in _AREA_OSM_TYPES
                or (c.get("geonames_fcode") or "").upper() in _AREA_GN_CODES for c in cands)
+
+
+def group_clearance_points(docs: list[dict], texts: list[dict] | None, zone: dict | None = None,
+                           whitelist: list[str] | None = None
+                           ) -> tuple[list[dict], list[tuple[dict, list[dict]]]]:
+    """Several clearance points in one port are one PoE (Clément, 3 Nov 2026).
+
+    The rows of one clearance list under one commune (``v3_certify.clearance_rows``) become
+    one record named after the commune, with ``clearance_points`` = [{name, quote, source}]
+    in the list's order. It takes the best row's level, judge, evidence and point
+    (``_evidence_rank``), with no new certification: the row is what was judged, and the
+    commune's name is not. Rows of different documents or communes stay apart.
+    Returns (docs, [(PoE, its rows)])."""
+    rows = clearance_rows(docs, texts, zone, whitelist)
+    groups: dict[tuple, list[int]] = {}
+    for i, row in sorted(rows.items(), key=lambda kv: kv[1]["position"]):
+        groups.setdefault((row["url"], row["commune_key"]), []).append(i)
+    first = {members[0]: members for members in groups.values()}
+    out, grouped = [], []
+    for i, doc in enumerate(docs or []):
+        if i not in rows:
+            out.append(doc)
+        elif i in first:
+            points = [docs[m] for m in first[i]]
+            poe = dict(max(points, key=_evidence_rank))
+            commune = rows[i]["commune"]
+            poe.update(
+                name=commune, city=commune,
+                dedup_key=f"{doc.get('mrgid')}:{normalize_name(commune)}",
+                clearance_points=[{"name": docs[m].get("name"), "quote": rows[m]["quote"],
+                                   "source": rows[m]["url"]} for m in first[i]],
+                source_urls=list(dict.fromkeys(
+                    u for p in points for u in p.get("source_urls") or [])))
+            names = [n for p in points for n in p.get("merged_names") or []]
+            if names:
+                poe["merged_names"] = list(dict.fromkeys(names))
+            out.append(poe)
+            grouped.append((poe, points))
+    return out, grouped
+
+
+async def _group_clearance_points(zone: dict, docs: list[dict], raw: str,
+                                  used_sources: list[dict], whitelist: list[str], log,
+                                  rec=None) -> list[dict]:
+    """Run mode, after the judge and the evidence, which read each row by its name: one PoE
+    per commune of a clearance list, then #47's merge on the commune's name ("Le Marin" /
+    "La marina du Marin"). The kept record has the best level, so none is certified again."""
+    from app.core.run_rules import get_rule
+    docs, grouped = group_clearance_points(docs, certify_texts(raw, used_sources), zone, whitelist)
+    for poe, points in grouped:
+        log(f"  ⚓ points de clearance: {poe['name']} ({poe.get('confidence_level')}) ← "
+            f"{', '.join(p.get('name') or '?' for p in points)}")
+        await emit(rec, "clearance_points", poe=poe.get("name"),
+                   confidence_level=poe.get("confidence_level"),
+                   source=poe["clearance_points"][0]["source"],
+                   points=[{"name": p.get("name"), "confidence_level": p.get("confidence_level"),
+                            "judge": (p.get("judge") or {}).get("verdict")} for p in points])
+    if not grouped:
+        return docs
+    docs, merges = merge_same_ports(docs, float(get_rule("formalities.port_merge_km",
+                                                         PORT_MERGE_KM)))
+    for keep, rest in merges:
+        log(f"  ⚓ fusion: {keep['name']} ← {', '.join(o.get('name') or '?' for o in rest)} "
+            f"(même port, meilleure preuve gardée)")
+        await emit(rec, "port_merge", kept=keep.get("name"),
+                   merged=[o.get("name") for o in rest],
+                   confidence_level=keep.get("confidence_level"))
+    return docs
 
 
 async def _extract_and_geocode(zone: dict, context: str, used_sources: list[dict], log,
@@ -4732,6 +4801,10 @@ async def generate_zone_poe(db, mrgid: int, logger=None, force: bool = False,
         # the run pipeline and /api/poe/verify, which read ports from Zetaris.
         await _store_evidence(db, zone, docs, raw, used_sources, log, rec, run=run,
                               whitelist=whitelist)
+
+        if run is not None:
+            docs = await _group_clearance_points(zone, docs, raw, used_sources, whitelist,
+                                                 log, rec)
 
         # 5. Write: confidence lives on each port, no longer a zone buffer.
         status = "ia" if docs else "erreur"

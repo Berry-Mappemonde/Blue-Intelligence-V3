@@ -424,6 +424,19 @@ The certification ladder C0–C4 is separate from the score above (`PLAN-V3.md`,
 
 A port whose whole name is the zone's name keeps it ("Gibraltar", "Monaco").
 
+### 10.2 One port, several clearance points
+
+**Several clearance points in one port are one PoE with a list of clearance points, not separate PoEs** (Clément, 3 Nov 2026). On the douane *liste des points de clearance agréés*, Le Marin has two rows: the capitainerie and Station-service CAP Ponton N°3. A skipper enters one port, Le Marin, so the map shows one PoE.
+
+The rule, in run mode, after the judge and the evidence (`poe_pipeline.group_clearance_points`, `v3_certify.clearance_rows`):
+
+- **Rows of one designating list under one commune become one PoE named after the commune**, also when the commune has a single row (Le François, Trois-Îlets).
+- **The PoE lists its rows** in `clearance_points`: `[{name, quote, source}]`, with the row as the list writes it and the list's URL.
+- **The PoE takes the best level and evidence of its points**: level, judge verdict and point of the best row. It is not certified again, because the rows were judged and the commune's name was not.
+- **The commune is the one the list gives, not a distance and not the record's `city`.** Points are commune-level, and a reader can get the `city` wrong: Étang Z'abricots came back as "Le Lamentin", and the list has it under Fort-de-France. A table reaches us as flat text with the commune once before its rows, so a row belongs to the nearest commune above it, in the zone's own section.
+- **A designating list here** is an official source of the zone that says "point(s) de clearance" or "clearance point(s)".
+- **Rows of different communes or different documents stay apart**, unless the same-port merge joins them (`formalities.port_merge_km`): "Le Marin" and "La marina du Marin" do merge, "Fort-de-France" and "Fort-de-France (Martinique)" do not.
+
 Listing control (outside extraction):
 
 - listing PoE ∩ run → `confident` (signal);
@@ -705,7 +718,7 @@ Compare = listing-control (`coverage`, `noise`, `confident`, `listing_only`, `ru
 |------------|------------|
 | `poe_runs` | one run (label, variant, code fingerprint, progress) |
 | `poe_run_zones` | result of **one** EEZ in **one** run |
-| `poe_run_ports` | one extracted port or one enriched seed, tied to `run_id` |
+| `poe_run_ports` | one extracted port or one enriched seed, tied to `run_id`. A port with several clearance points carries them in `clearance_points` (§10.2) |
 | `poe_seed_ports` | one persisted seed of the workshop (union + judgments). `wrote_poe_ports: false` |
 | `poe_run_events` | journal of a micro-step (search, fetch, judge, BU catalogue…) |
 | `poe_listing_review` | review queue (contradiction, run only, listing only, ambiguous) |
