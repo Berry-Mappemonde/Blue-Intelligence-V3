@@ -121,9 +121,17 @@ def _write_trace(entries: list[dict], run_id: str) -> None:
         print(payload, end="", flush=True)
 
 
-def is_official_source(urls: list[str | None] | None) -> bool:
-    """Recognize HTTP(S) hosts ending in .gov or a government label + ccTLD.
+def is_official_source(urls: list[str | None] | None,
+                       whitelist: list[str] | None = None) -> bool:
+    """Official source: one of ``urls`` is on the zone's PoE whitelist.
 
+    With ``whitelist`` (poe_pipeline.zone_whitelist / build_whitelist, the list the
+    gatekeeper and the certification read) that is the only test, matched with
+    poe_pipeline.url_allowed: host only, so stlucia.org or enapor.cv count where the
+    zone's whitelist has them, and another country's gov host does not. Without one (no
+    zone known) the naming heuristic below applies.
+
+    Heuristic: recognize HTTP(S) hosts ending in .gov or a government label + ccTLD.
     Match exact labels gouv/gov/gob/gc/govt/go immediately before a two-letter
     country suffix, never paths, queries or arbitrary labels further left.
     This intentionally narrows the production substring check in osm_validate.py
@@ -132,6 +140,10 @@ def is_official_source(urls: list[str | None] | None) -> bool:
     that production does not have. This is a naming heuristic, not verification
     of domain ownership or an exhaustive government-domain allowlist.
     """
+    if whitelist is not None:
+        from app.services.poe_pipeline import url_allowed
+        return any(isinstance(u, str) and u.strip() and url_allowed(u, list(whitelist))
+                   for u in urls or [])
     for url in urls or []:
         if not isinstance(url, str):
             continue

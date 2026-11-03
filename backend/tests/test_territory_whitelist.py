@@ -99,7 +99,9 @@ def test_unmapped_zone_is_unchanged(iso2, sov2, mrgid, exc):
     assert with_zone == build_whitelist(iso2, sov2, exc)
     # Same formula as before this change: the national labels of `iso2 or sov_iso2`.
     assert with_zone == sorted(poe._national_labels(iso2 or sov2, exc, poe.eez_iso2_set()))
-    assert poe.registry_whitelist({"mrgid": mrgid, "iso2": iso2, "sov_iso2": sov2}) is None
+    # One definition of "official": the registry check reads the zone's whitelist too.
+    zone = {"mrgid": mrgid, "iso2": iso2, "sov_iso2": sov2}
+    assert poe.registry_whitelist(zone) == poe.zone_whitelist(zone)
 
 
 def test_canaries_resolve_to_spain(exc):

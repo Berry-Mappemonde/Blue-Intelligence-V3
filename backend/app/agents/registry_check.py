@@ -85,6 +85,10 @@ STRONG_ENTRY_TERMS = (
     "port of entry", "ports of entry", "entry port", "entry ports", "clearing customs",
     "clear customs", "clear in", "clearance port", "clearance ports", "designated port",
     "designated ports", "designated marina", "designated marinas", "port of call for clearing",
+    # Customs Regulations of Saint Lucia (Cap. 15.05, reg. 136): "at the boarding stations
+    # (a) Castries and Vieux-Fort (A) for the boarding and clearance of vessels". A pilot
+    # boarding station is not one (BOARDING_NOT_AFTER).
+    "boarding station", "boarding stations", "boarding and clearance of vessels",
     # French
     "port d'entrée", "ports d'entrée", "dédouanement", "dédouaner", "port désigné", "ports désignés",
     # Spanish
@@ -468,7 +472,8 @@ def entry_mention(text: str | None, variants: list[tuple[str, ...]], *,
     tokens = _tokens(text)
     strong = _STRONG_PHRASES + (_extra_phrases(tuple(extra_strong)) if extra_strong else [])
     weak = _WEAK_PHRASES + (_extra_phrases(tuple(extra_weak)) if extra_weak else [])
-    terms = ([(" ".join(p), s, e, "strong") for p in strong for s, e in _spans(tokens, p)]
+    terms = ([(" ".join(p), s, e, "strong") for p in strong for s, e in _spans(tokens, p)
+              if not _pilot_boarding(tokens, p, s)]
              + [(" ".join(p), s, e, "weak") for p in weak for s, e in _spans(tokens, p)])
     if not terms:
         return None
@@ -508,6 +513,17 @@ def entry_mention(text: str | None, variants: list[tuple[str, ...]], *,
                 snippet=text[start:end].strip(), name_start=ns, name_end=ne)
 
 
+# "boarding station" after one of these words is a pilot's, not a customs boarding station.
+BOARDING_NOT_AFTER = frozenset({"pilot", "pilots", "pilotage", "pilote", "pilotes"})
+
+
+def _pilot_boarding(tokens: list[tuple[str, int, int]], phrase: tuple[str, ...], start: int) -> bool:
+    if phrase[:1] != ("boarding",):
+        return False
+    before = [t for t, _s, e in tokens if e <= start]
+    return bool(before) and before[-1] in BOARDING_NOT_AFTER
+
+
 def _domain(url: str) -> str:
     host = (urlparse(url).hostname or "").lower()
     return host[4:] if host.startswith("www.") else host
@@ -516,11 +532,8 @@ def _domain(url: str) -> str:
 def _official_url(url: str, whitelist: list[str] | None) -> bool:
     """Official for this zone: on the zone's PoE whitelist when one is given
     (poe_pipeline.build_whitelist, scoped per polygon: douane.gouv.fr is not New
-    Caledonia's), else the naming heuristic is_official_source()."""
-    if whitelist is None:
-        return is_official_source([url])
-    from app.services.poe_pipeline import url_allowed
-    return url_allowed(url, whitelist)
+    Caledonia's), else the naming heuristic: is_official_source() is the one test."""
+    return is_official_source([url], whitelist)
 
 
 def official_source_evidence(port: dict, source_texts: dict[str, str] | None,
