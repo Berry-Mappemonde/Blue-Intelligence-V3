@@ -120,8 +120,9 @@ def _scoped(calls, whitelist):
 def test_one_official_host_runs_scoped_tavily(providers):
     calls, answers = providers
     answers["searxng"] = lambda q: [_hit("https://npc.govt.lc/gazette.pdf", "searxng"),
-                                    _hit("https://www.stlucia.org/en/", "searxng")]
+                                    _hit("https://www.sailingtotem.com/stlucia/", "searxng")]
     _official, whitelist, _rec = _find()
+    # The second host is not official (stlucia.org is since #39, so it cannot stand in).
     assert len(_scoped(calls, whitelist)) == 1
 
 
