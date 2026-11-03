@@ -30,7 +30,10 @@ import os
 import re
 import threading
 import time
+import math
+import unicodedata
 import uuid
+import zlib
 from contextlib import ExitStack, contextmanager
 from contextvars import ContextVar
 
@@ -41,6 +44,7 @@ from shapely.geometry import shape, mapping
 from shapely.prepared import prep
 from urllib.parse import unquote, urlparse, urlunparse
 
+from app.core.geo import haversine_km
 from app.core.dedup import deduplicate_list, find_duplicate_in_list, merge_docs, normalize_name, text_similarity
 from app.core.events import ZoneRecorder, emit
 from app.core.extract import (
@@ -3298,6 +3302,47 @@ async def _find_sources(zone: dict, whitelist: list[str], exceptions: dict, log,
     return official, strictly_official, synthesis
 
 
+SOURCE_DUP_JACCARD = 0.85  # sampled-shingle overlap above which two fetches are one document
+SOURCE_DUP_LEN_RATIO = 0.90  # ... and their lengths within 10% (566k vs 579k = 0.977)
+_SHINGLE_WORDS = 6
+_SHINGLE_SAMPLE = 16  # keep 1 shingle hash in 16: ~6k hashes for a 500k-char act
+
+
+def _text_fingerprint(text: str) -> frozenset:
+    """Sampled hashes of 6-word shingles (case- and spacing-folded): two extractions of
+    the same PDF share almost all of them, two different acts almost none."""
+    words = re.findall(r"\w+", (text or "").casefold())
+    out = set()
+    for i in range(max(0, len(words) - _SHINGLE_WORDS + 1)):
+        h = zlib.crc32(" ".join(words[i:i + _SHINGLE_WORDS]).encode())
+        if h % _SHINGLE_SAMPLE == 0:
+            out.add(h)
+    return frozenset(out)
+
+
+def _duplicate_of(res: dict, seen: list[tuple[str, str | None, frozenset, int]]
+                  ) -> tuple[str, str] | None:
+    """(url, "md5" | "~NN% identique") of an already-fetched document this fetch repeats."""
+    md5 = res.get("md5")
+    text = res.get("text") or ""
+    for url, m, _fp, _n in seen:
+        if md5 and m and md5 == m:
+            return url, "md5"
+    if len(text) < 2000:
+        return None
+    fp = None
+    for url, _m, other, n in seen:
+        if not other or min(n, len(text)) < SOURCE_DUP_LEN_RATIO * max(n, len(text)):
+            continue
+        fp = fp if fp is not None else _text_fingerprint(text)
+        if not fp:
+            return None
+        jac = len(fp & other) / len(fp | other)
+        if jac >= SOURCE_DUP_JACCARD:
+            return url, f"~{round(jac * 100)}% identique"
+    return None
+
+
 async def _collect_texts(official: list[dict], log, rec=None, max_fetch: int | None = None,
                          zone: dict | None = None
                          ) -> tuple[list[str], dict, list[dict], dict]:
@@ -3348,6 +3393,7 @@ async def _collect_texts(official: list[dict], log, rec=None, max_fetch: int | N
 
     failed_roles: dict[str, int] = {}
     failed_hosts: dict[str, set[str]] = {}
+    seen_docs: list[tuple[str, str | None, frozenset, int]] = []  # (url, md5, fingerprint, chars)
     kept: set[str] = set()
     last_url = None
 
@@ -3437,9 +3483,20 @@ async def _collect_texts(official: list[dict], log, rec=None, max_fetch: int | N
         if res.get("blocked"):
             log(f"fetch {c.get('domain')}: page de blocage anti-bot — source écartée")
             continue
+        dup = _duplicate_of(res, seen_docs)
+        if dup:
+            # Same document at another URL (Saint Lucia: the customs Act twice, ~566k and
+            # ~579k chars): not read twice, and the fetch is given back to the cap.
+            fetched -= 1
+            kept.add(url)  # not a failed fetch for its authority role
+            log(f"fetch {c.get('domain') or domain_of(url)}: doublon de {dup[0][:90]} "
+                f"({dup[1]}) — ignoré, ne compte pas dans le plafond")
+            await emit(rec, "source_duplicate", url=url, duplicate_of=dup[0], match=dup[1])
+            continue
         if res["md5"]:
             hashes[url] = res["md5"]
         text = res["text"]
+        seen_docs.append((url, res.get("md5"), _text_fingerprint(text or ""), len(text or "")))
         log(f"fetch {c.get('domain') or domain_of(url)}: {len(text)} chars via {res['level']}")
         blob = (res.get("html") or "") + "\n" + (text or "")
         # PDF hrefs are in the HTML; extracted text (trafilatura) loses them
@@ -3635,6 +3692,99 @@ async def deferred_outside_zone(port: dict, port_ev: dict, zone: dict, geom, pre
     if not checked or any(c.get("validated") for c in checked):
         return None
     return "géocode en cache hors du polygone"
+
+
+PORT_MERGE_KM = 5.0  # same port, two records: farthest apart they may be (formalities.port_merge_km)
+# Facility words: "Porto da Praia" = "Praia" + a facility. Articles and prepositions are
+# dropped with them ("La marina du Marin" -> "marin").
+_FACILITY_WORDS = frozenset({
+    "port", "porto", "puerto", "harbour", "harbor", "marina", "bay", "baie", "bahia",
+    "quay", "quai", "pier", "jetty", "wharf", "dock", "terminal", "anchorage", "mouillage",
+    "station", "careening", "carenage", "plaisance", "boatyard",
+})
+_NAME_ARTICLES = frozenset({"le", "la", "les", "l", "du", "de", "des", "d", "da", "do",
+                            "dos", "das", "of", "the", "del", "di", "el"})
+_LEVEL_RANK = {"C0": 0, "C1": 1, "C2": 2, "C3": 3, "C4": 4}
+
+
+def _port_name_parts(name: str) -> tuple[str, str, frozenset]:
+    """(full key, core key, facility words) of a port name, accent-, case- and
+    punctuation-folded: "Fort-de-France" and "Fort de France" share the full key."""
+    nfd = unicodedata.normalize("NFD", (name or "").casefold())
+    tokens = re.findall(r"[a-z0-9]+", "".join(c for c in nfd if unicodedata.category(c) != "Mn"))
+    core = [t for t in tokens if t not in _FACILITY_WORDS and t not in _NAME_ARTICLES]
+    return " ".join(tokens), " ".join(core), frozenset(t for t in tokens if t in _FACILITY_WORDS)
+
+
+def same_port(a: dict, b: dict, max_km: float) -> bool:
+    """Two records of one port: the same name up to punctuation, or one name is the other
+    plus facility words ("Praia" / "Porto da Praia", "Le Marin" / "La marina du Marin"),
+    and, when both are placed, no farther apart than ``max_km``. Two different facilities
+    of one commune never merge, even on the same commune point: their cores differ
+    (Baie des Tourelles careening station / Étang Z'Abricot marina), or both name a
+    facility and not the same one ("Port du Marin" / "Marina du Marin")."""
+    fa, ca, wa = _port_name_parts(a.get("name") or "")
+    fb, cb, wb = _port_name_parts(b.get("name") or "")
+    if not fa or not fb:
+        return False
+    if fa != fb:
+        if not ca or ca != cb or len(ca.replace(" ", "")) < 3:
+            return False
+        if not (wa <= wb or wb <= wa):
+            return False
+    xa, xb = _coords_of(a), _coords_of(b)
+    if xa and xb and haversine_km(xa[0], xa[1], xb[0], xb[1]) > max_km:
+        return False
+    return True
+
+
+def _coords_of(doc: dict) -> tuple[float, float] | None:
+    try:
+        lat, lon = float(doc.get("lat")), float(doc.get("lon"))
+    except (TypeError, ValueError):
+        return None
+    return (lat, lon) if math.isfinite(lat) and math.isfinite(lon) else None
+
+
+def _evidence_rank(doc: dict) -> tuple:
+    """Best record of a merged port: certification level, judge "poe", official
+    sources, a placed GPS, then the V2 score."""
+    judge = (doc.get("judge") or {}).get("verdict")
+    return (_LEVEL_RANK.get(doc.get("confidence_level") or "", -1), judge == "poe",
+            len(doc.get("source_urls") or []), _coords_of(doc) is not None,
+            float(doc.get("confidence") or 0))
+
+
+def merge_same_ports(docs: list[dict], max_km: float = PORT_MERGE_KM
+                     ) -> tuple[list[dict], list[tuple[dict, list[dict]]]]:
+    """One record per port (``same_port``). The record with the best evidence and level
+    (``_evidence_rank``) is kept; the others' names go to ``merged_names``, their source
+    URLs are added, and their other fields fill only what the kept record lacks
+    (``core.dedup.merge_docs``). Returns (docs, [(kept, merged records)])."""
+    groups: list[list[dict]] = []
+    for d in docs or []:
+        for g in groups:
+            if any(same_port(d, o, max_km) for o in g):
+                g.append(d)
+                break
+        else:
+            groups.append([d])
+    out, merges = [], []
+    for g in groups:
+        if len(g) == 1:
+            out.append(g[0])
+            continue
+        g = sorted(g, key=_evidence_rank, reverse=True)
+        keep, rest = g[0], g[1:]
+        for o in rest:
+            keep.update(merge_docs(keep, {k: v for k, v in o.items() if k != "_id"}))
+            keep["source_urls"] = list(dict.fromkeys((keep.get("source_urls") or [])
+                                                     + (o.get("source_urls") or [])))
+        keep["merged_names"] = list(dict.fromkeys(
+            (keep.get("merged_names") or []) + [o.get("name") for o in rest if o.get("name")]))
+        out.append(keep)
+        merges.append((keep, rest))
+    return out, merges
 
 
 async def _extract_and_geocode(zone: dict, context: str, used_sources: list[dict], log,
@@ -3883,6 +4033,23 @@ async def _extract_and_geocode(zone: dict, context: str, used_sources: list[dict
                    confidence_level=doc.get("confidence_level"),
                    extraction_agreement=p.get("extraction_agreement"),
                    geocode_agree=geo.get("agree"))
+
+    # Same port, several records (Praia / Porto da Praia, Fort de France / Fort-de-France):
+    # one record kept, with the best evidence and level, before the judge and H-MEM.
+    from app.core.run_rules import get_rule
+    docs, merges = merge_same_ports(docs, float(get_rule("formalities.port_merge_km",
+                                                         PORT_MERGE_KM)))
+    for keep, rest in merges:
+        log(f"  ⚓ fusion: {keep['name']} ← {', '.join(o.get('name') or '?' for o in rest)} "
+            f"(même port, meilleure preuve gardée)")
+        await emit(rec, "port_merge", kept=keep.get("name"),
+                   merged=[o.get("name") for o in rest],
+                   confidence_level=keep.get("confidence_level"))
+        if run is not None:
+            if cert_texts is None:
+                cert_texts = certify_texts(catalog_text if catalog_text is not None else context,
+                                           used_sources)
+            attach_confidence_level(keep, whitelist=whitelist, texts=cert_texts, zone=zone)
 
     # H-MEM after scoring: remember each outcome (reinforce unchanged, supersede flips).
     if docs:

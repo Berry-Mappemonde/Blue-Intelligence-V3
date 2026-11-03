@@ -1025,16 +1025,28 @@ def nominatim_countrycodes(zone: dict | None) -> str | None:
     matched nothing (run 20261103-004818-e80c7c: 34/34 "mq" lookups empty, Fort-de-France
     included). A self-governing polygon (never_attach_to_sovereign: SX, CW …) keeps its
     own code. The polygon check stays the only gate: a mainland hit is spatial_rejected.
-    The code is part of the cache key, so misses cached under "mq" are not reused."""
+    The code is part of the cache key, so misses cached under "mq" are not reused.
+    A curated polygon VLIZ gives no ISO2 (the Canaries) uses its sovereign's; any other
+    polygon without an ISO2 keeps no filter (a joint regime is not one State's)."""
     from app.services.territory_ref import never_attach_to_sovereign, with_sovereign_iso2
     zone = with_sovereign_iso2(zone)
     iso2 = str(zone.get("iso2") or "").strip().lower()
     sov = str(zone.get("sov_iso2") or "").strip().lower()
     if not iso2:
-        return None
+        return _curated_sovereign_code(zone)
     if not sov or sov == iso2 or iso2.upper() in never_attach_to_sovereign():
         return iso2
     return f"{iso2},{sov}"
+
+
+def _curated_sovereign_code(zone: dict | None) -> str | None:
+    """Sovereign ISO2 (lower case) of a polygon curated in territories.json whose VLIZ
+    ISO2 is null (the Canaries, mrgid 8364: the record keeps iso2 null by schema and
+    sovereign_iso2 "ES"), else None. Without it, its lookups went out with no country."""
+    from app.services.territory_ref import territory_for_mrgid
+    terr = territory_for_mrgid((zone or {}).get("mrgid"))
+    sov = str(terr.get("sovereign_iso2") or "").strip().lower() if terr else ""
+    return sov or None
 
 
 async def _collect_nominatim_candidates(port: dict, zone: dict) -> list[dict]:
@@ -1073,7 +1085,8 @@ async def cached_nominatim_candidates(port: dict, zone: dict) -> list[dict]:
 async def _collect_geonames_candidates(port: dict, zone: dict) -> list[dict]:
     name = port["name"]
     territory = zone.get("name") or ""
-    cc = (zone.get("iso2") or "").upper() or None
+    # Own ISO2, else a curated polygon's sovereign (the Canaries have no VLIZ ISO2).
+    cc = ((zone.get("iso2") or _curated_sovereign_code(zone) or "").upper() or None)
     geom, prepared = _zone_geom(zone)
     cap = _geocode_candidate_limit()
     pool: list[dict] = []
