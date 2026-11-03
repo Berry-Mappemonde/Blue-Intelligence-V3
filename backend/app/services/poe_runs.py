@@ -399,6 +399,17 @@ async def execute_run(db, state, run_id: str, label: str = "",
         ports_total = await db.poe_run_ports.count_documents({"run_id": run_id})
         zones_partial = await db.poe_run_zones.count_documents(
             {"run_id": run_id, "extraction_partial": True})
+        # Batches still failing after JSON repair and the strict retry: listed by zone,
+        # never only counted (Cape Verde lesson: the port-list batch was lost unseen).
+        failed_batches: list[dict] = []
+        try:
+            async for z in db.poe_run_zones.find(
+                    {"run_id": run_id, "extraction_gaps.failed_batch_details": {"$exists": True}},
+                    {"mrgid": 1, "name": 1, "extraction_gaps": 1}):
+                for d in (z.get("extraction_gaps") or {}).get("failed_batch_details") or []:
+                    failed_batches.append({"mrgid": z.get("mrgid"), "zone": z.get("name"), **d})
+        except Exception:
+            pass
         catalog_skipped = 0
         try:
             catalog_skipped = await db.poe_run_events.count_documents({
@@ -414,6 +425,7 @@ async def execute_run(db, state, run_id: str, label: str = "",
             "by_status": by_status,
             "ports_total": ports_total,
             "zones_partial": zones_partial,
+            "failed_batches": failed_batches,
             "errors": counter["errors"],
             "cancelled": cancelled,
             "duration_s": round(time.time() - t0, 1),

@@ -1446,7 +1446,8 @@ def zone_extract_budget():
 def extraction_gaps() -> dict:
     """What the current zone's extraction left out; empty when it read everything."""
     state = _zone_extract.get() or {}
-    return {k: state[k] for k in ("capped", "deadline_hit", "unread_batches", "failed_batches")
+    return {k: state[k] for k in ("capped", "deadline_hit", "unread_batches", "failed_batches",
+                                  "failed_batch_details")
             if state.get(k)}
 
 
@@ -1518,6 +1519,56 @@ def _return_extract_calls(n: int) -> None:
         tokenfactory.return_zone_calls(n, state["run_id"])
 
 
+_SOURCE_TAG_RE = re.compile(r"\[SOURCE: ([^\]\s]+)\]")
+
+
+async def _read_attempt(text: str, zone: dict, settings, log, att: dict,
+                        label: str = "lecture") -> list[dict]:
+    """One reader call inside its own ``llm.extract_attempt`` scope: a reply that is not
+    strict JSON is repaired (``llm.repair_json``) before it counts as a failure, and
+    ``att`` keeps which providers answered invalid JSON or were repaired."""
+    from app.core.llm import extract_attempt
+    att.setdefault("invalid_json", [])
+    att.setdefault("repaired", [])
+    token = extract_attempt.set(att)
+    try:
+        ports = await extract_ports(text, zone, settings=settings, log=log)
+    finally:
+        extract_attempt.reset(token)
+    if att["repaired"]:
+        log(f"{label}: JSON réparé ({', '.join(dict.fromkeys(att['repaired']))}), "
+            f"{len(ports)} port(s) gardés")
+    return ports
+
+
+def _retry_attempt(first: dict) -> dict:
+    """The one retry of a failed batch. After invalid JSON: strict « JSON only »
+    re-prompt (``llm.STRICT_JSON_RETRY``), and Nightshift is left out when it produced
+    the invalid reply and the config has another provider (``llm.extract_ports``)."""
+    invalid = list((first or {}).get("invalid_json") or [])
+    return {"strict": bool(invalid), "avoid": {"nightshift"} & set(invalid),
+            "first_invalid_json": invalid}
+
+
+def _record_failed_batch(i: int, total: int, text: str, err: BaseException, att: dict,
+                         *, attempts: int, log, count: bool = True) -> None:
+    """Put a batch that is still failing after recovery in the zone's extraction gaps."""
+    state = _zone_extract.get()
+    if state is None:
+        return
+    invalid = list(dict.fromkeys((att.get("first_invalid_json") or []) + (att.get("invalid_json") or [])))
+    reason = (f"invalid_json ({', '.join(invalid)})" if invalid
+              else f"{type(err).__name__}: {str(err)[:160]}")
+    detail = {"batch": i + 1, "of": total, "chars": len(text or ""),
+              "sources": list(dict.fromkeys(_SOURCE_TAG_RE.findall(text or "")))[:6],
+              "attempts": attempts, "strict_retry": bool(att.get("strict")), "reason": reason}
+    state.setdefault("failed_batch_details", []).append(detail)
+    if count:
+        state["failed_batches"] = state.get("failed_batches", 0) + 1
+    log(f"lot {i + 1}/{total} en échec après {attempts} essai(s) ({reason}): "
+        f"zone partielle, lot listé dans le résumé du run")
+
+
 async def _extract_primary(context: str, zone: dict, log, rec=None,
                            catalog_text: str | None = None,
                            settings: dict | None = None) -> list[dict]:
@@ -1534,7 +1585,24 @@ async def _extract_primary(context: str, zone: dict, log, rec=None,
                                 and estimated_port_mentions(catalog_text) <= max_ports):
         if not _take_extract_calls(1):
             raise LLMCallCapReached("formalities.extract_max_llm_calls reached")
-        return await extract_ports(context, zone, settings=settings, log=log)
+        att: dict = {}
+        try:
+            return await _read_attempt(context, zone, settings, log, att)
+        except LLMCallCapReached:
+            raise
+        except Exception as e:
+            if not att.get("invalid_json") or not _take_extract_calls(1):
+                _record_failed_batch(0, 1, context, e, att, attempts=1, log=log)
+                raise
+            log("lecture: JSON invalide, nouvel essai strict « JSON seul »")
+            retry = _retry_attempt(att)
+            try:
+                return await _read_attempt(context, zone, settings, log, retry)
+            except LLMCallCapReached:
+                raise
+            except Exception as e2:
+                _record_failed_batch(0, 1, context, e2, retry, attempts=2, log=log)
+                raise
 
     size = int(get_rule("formalities.extract_batch_chars", LLM_CONTEXT_CHARS))
     overlap = int(get_rule("formalities.extract_batch_overlap_chars", EXTRACT_BATCH_OVERLAP_CHARS))
@@ -1563,13 +1631,18 @@ async def _extract_primary(context: str, zone: dict, log, rec=None,
             f"{sum(len(b) for i, b in enumerate(batches) if i not in kept)} chars non lus")
     sem = asyncio.Semaphore(max(1, workers))
     started: set[int] = set()
+    attempts: dict[int, dict] = {}
+    retrying: set[int] = set()
 
     async def read(i: int) -> list[dict]:
         async with sem:
             started.add(i)
             token = llm_context_chars.set(size)
+            att = _retry_attempt(attempts[i]) if i in retrying else {}
+            attempts[i] = att
             try:
-                return await extract_ports(batches[i], zone, settings=settings, log=log)
+                return await _read_attempt(batches[i], zone, settings, log, att,
+                                           label=f"lot {i + 1}/{len(batches)}")
             finally:
                 llm_context_chars.reset(token)
 
@@ -1611,12 +1684,21 @@ async def _extract_primary(context: str, zone: dict, log, rec=None,
               and not isinstance(results[i], LLMCallCapReached)]
     retried = failed[:_take_extract_calls(len(failed))] if failed and not unread else []
     if retried:
-        log(f"{len(retried)} lot(s) en échec relancé(s) une fois")
+        retrying.update(retried)
+        strict = sum(bool(attempts.get(i, {}).get("invalid_json")) for i in retried)
+        log(f"{len(retried)} lot(s) en échec relancé(s) une fois"
+            + (f", dont {strict} en « JSON seul » strict (JSON invalide)" if strict else ""))
         late = await read_all(retried)
         if late:
             state["deadline_hit"] = True
     found = [p for i in kept if isinstance(results.get(i), list) for p in results[i]]
     errors = [results[i] for i in kept if isinstance(results.get(i), BaseException)]
+    for i in kept:
+        if isinstance(results.get(i), BaseException):
+            # Never dropped silently: the batch, its sources and why it failed go to
+            # extraction_gaps (zone partial) and from there to the run summary.
+            _record_failed_batch(i, len(batches), batches[i], results[i], attempts.get(i) or {},
+                                 attempts=2 if i in retrying else 1, log=log, count=False)
     if errors:
         state["failed_batches"] = state.get("failed_batches", 0) + len(errors)
     if not any(isinstance(r, list) for r in results.values()):

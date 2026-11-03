@@ -442,7 +442,13 @@ def _json_from_message(msg: dict | None):
     data = parse_json_strict(reason if isinstance(reason, str) else None)
     if isinstance(data, dict):
         return data
-    return _extract_json_object(reason if isinstance(reason, str) else None)
+    data = _extract_json_object(reason if isinstance(reason, str) else None)
+    if isinstance(data, dict):
+        return data
+    # Port extraction only (llm.extract_attempt set): a cut or fenced reply is repaired.
+    from app.core.llm import try_repair
+    data = try_repair(raw, provider="nvidia")
+    return data if isinstance(data, dict) else None
 
 
 def _retry_wait(response: httpx.Response, fallback: float) -> float:
@@ -534,6 +540,9 @@ async def _complete_one(key: str, payload: dict, *,
             log(f"nvidia {used['model']}: no strict JSON, retry tokens={used['max_tokens']}")
         await asyncio.sleep(2.0)
         continue
+    if "no JSON" in (last_err or ""):
+        from app.core.llm import note_invalid_json
+        note_invalid_json("nvidia")
     raise RuntimeError(last_err)
 
 
@@ -657,7 +666,8 @@ async def extract_ports_nvidia(context: str, zone: dict,
                                model: str | None = None,
                                engine: str | None = None,
                                fallback: bool | None = None) -> list[dict]:
-    from app.core.llm import POE_EXTRACT_PROMPT, coerce_ports, extract_output_tokens, reader_context
+    from app.core.llm import (POE_EXTRACT_PROMPT, coerce_ports, extract_output_tokens,
+                              reader_context, strict_json_suffix)
 
     # Primary reader: extract chain (Pro → gpt-oss → Muse).
     # Kimi is second reader only via second_extract_choice (decree).
@@ -668,7 +678,7 @@ async def extract_ports_nvidia(context: str, zone: dict,
         name=zone.get("name") or zone.get("geoname"),
         sovereign=zone.get("sovereign") or "",
         context=sent,
-    )
+    ) + strict_json_suffix()
     data, used = await complete_json_nvidia_tracked(
         "Tu réponds uniquement en JSON strict.", prompt, settings,
         model=model, role=role, fallback=do_fb,
