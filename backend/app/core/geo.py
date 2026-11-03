@@ -1017,9 +1017,29 @@ def _pool_has_coastal(pool: list[dict], port: dict, zone: dict, geom, prepared) 
     return False
 
 
+def nominatim_countrycodes(zone: dict | None) -> str | None:
+    """``countrycodes`` of a polygon's Nominatim lookups: its ISO2, plus the sovereign's
+    when it differs ("mq,fr").
+
+    OSM files Martinique, Guadeloupe, La Réunion … under their sovereign, so "mq" alone
+    matched nothing (run 20261103-004818-e80c7c: 34/34 "mq" lookups empty, Fort-de-France
+    included). A self-governing polygon (never_attach_to_sovereign: SX, CW …) keeps its
+    own code. The polygon check stays the only gate: a mainland hit is spatial_rejected.
+    The code is part of the cache key, so misses cached under "mq" are not reused."""
+    from app.services.territory_ref import never_attach_to_sovereign, with_sovereign_iso2
+    zone = with_sovereign_iso2(zone)
+    iso2 = str(zone.get("iso2") or "").strip().lower()
+    sov = str(zone.get("sov_iso2") or "").strip().lower()
+    if not iso2:
+        return None
+    if not sov or sov == iso2 or iso2.upper() in never_attach_to_sovereign():
+        return iso2
+    return f"{iso2},{sov}"
+
+
 async def _collect_nominatim_candidates(port: dict, zone: dict) -> list[dict]:
     queries, _ctx = _port_queries(port, zone)
-    cc = (zone.get("iso2") or "").lower() or None
+    cc = nominatim_countrycodes(zone)
     geom, prepared = _zone_geom(zone)
     cap = _geocode_candidate_limit()
     pool: list[dict] = []

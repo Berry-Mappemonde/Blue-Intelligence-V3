@@ -784,10 +784,14 @@ async def llm_geocode_port(port: dict, zone: dict | None = None,
 
     This is not ``llm_geocode`` (Project site). The caller must still require
     the point to fall in THIS VLIZ polygon — not "in France".
+    Runs when Nightshift answers even if ``has_llm`` is False (no NVIDIA / OpenRouter /
+    Claude key): ``ask_json`` tries Nightshift first.
     """
     log = log or (lambda m: None)
     if not has_llm(settings):
-        return None
+        from app.core.generator import nightshift_ready
+        if not await nightshift_ready():
+            return None
     zone = zone or {}
     name = (port.get("name") or "").strip()
     if not name:
