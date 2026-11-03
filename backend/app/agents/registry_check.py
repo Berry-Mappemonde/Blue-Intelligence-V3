@@ -89,10 +89,12 @@ STRONG_ENTRY_TERMS = (
     "port d'entrée", "ports d'entrée", "dédouanement", "dédouaner", "port désigné", "ports désignés",
     # Spanish
     "puerto de entrada", "puertos de entrada", "puerto habilitado", "puertos habilitados",
-    "despacho aduanero", "puerto designado", "paso internacional", "pasos internacionales",
+    "despacho aduanero", "despacho de entrada", "puerto designado", "paso internacional",
+    "pasos internacionales",
     # Portuguese
-    "porto de entrada", "portos de entrada", "desembaraço aduaneiro", "porto designado",
-    "portos designados", "posto de fronteira", "postos de fronteira",
+    "porto de entrada", "portos de entrada", "desembaraço aduaneiro", "desalfandegamento",
+    "porto habilitado", "portos habilitados", "porto designado", "portos designados",
+    "posto de fronteira", "postos de fronteira",
     # Italian
     "porto di entrata", "porti di entrata", "porto di ingresso", "sdoganamento", "porto designato",
     # Greek

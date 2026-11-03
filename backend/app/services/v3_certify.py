@@ -280,7 +280,9 @@ ENTRY_TERMS_STRONG = (
     "ouverte au trafic international", "ouvertes au trafic international",
     "approved port", "approved ports", "approved marina", "approved marinas",
     "bureau de douane", "bureaux de douane",
-    "porto habilitado", "portos habilitados", "porto alfandegado", "portos alfandegados",
+    "porto alfandegado", "portos alfandegados",
+    # "porto(s) habilitado(s)" moved to registry_check.STRONG_ENTRY_TERMS: shared with the
+    # evidence store, so it also makes judge evidence.
 )
 ENTRY_TERMS_WEAK = ("clearance",)
 # Tariff and fee schedules list ports for pricing, not for entry: never entry context.
