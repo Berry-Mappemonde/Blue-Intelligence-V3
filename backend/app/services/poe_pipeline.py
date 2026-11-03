@@ -175,6 +175,108 @@ QUERY_TEMPLATES = {
     "vi": "cảng nhập cảnh chính thức danh sách hải quan nghị định {name}",
     "ko": "공식 입국 항구 목록 세관 법령 {name}",
 }
+# The other query families in the polygon's language, for every language that has a
+# first-round template above: two pinned hints (with {place}; the EN legal hint is added
+# after them), the site: PDF and page terms, the Serper phrase, the lessons-round words.
+# fr / es / nl entries are the strings these families already used.
+LOCAL_SEARCH_TERMS = {
+    "fr": {"hints": ("ports d'entrée officiels liste douane décret {place}",
+                     "yacht marina plaisance liste officielle {place}"),
+           "site_pdf": "(liste ports d'entrée OR décret OR arrêté)",
+           "site_page": "(ports d'entrée OR liste douane)",
+           "serper": "port d'entrée officiel liste plaisance",
+           "lessons": "formalités d'entrée navire de plaisance premier port d'arrivée"},
+    "es": {"hints": ("{place} puertos habilitados decreto lista oficial",
+                     "{place} yates marinas turismo náutico lista oficial"),
+           "site_pdf": "(puertos habilitados OR decreto lista)",
+           "site_page": "(puertos habilitados OR decreto)",
+           "serper": "puertos habilitados lista oficial yates",
+           "lessons": "despacho de entrada embarcaciones de recreo primer puerto de arribo"},
+    "pt": {"hints": ("{place} portos habilitados lista oficial embarcações de recreio",
+                     "{place} desalfandegamento iates alfândega primeiro porto de chegada"),
+           "site_pdf": "(portos habilitados OR portos de entrada OR decreto)",
+           "site_page": "(portos de entrada OR alfândega formalidades)",
+           "serper": "portos de entrada oficiais lista iates",
+           "lessons": "desalfandegamento embarcações de recreio capitania primeiro porto de chegada"},
+    "nl": {"hints": ("{place} officiële lijst havens van binnenkomst pleziervaartuigen",
+                     "{place} inklaren jachten douane eerste haven van aankomst"),
+           "site_pdf": "(havens van binnenkomst OR besluit OR lijst)",
+           "site_page": "(havens van binnenkomst OR douane inklaren)",
+           "serper": "officiële lijst toegangshavens pleziervaartuigen",
+           "lessons": "inklaren pleziervaartuigen eerste haven van aankomst"},
+    "it": {"hints": ("{place} elenco ufficiale porti di ingresso unità da diporto",
+                     "{place} sdoganamento imbarcazioni da diporto dogana primo porto di arrivo"),
+           "site_pdf": "(porti di ingresso OR decreto OR elenco)",
+           "site_page": "(porti di ingresso OR dogana diporto)",
+           "serper": "porti di ingresso ufficiali elenco diporto",
+           "lessons": "sdoganamento diporto primo porto di arrivo"},
+    "de": {"hints": ("{place} offizielle Liste Einreisehäfen Sportboote",
+                     "{place} Einklarierung Yachten Zoll erster Ankunftshafen"),
+           "site_pdf": "(Einreisehäfen OR Verordnung OR Liste)",
+           "site_page": "(Einreisehäfen OR Zoll Sportboote)",
+           "serper": "offizielle Einreisehäfen Liste Yachten",
+           "lessons": "Einklarierung Sportboote erster Ankunftshafen"},
+    "id": {"hints": ("{place} daftar resmi pelabuhan masuk kapal wisata yacht",
+                     "{place} izin masuk yacht bea cukai pelabuhan kedatangan pertama"),
+           "site_pdf": "(pelabuhan masuk OR keputusan OR daftar)",
+           "site_page": "(pelabuhan masuk OR bea cukai yacht)",
+           "serper": "pelabuhan masuk resmi daftar yacht",
+           "lessons": "izin masuk kapal wisata pelabuhan kedatangan pertama"},
+    "tr": {"hints": ("{place} resmi giriş limanları listesi yatlar",
+                     "{place} yat giriş işlemleri gümrük ilk varış limanı"),
+           "site_pdf": "(giriş limanları OR kararname OR liste)",
+           "site_page": "(giriş limanları OR gümrük yat)",
+           "serper": "resmi giriş limanları listesi yat",
+           "lessons": "yat giriş işlemleri ilk varış limanı"},
+    "el": {"hints": ("{place} επίσημος κατάλογος λιμένων εισόδου σκάφη αναψυχής",
+                     "{place} εκτελωνισμός σκαφών αναψυχής τελωνείο πρώτος λιμένας άφιξης"),
+           "site_pdf": "(λιμένες εισόδου OR διάταγμα OR κατάλογος)",
+           "site_page": "(λιμένες εισόδου OR τελωνείο σκάφη αναψυχής)",
+           "serper": "επίσημα λιμάνια εισόδου κατάλογος σκάφη αναψυχής",
+           "lessons": "εκτελωνισμός σκαφών αναψυχής πρώτος λιμένας άφιξης"},
+    "ru": {"hints": ("{place} официальный список портов въезда маломерные суда яхты",
+                     "{place} таможенное оформление яхт первый порт прибытия"),
+           "site_pdf": "(порты въезда OR указ OR список)",
+           "site_page": "(порты въезда OR таможня яхты)",
+           "serper": "официальные порты въезда список яхты",
+           "lessons": "таможенное оформление яхт первый порт прибытия"},
+    "ar": {"hints": ("{place} القائمة الرسمية لموانئ الدخول لليخوت",
+                     "{place} إجراءات دخول اليخوت الجمارك أول ميناء وصول"),
+           "site_pdf": "(موانئ الدخول OR مرسوم OR قائمة)",
+           "site_page": "(موانئ الدخول OR الجمارك اليخوت)",
+           "serper": "موانئ الدخول الرسمية قائمة اليخوت",
+           "lessons": "إجراءات دخول اليخوت أول ميناء وصول"},
+    "zh": {"hints": ("{place} 官方入境口岸名单 游艇",
+                     "{place} 游艇入境手续 海关 首个抵达港口"),
+           "site_pdf": "(入境口岸 OR 法令 OR 名单)",
+           "site_page": "(入境口岸 OR 海关 游艇)",
+           "serper": "官方入境港口 名单 游艇",
+           "lessons": "游艇入境手续 首个抵达港口"},
+    "ja": {"hints": ("{place} 公式 入国港 一覧 ヨット プレジャーボート",
+                     "{place} ヨット 入国手続き 税関 最初の到着港"),
+           "site_pdf": "(入国港 OR 政令 OR 一覧)",
+           "site_page": "(入国港 OR 税関 ヨット)",
+           "serper": "公式入国港 一覧 ヨット",
+           "lessons": "ヨット 入国手続き 最初の到着港"},
+    "ko": {"hints": ("{place} 공식 입국항 목록 요트",
+                     "{place} 요트 입항 절차 세관 첫 도착항"),
+           "site_pdf": "(입국항 OR 법령 OR 목록)",
+           "site_page": "(입국항 OR 세관 요트)",
+           "serper": "공식 입국 항구 목록 요트",
+           "lessons": "요트 입항 절차 첫 도착항"},
+    "th": {"hints": ("{place} รายชื่อท่าเรือเข้าเมืองอย่างเป็นทางการ เรือยอชต์",
+                     "{place} พิธีการเข้าเมืองเรือยอชต์ ศุลกากร ท่าเรือแรกที่มาถึง"),
+           "site_pdf": "(ท่าเรือเข้าเมือง OR ประกาศ OR รายชื่อ)",
+           "site_page": "(ท่าเรือเข้าเมือง OR ศุลกากร เรือยอชต์)",
+           "serper": "ท่าเรือเข้าเมืองอย่างเป็นทางการ รายชื่อ เรือยอชต์",
+           "lessons": "พิธีการเข้าเมืองเรือยอชต์ ท่าเรือแรกที่มาถึง"},
+    "vi": {"hints": ("{place} danh sách chính thức cảng nhập cảnh du thuyền",
+                     "{place} thủ tục nhập cảnh du thuyền hải quan cảng đến đầu tiên"),
+           "site_pdf": "(cảng nhập cảnh OR nghị định OR danh sách)",
+           "site_page": "(cảng nhập cảnh OR hải quan du thuyền)",
+           "serper": "cảng nhập cảnh chính thức danh sách du thuyền",
+           "lessons": "thủ tục nhập cảnh du thuyền cảng đến đầu tiên"},
+}
 
 # *Path* tokens (not the hostname). "douane" / "customs" in
 # the domain give a false bonus to a customs homepage.
@@ -290,11 +392,11 @@ def family_default_hints(place: str) -> list[str]:
 def lessons_learned_query(zone: dict) -> str:
     """Round 2: official document that is not titled "ports of entry"."""
     place = serp_place_name(zone) or search_polygon_name(zone) or ""
-    return (
-        f"{place} yacht marina small craft pleasure craft "
-        f"first arrival points de passage autorizim akcizë anije "
-        f"kartelë formalités plaisance sPCR"
-    )
+    q = (f"{place} yacht marina small craft pleasure craft "
+         f"first arrival points de passage autorizim akcizë anije "
+         f"kartelë formalités plaisance sPCR")
+    local = LOCAL_SEARCH_TERMS.get(zone_search_lang(zone) or "")
+    return f"{q} {local['lessons']}" if local else q
 
 
 def google_style_tld_tokens(zone: dict) -> str:
@@ -314,25 +416,23 @@ def google_style_query(zone: dict, lang: str | None = None) -> str:
     place = serp_place_name(zone) or search_polygon_name(zone) or ""
     place = place.replace("-", " ")
     tld_tok = google_style_tld_tokens(zone)
-    if lang == "fr":
-        q = f"{place} port d'entrée officiel liste plaisance {tld_tok}"
-    elif lang == "es":
-        q = f"{place} puertos habilitados lista oficial yates {tld_tok}"
-    elif lang == "nl":
-        q = f"{place} officiële lijst toegangshavens pleziervaartuigen {tld_tok}"
+    local = LOCAL_SEARCH_TERMS.get(lang or "")
+    if local:
+        q = f"{place} {local['serper']} {tld_tok}"
     else:
         q = f"{place} Ports of Entry sailing list official {tld_tok}"
     return " ".join(q.split())
 
 
 def google_style_shots(zone: dict) -> list[tuple[str, str]]:
-    """(lang, query) — EN always; + fr/es/nl if the polygon language is one of those.
+    """(lang, query) — EN always; + one in the polygon's language when LOCAL_SEARCH_TERMS
+    has it (every language with a first-round template).
 
     SX has zone_search_lang=None: a single EN shot, not Dutch.
     """
     shots = [("en", google_style_query(zone))]
     lang = zone_search_lang(zone)
-    if lang in ("fr", "es", "nl"):
+    if lang in LOCAL_SEARCH_TERMS:
         loc = google_style_query(zone, lang)
         if loc != shots[0][1]:
             shots.append((lang, loc))
@@ -590,19 +690,9 @@ def default_search_hints(zone: dict) -> list[str]:
             f"porteve detare {poly}",
             generic,
         ]
-    lang = zone_search_lang(zone)
-    if lang == "es":
-        return [
-            f"{poly} puertos habilitados decreto lista oficial",
-            f"{poly} yates marinas turismo náutico lista oficial",
-            generic,
-        ]
-    if lang == "fr":
-        return [
-            f"ports d'entrée officiels liste douane décret {poly}",
-            f"yacht marina plaisance liste officielle {poly}",
-            generic,
-        ]
+    local = LOCAL_SEARCH_TERMS.get(zone_search_lang(zone) or "")
+    if local:
+        return [h.format(place=poly) for h in local["hints"]] + [generic]
     return family_default_hints(poly)
 
 
@@ -2217,11 +2307,9 @@ def site_list_pdf_query(domain: str, zone: dict) -> str:
     if iso == "AL":
         return (f"site:{domain} filetype:pdf "
                 f"(akcizë OR anijet e peshkimit OR porteve detare OR kartelë)")
-    lang = zone_search_lang(zone)
-    if lang == "fr":
-        return f"site:{domain} filetype:pdf (liste ports d'entrée OR décret OR arrêté)"
-    if lang == "es":
-        return f"site:{domain} filetype:pdf (puertos habilitados OR decreto lista)"
+    local = LOCAL_SEARCH_TERMS.get(zone_search_lang(zone) or "")
+    if local:
+        return f"site:{domain} filetype:pdf {local['site_pdf']}"
     return (f"site:{domain} filetype:pdf "
             f"(ports of entry OR yacht OR marina OR pleasure craft OR "
             f"first arrival OR akcizë OR designated)")
@@ -2253,11 +2341,9 @@ def site_list_page_query(domain: str, zone: dict) -> str:
         return f"site:{domain} (yacht tourism OR specialized marinas)"
     if iso == "AL":
         return f"site:{domain} (autorizim akcizë anijet e peshkimit OR porteve detare)"
-    lang = zone_search_lang(zone)
-    if lang == "fr":
-        return f"site:{domain} (ports d'entrée OR liste douane)"
-    if lang == "es":
-        return f"site:{domain} (puertos habilitados OR decreto)"
+    local = LOCAL_SEARCH_TERMS.get(zone_search_lang(zone) or "")
+    if local:
+        return f"site:{domain} {local['site_page']}"
     return (f"site:{domain} (ports of entry OR yacht tourism OR specialized marinas "
             f"OR pleasure craft OR first arrival OR porteve detare)")
 
