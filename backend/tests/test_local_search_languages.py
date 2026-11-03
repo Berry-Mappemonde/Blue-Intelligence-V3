@@ -76,7 +76,8 @@ def test_french_spanish_dutch_strings_are_the_ones_already_used():
     assert poe.site_list_page_query("d.co", co) == "site:d.co (puertos habilitados OR decreto)"
     assert ("es", "Colombia puertos habilitados lista oficial yates .co") in poe.google_style_shots(co)
     nl = {"mrgid": 5668, "name": "Netherlands", "iso2": "NL", "sov_iso2": "NL"}
-    assert ("nl", "Netherlands officiële lijst toegangshavens pleziervaartuigen .nl") in poe.google_style_shots(nl)
+    # local-language name in the local-language query (fix/v3-dual-domain-languages)
+    assert ("nl", "Nederland officiële lijst toegangshavens pleziervaartuigen .nl") in poe.google_style_shots(nl)
 
 
 def test_zones_without_a_language_keep_the_english_queries():

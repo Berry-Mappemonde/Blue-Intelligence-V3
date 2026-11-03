@@ -66,6 +66,41 @@ def test_languages_fill_the_sovereign_and_keep_the_order():
     assert poe.LOCAL_SEARCH_TERMS["fr"]["lessons"] in lessons
 
 
+PR_ES = {"mrgid": 33179, "name": "Puerto Rico", "iso2": "PR", "sov_iso2": "US",
+         "sovereign": "United States"}
+GALAPAGOS = {"mrgid": 8403, "name": "Galapagos", "iso2": "EC", "sov_iso2": "EC",
+             "sovereign": "Ecuador"}
+NC = {"mrgid": 8312, "name": "New Caledonia", "iso2": "NC", "sov_iso2": "FR", "sovereign": "France"}
+
+
+def test_puerto_rico_searches_in_spanish_too():
+    assert poe.LANG_BY_ISO2["PR"] == "es"
+    assert poe.zone_search_languages(PR_ES) == ["es", "en"]
+    assert [l for l, _ in poe.google_style_shots(PR_ES)] == ["en", "es"]
+
+
+@pytest.mark.parametrize("zone, lang, name", [
+    (CV, "pt", "Cabo Verde"),              # pycountry ISO 3166-1, whole-country polygon
+    (CANARIES, "es", "Islas Canarias"),    # territories.json name_es
+    (NC, "fr", "Nouvelle-Calédonie"),      # territories.json name_fr
+    (MQ, "fr", "Martinique"),
+    (GALAPAGOS, "es", "Galapagos"),        # a polygon of Ecuador: never "Ecuador"
+    (CV, "en", "Cape Verde"),              # English keeps the English name
+    (MQ, "es", "Martinique"),              # curated record without name_es: fallback
+])
+def test_local_place_name(zone, lang, name):
+    assert poe.local_place_name(zone, lang) == name
+
+
+def test_local_language_queries_use_the_local_name():
+    shots = dict(poe.google_style_shots(CV))
+    assert shots["pt"].startswith("Cabo Verde ") and shots["en"].startswith("Cape Verde ")
+    hints = poe.default_search_hints(CANARIES)
+    assert hints[0] == "Islas Canarias puertos habilitados decreto lista oficial"
+    assert hints[-1].startswith("Canary Islands customs act")  # the EN legal hint stays English
+    assert "Islas Canarias" in poe.localized_query(CANARIES)
+
+
 # --- caps as run rules ---------------------------------------------------------------
 
 def test_caps_are_run_rules_with_unchanged_defaults():

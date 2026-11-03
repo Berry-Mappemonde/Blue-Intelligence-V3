@@ -145,7 +145,7 @@ LANG_BY_ISO2 = {
     "CD": "fr", "HT": "fr", "NC": "fr", "PF": "fr", "PM": "fr", "WF": "fr", "YT": "fr",
     "RE": "fr", "GP": "fr", "MQ": "fr", "GF": "fr", "BL": "fr", "MF": "fr",
     # es
-    "ES": "es", "MX": "es", "AR": "es", "CL": "es", "PE": "es", "CO": "es", "EC": "es",
+    "ES": "es", "PR": "es", "MX": "es", "AR": "es", "CL": "es", "PE": "es", "CO": "es", "EC": "es",
     "VE": "es", "UY": "es", "PA": "es", "CR": "es", "GT": "es", "HN": "es", "NI": "es",
     "SV": "es", "DO": "es", "CU": "es", "GQ": "es",
     # pt
@@ -348,6 +348,44 @@ def zone_search_languages(zone: dict) -> list[str]:
     return [l for l in out if l != "en"] + ["en"]
 
 
+def local_place_name(zone: dict, lang: str | None) -> str:
+    """The zone's name in ``lang`` for a local-language query, else the English one
+    (serp_place_name). Sources, in order: the curated territory's ``name_<lang>``
+    (territories.json: Martinique, Islas Canarias), then pycountry's ISO 3166-1 name in
+    ``lang`` when the polygon is the whole country (Cabo Verde, México) — never for a
+    polygon of a larger country (Galápagos stays Galápagos)."""
+    place = serp_place_name(zone) or ""
+    if not lang or lang == "en" or not place or is_france_mainland_eez(zone):
+        return place
+    from app.services.territory_ref import territory_for_mrgid
+    terr = territory_for_mrgid(zone.get("mrgid"))
+    if terr:
+        return str(terr.get(f"name_{lang}") or place)
+    iso = polygon_iso2(zone)
+    pyc = registry_check._pycountry()
+    if not iso or pyc is None:
+        return place
+    country = pyc.countries.get(alpha_2=iso)
+    if country is None:
+        return place
+    english = {fold_place_name(getattr(country, a, None))
+               for a in ("name", "common_name", "official_name")} - {""}
+    if fold_place_name(place) not in english | {fold_place_name(zone.get("sovereign"))}:
+        return place  # a polygon of the country, not the country
+    return _country_name_in(country.name, lang) or place
+
+
+@functools.lru_cache(maxsize=256)
+def _country_name_in(name: str, lang: str) -> str:
+    import gettext
+    pyc = registry_check._pycountry()
+    try:
+        tr = gettext.translation("iso3166-1", pyc.LOCALES_DIR, languages=[lang])
+    except (OSError, AttributeError):
+        return ""
+    return tr.gettext(name)
+
+
 def _local_languages(zone: dict) -> list[str]:
     """zone_search_languages without "en", restricted to LOCAL_SEARCH_TERMS."""
     return [l for l in zone_search_languages(zone) if l != "en" and l in LOCAL_SEARCH_TERMS]
@@ -389,7 +427,7 @@ def localized_query(zone: dict) -> str | None:
     lang = zone_search_lang(zone)
     tpl = QUERY_TEMPLATES.get(lang or "")
     if tpl:
-        return tpl.format(name=place)
+        return tpl.format(name=local_place_name(zone, lang) or place)
     return family_classic_query(place, lang)
 
 
@@ -505,9 +543,11 @@ def scoped_search_domains(whitelist: list[str], zone: dict | None) -> list[str]:
 def google_style_query(zone: dict, lang: str | None = None) -> str:
     """Short Google-bar style phrase: place + PoE + sailing + official + TLD."""
     place = serp_place_name(zone) or search_polygon_name(zone) or ""
+    local = LOCAL_SEARCH_TERMS.get(lang or "")
+    if local:
+        place = local_place_name(zone, lang) or place
     place = place.replace("-", " ")
     tld_tok = google_style_tld_tokens(zone)
-    local = LOCAL_SEARCH_TERMS.get(lang or "")
     if local:
         q = f"{place} {local['serper']} {tld_tok}"
     else:
@@ -782,7 +822,8 @@ def default_search_hints(zone: dict) -> list[str]:
         ]
     langs = _local_languages(zone)  # local, then the sovereign's (zone_search_languages)
     if langs:
-        hints = [h.format(place=poly) for lang in langs for h in LOCAL_SEARCH_TERMS[lang]["hints"]]
+        hints = [h.format(place=local_place_name(zone, lang) or poly)
+                 for lang in langs for h in LOCAL_SEARCH_TERMS[lang]["hints"]]
         return list(dict.fromkeys(hints)) + [generic]
     return family_default_hints(poly)
 
