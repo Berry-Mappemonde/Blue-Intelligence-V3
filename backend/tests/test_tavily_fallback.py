@@ -117,12 +117,21 @@ def _scoped(calls, whitelist):
     return [c for c in calls["tavily"] if c["include_domains"] == whitelist[:8]]
 
 
+# A fixture zone with exactly one official host: the test no longer depends on Saint
+# Lucia's live whitelist (#39 gave LC five hosts, stlucia.org among them).
+ONE_HOST_ZONE = {"mrgid": 990101, "name": "Testland", "geoname": "Testland", "iso2": "TL",
+                 "sov_iso2": "TL", "sovereign": "Testland"}
+ONE_HOST_WHITELIST = ["gov.testland.example"]
+
+
 def test_one_official_host_runs_scoped_tavily(providers):
     calls, answers = providers
-    answers["searxng"] = lambda q: [_hit("https://npc.govt.lc/gazette.pdf", "searxng"),
-                                    _hit("https://www.stlucia.org/en/", "searxng")]
-    _official, whitelist, _rec = _find()
-    assert len(_scoped(calls, whitelist)) == 1
+    answers["searxng"] = lambda q: [_hit("https://www.gov.testland.example/gazette.pdf", "searxng"),
+                                    _hit("https://www.visit-testland.example/en/", "searxng")]
+    rec = _Rec()
+    asyncio.run(poe._find_sources(ONE_HOST_ZONE, list(ONE_HOST_WHITELIST), {}, lambda m: None,
+                                  rec=rec, tf_key="", variant="tinyfish"))
+    assert len(_scoped(calls, ONE_HOST_WHITELIST)) == 1
 
 
 def test_two_official_hosts_skip_scoped_tavily(providers):
