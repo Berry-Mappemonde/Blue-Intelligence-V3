@@ -173,7 +173,7 @@ async def _complete(client, url, headers, model, prompt, system, json_mode, budg
     if usage:
         result['usage'] = usage
     if json_mode:
-        parsed = parse_json_flexible(text)
+        parsed = parse_json_flexible(text, provider='generator')
         if not isinstance(parsed, dict):
             raise _ProviderFailure('invalid_json')
         result['parsed'] = parsed

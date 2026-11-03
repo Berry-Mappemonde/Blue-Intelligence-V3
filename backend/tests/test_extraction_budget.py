@@ -452,7 +452,12 @@ def test_batch_failing_twice_marks_the_zone_partial(reader, monkeypatch):
     ports, gaps = _zone(_three_sources(), logs)
     assert {p["name"] for p in ports} == {"Port Alpha", "Port Charlie"}
     assert len(reader) == 4  # one retry, not more
+    assert gaps["failed_batches"] == 1
+    (detail,) = gaps.pop("failed_batch_details")
     assert gaps == {"failed_batches": 1}
+    assert detail["batch"] == 2 and detail["attempts"] == 2
+    assert detail["sources"] == ["https://gov.example/r1"]
+    assert detail["reason"] == "RuntimeError: provider 502" and detail["strict_retry"] is False
     assert any("1 lot(s) en échec relancé(s) une fois" in m for m in logs)
 
 

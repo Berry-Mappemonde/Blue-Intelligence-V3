@@ -35,6 +35,36 @@ llm_context_chars: ContextVar[int] = ContextVar("llm_context_chars", default=LLM
 # Set by poe_pipeline.zone_extract_budget: returns False when the zone's share of
 # formalities.extract_max_llm_calls cannot cover one more provider step of extract_ports.
 extract_call_gate: ContextVar = ContextVar("extract_call_gate", default=None)
+# One port-extraction attempt (poe_pipeline._read_batch): {"strict": bool, "skip": set,
+# "invalid_json": [provider...], "repaired": [provider...]}. While it is set, a reply
+# that fails strict JSON parsing goes through ``repair_json`` before it counts as a
+# failure, and ``strict`` adds STRICT_JSON_RETRY to the extraction prompt.
+extract_attempt: ContextVar[dict | None] = ContextVar("extract_attempt", default=None)
+
+STRICT_JSON_RETRY = """
+
+RAPPEL (nouvel essai, la réponse précédente n'était pas un JSON valide) :
+- Réponds par UN SEUL objet JSON {"ports": [...]}, rien avant, rien après.
+- Pas de markdown, pas de ```, pas de commentaire, pas de raisonnement.
+- Guillemets doubles, pas de virgule finale, ferme chaque crochet et accolade.
+- "note" : 60 caractères au plus, ou null, pour que la réponse tienne en entier."""
+
+
+def strict_json_suffix() -> str:
+    """STRICT_JSON_RETRY during a strict re-prompt, else empty."""
+    att = extract_attempt.get()
+    return STRICT_JSON_RETRY if att and att.get("strict") else ""
+
+
+def note_invalid_json(provider: str) -> None:
+    att = extract_attempt.get()
+    if att is not None:
+        att.setdefault("invalid_json", []).append(provider)
+
+
+def provider_skipped(provider: str) -> bool:
+    att = extract_attempt.get()
+    return bool(att and provider in (att.get("skip") or ()))
 
 
 def reader_context(context: str | None) -> str:
@@ -102,7 +132,10 @@ def has_llm(settings: dict | None = None) -> bool:
 # ---------------------------------------------------------------------------
 # Robust JSON parsing
 # ---------------------------------------------------------------------------
-def parse_json_flexible(txt: str):
+def parse_json_flexible(txt: str, repair: bool | None = None, provider: str = "?"):
+    """JSON of a model reply: whole text, then the outer {...} / [...]. During a
+    port-extraction attempt (``extract_attempt``), or with ``repair=True``, a reply
+    that still fails goes through ``repair_json``; a repaired reply is recorded."""
     txt = re.sub(r"^```(json)?|```$", "", (txt or "").strip(), flags=re.M).strip()
     try:
         return json.loads(txt)
@@ -120,6 +153,85 @@ def parse_json_flexible(txt: str):
             return json.loads(m.group(0))
         except Exception:
             pass
+    return try_repair(txt, repair, provider)
+
+
+def try_repair(txt: str | None, repair: bool | None = None, provider: str = "?"):
+    """``repair_json`` when repair is on (explicitly or by the extraction attempt)."""
+    att = extract_attempt.get()
+    if not (repair or (repair is None and att is not None)):
+        return None
+    data = repair_json(txt)
+    if data is not None and att is not None:
+        att.setdefault("repaired", []).append(provider)
+    return data
+
+
+_TRAILING_COMMA_RE = re.compile(r",(\s*[}\]])")
+_JSON_START_RE = re.compile(r"[{\[]")
+
+
+def repair_json(txt: str | None):
+    """Tolerant parse of a broken model reply; None when nothing sound is left.
+
+    Fixes, in order: markdown fences and prose around the JSON, trailing commas, and a
+    reply cut short (max_tokens): the text is cut back to the last complete element
+    and the open brackets are closed. An element cut in the middle is dropped, never
+    completed, so no port name or coordinate is invented."""
+    if not isinstance(txt, str):
+        return None
+    s = re.sub(r"```(?:json)?", "", txt).strip()
+    m = _JSON_START_RE.search(s)
+    if not m:
+        return None
+    s = _TRAILING_COMMA_RE.sub(r"\1", s[m.start():])
+    try:
+        return json.loads(s)
+    except Exception:
+        pass
+    # Walk the text: bracket stack, and the cut points where an element just ended.
+    stack: list[str] = []
+    cuts: list[tuple[int, tuple[str, ...]]] = []
+    in_str = esc = False
+    end = None
+    for i, ch in enumerate(s):
+        if in_str:
+            if esc:
+                esc = False
+            elif ch == "\\":
+                esc = True
+            elif ch == '"':
+                in_str = False
+            continue
+        if ch == '"':
+            in_str = True
+        elif ch in "{[":
+            stack.append("}" if ch == "{" else "]")
+        elif ch in "}]":
+            if not stack or stack[-1] != ch:
+                break
+            stack.pop()
+            if not stack:
+                end = i + 1
+                break
+            cuts.append((i + 1, tuple(stack)))
+        elif ch == ",":
+            cuts.append((i, tuple(stack)))
+    if end is not None:
+        try:
+            return json.loads(_TRAILING_COMMA_RE.sub(r"\1", s[:end]))
+        except Exception:
+            pass
+    for pos, open_ in reversed(cuts):
+        # Only between two elements of a list, or two keys of the top object:
+        # a cut inside one element (a port's own fields) would keep half a record.
+        if not (open_[-1] == "]" or len(open_) == 1):
+            continue
+        cand = _TRAILING_COMMA_RE.sub(r"\1", s[:pos].rstrip().rstrip(",")) + "".join(reversed(open_))
+        try:
+            return json.loads(cand)
+        except Exception:
+            continue
     return None
 
 
@@ -192,6 +304,10 @@ def nightshift_model(role: str) -> str | None:
 async def _nightshift(prompt: str, system: str, *, json_mode: bool, role: str, log=None) -> dict | None:
     """Generator result when Nightshift (or its NVIDIA fallback) served it; None otherwise."""
     from app.core.generator import generate
+    if provider_skipped("nightshift"):
+        if log:
+            log("Nightshift: sauté pour ce nouvel essai (JSON invalide au premier), autre fournisseur")
+        return None
     try:
         result = await generate(prompt, system, json_mode=json_mode, role=role,
                                 run_id=LLM_TRACE_RUN_ID, model=nightshift_model(role))
@@ -199,6 +315,9 @@ async def _nightshift(prompt: str, system: str, *, json_mode: bool, role: str, l
         if log:
             log(f"Nightshift: {type(e).__name__}: {str(e)[:80]}")
         return None
+    for reason in (result.get("fallback_reason") or "").split("; "):
+        if reason.endswith("invalid_json"):
+            note_invalid_json(reason.split(":")[0].strip() or "nightshift")
     if result.get("provider") in GENERATOR_PROVIDERS:
         return result
     if log:
@@ -534,9 +653,10 @@ async def _json_openrouter(prompt: str, system: str, settings: dict | None,
     raw = await _call_openrouter(
         prompt, system, key, json_mode=True, max_tokens=max_tokens,
         images=images)
-    data = parse_json_flexible(raw)
+    data = parse_json_flexible(raw, provider="openrouter")
     if isinstance(data, dict):
         return data
+    note_invalid_json("openrouter")
     raise RuntimeError("openrouter: no JSON in output")
 
 
@@ -549,7 +669,7 @@ async def extract_ports_openrouter(context: str, zone: dict,
         name=search_polygon_name(zone) or (zone.get("name") or zone.get("geoname") or ""),
         sovereign=zone.get("sovereign") or "",
         context=sent,
-    )
+    ) + strict_json_suffix()
     data = await _json_openrouter(
         prompt, "Tu réponds uniquement en JSON strict.", settings,
         extract_output_tokens(fallback=True))
@@ -569,7 +689,7 @@ async def extract_ports_nightshift(context: str, zone: dict, log=None) -> list[d
         name=search_polygon_name(zone) or (zone.get("name") or zone.get("geoname") or ""),
         sovereign=zone.get("sovereign") or "",
         context=sent,
-    )
+    ) + strict_json_suffix()
     served = await _nightshift(prompt, "Tu réponds uniquement en JSON strict.",
                                json_mode=True, role="extract", log=log)
     if served is None:
@@ -610,11 +730,18 @@ async def extract_ports(context: str, zone: dict, settings: dict | None = None, 
             s = await get_settings()
         except Exception:
             s = {}
+    from app.core.nvidia import extract_ports_nvidia, nvidia_enabled
+    from app.core import claude
+    att = extract_attempt.get()
+    if att and att.get("avoid"):
+        # Strict re-prompt after invalid JSON: leave the provider that produced it only
+        # when this config has another one to ask (NIM / Token Factory, OpenRouter, Claude).
+        others = bool(nvidia_enabled(s) or get_llm_key(s)
+                      or (claude.claude_enabled(s) and claude.budget_allows_call(s)))
+        att["skip"] = set(att["avoid"]) if others else set()
     ports = await extract_ports_nightshift(context, zone, log=log)
     if ports is not None:
         return ports
-    from app.core.nvidia import extract_ports_nvidia, nvidia_enabled
-    from app.core import claude
     if nvidia_enabled(s):
         _charge_fallback("NIM", log)
         try:

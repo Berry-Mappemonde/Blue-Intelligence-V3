@@ -659,6 +659,8 @@ async def complete_json(system: str, prompt: str, *,
         json_mode=True, log=log)
     data = _parse_json(body)
     if not isinstance(data, dict):
+        from app.core.llm import note_invalid_json
+        note_invalid_json("tokenfactory")
         raise RuntimeError("tokenfactory: no JSON in output")
     return data, served
 

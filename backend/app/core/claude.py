@@ -458,13 +458,14 @@ STATIC_PREFIX = _build_static_prefix()
 
 def build_extract_payload(zone: dict, context: str) -> dict:
     """Messages payload: breakpoint on the static prefix, never on the user."""
-    from app.core.llm import reader_context
+    from app.core.llm import reader_context, strict_json_suffix
     from app.services.poe_zone_label import search_polygon_name
     name = search_polygon_name(zone) or (zone.get("name") or zone.get("geoname") or "")
     sovereign = zone.get("sovereign") or ""
     user_text = (
         f"Zone à extraire : {name} ({sovereign}, polygone VLIZ mrgid={zone.get('mrgid')}).\n\n"
         f"EXTRAITS DES SOURCES OFFICIELLES:\n{reader_context(context)}"
+        + strict_json_suffix()
     )
     return {
         "model": CLAUDE_MODEL,
@@ -534,7 +535,7 @@ async def extract_ports_claude(context: str, zone: dict,
 
     from app.core.llm import coerce_ports, parse_json_flexible
     raw = _content_text({"content": data.get("content") or []})
-    parsed = parse_json_flexible(raw)
+    parsed = parse_json_flexible(raw, provider="claude")
     if parsed is None:
         raise RuntimeError("claude: no JSON in output")
     ports = coerce_ports(parsed, context=context)
