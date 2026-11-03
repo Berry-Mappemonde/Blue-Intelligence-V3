@@ -1263,23 +1263,63 @@ def _row_value_like(line: str) -> bool:
             and ("," in line or line.endswith(".") or len(line) <= 60))
 
 
-def territory_rows(text: str, known_heads: set[str]) -> list[tuple[str, str]]:
-    """(header, ports line) rows of a per-territory list, or [] when the text is not one.
+_MD_HEADING_PREFIX_RE = re.compile(r"^#{1,6}\s+")
 
-    A row is a short title-like line followed by a list line. The text counts as a
-    per-territory list only when at least two row headers are known territory names
-    (``known_heads``, folded): a page of headings and paragraphs is not one."""
+
+def _heading_text(line: str) -> str:
+    """A heading line without its markdown: "### **GUYANE**" -> "GUYANE"."""
+    return _MD_HEADING_PREFIX_RE.sub("", line).strip().strip("*_` ").rstrip(":").strip()
+
+
+def _is_md_heading(line: str) -> bool:
+    return line.startswith("#") or (line.startswith("**") and line.rstrip(":").endswith("**"))
+
+
+def territory_rows(text: str, known_heads: set[str]) -> list[tuple[str, list[str]]]:
+    """(heading, body lines) sections of a per-territory list, or [] when the text is not one.
+
+    Two layouts. Plain (18 July 2023 Arrêté): a short title-like line, then its body; the
+    line right after a heading is always body ("Polynésie française" / "Papeete-Tahiti").
+    Markdown (douane.gouv.fr contact pages read by Tavily Extract): "### **GUYANE**" and
+    the like, in any case; a section runs to the next markdown heading. A territory name
+    is recognised whatever its case or markdown. The text counts as a per-territory list
+    only when at least two headings are known territory names (``known_heads``, folded):
+    a page of headings and paragraphs is not one."""
     lines = [ln.strip() for ln in (text or "").splitlines() if ln.strip()]
-    rows, i = [], 0
-    while i < len(lines) - 1:
-        head, value = lines[i], lines[i + 1]
-        if _row_head_like(head) and _row_value_like(value):
-            rows.append((head, value))
-            i += 2
+
+    def known(line: str) -> bool:
+        head = _heading_text(line)
+        return len(head) <= 60 and fold_place_name(head) in known_heads
+
+    markdown = any(_is_md_heading(ln) and known(ln) for ln in lines)
+    sections: list[tuple[str, list[str]]] = []
+    after_heading = False
+    for ln in lines:
+        if markdown:
+            starts = _is_md_heading(ln)
         else:
-            i += 1
-    known = {fold_place_name(h) for h, _ in rows} & known_heads
-    return rows if len(known) >= _ROW_MIN_KNOWN_HEADS else []
+            starts = not after_heading and (known(ln) or _row_head_like(ln))
+        if starts:
+            sections.append((_heading_text(ln), []))
+            after_heading = True
+        elif sections:
+            sections[-1][1].append(ln)
+            after_heading = False
+    named = {fold_place_name(h) for h, _ in sections} & known_heads
+    return [(h, body) for h, body in sections if body] if len(named) >= _ROW_MIN_KNOWN_HEADS else []
+
+
+def _section_ports(head: str, body: list[str]) -> list[dict]:
+    """Ports of one territory's section: a one-line body is its list ("Longoni, Dzaoudzi.");
+    a longer section (contact block of a customs office) is read by the other parsers,
+    on this section alone."""
+    if len(body) == 1 and _row_value_like(body[0]):
+        return _row_ports(head, body[0])
+    # One line per paragraph: an address line ("Aéroport – Aérogare du frêt") must not run
+    # into the office name the way a markdown line break ("  \n") kept them apart.
+    return [{**p, "territory_row": head,
+             "note": f"{p.get('note') or 'catalogue'} — section « {head} »"}
+            for p in _extract_structured_ports_one("\n\n".join(body) + "\n")]
 
 
 def _row_ports(head: str, value: str) -> list[dict]:
@@ -1303,8 +1343,9 @@ def split_territory_rows(text: str, zone_names: set[str] | None,
     """Take the per-territory lists out of ``text`` before the other parsers read it.
 
     Returns (the text without those [SOURCE: …] blocks, the ports of the zone's own
-    row(s), True when a list was found but none of its rows is the zone's). The other
-    parsers must not read such a block: their "Port de X" takes every territory's row.
+    row(s) or section(s), True when a list was found but none of its rows is the zone's).
+    The other parsers must not read such a block: their "Port de X" or "bureau de douane
+    de X" takes every territory's row.
     Names are folded (``fold_place_name``); without them the text is returned as is."""
     if not text or not zone_names or not known_heads:
         return text, [], False
@@ -1316,10 +1357,10 @@ def split_territory_rows(text: str, zone_names: set[str] | None,
             kept.append(part)
             continue
         lists += 1
-        for head, value in rows:
+        for head, body in rows:
             if fold_place_name(head) not in zone_names:
                 continue
-            for p in _row_ports(head, value):
+            for p in _section_ports(head, body):
                 if p["name"].casefold() not in seen:
                     seen.add(p["name"].casefold())
                     ports.append(p)

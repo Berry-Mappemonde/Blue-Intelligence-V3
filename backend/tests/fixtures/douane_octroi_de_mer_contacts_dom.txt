@@ -1,0 +1,172 @@
+# FIXTURE douane.gouv.fr, "Fiscalité douanière dans les départements d'outre-mer" (octroi de mer):
+# FIXTURE customs contact offices listed under one heading per overseas department.
+# FIXTURE Source: http://www.douane.gouv.fr/fiche/fiscalite-douaniere-dans-les-departements-doutre-mer
+# FIXTURE Text as the pipeline read it in run 20261102-224042-f9be8d (Martinique): Tavily Extract
+# FIXTURE raw_content (8,781 chars, markdown), from the run's Tavily cache, verbatim.
+ [Aller au contenu](#main-content)   [Aller à la recherche](#edit-query-search-field)   [Aller au menu](#dropdownMenuLinkParticuliers) 
+
+* [![Logo de la république française](/themes/custom/portail_externe/assets/images/Republique_Francaise_RVB.svg)](https://www.info.gouv.fr/ "Site officiel du gouvernement FR")
+* [![Retour à l'accueil](/themes/custom/portail_externe/assets/images/DGDDI_2020_RVB.svg)](/ "Retour à la page d'accueil du portail de la direction générale des douanes et droits indirects")
+
+# [douane.gouv.fr Le portail de la direction générale des douanes et droits indirects](/)
+
+![](/themes/custom/portail_externe/assets/images/icon-avatar.svg)
+
+## Mon Espace Personnel
+
+* [Se connecter](/connexion)
+* [S'inscrire](/mon-compte/creer)
+
+Services & Aide Services
+Aide
+[Tout sur les services & aide](/services-aide)
+
+[![Tutoriel vidéo : Le nouveau douane.gouv.fr](/sites/default/files/assets/images/2021-02/vignette-tutos-portail.jpg)](/actualites/douanegouvfr-le-portail-pour-toutes-vos-demarches-aupres-de-la-douane "Le nouveau douane.gouv.fr")   [![Tutoriel vidéo : Créer votre compte sur douane.gouv.fr](/sites/default/files/assets/images/2021-02/vignette-tutos-mon-compte.jpg)](/actualites/douanegouvfr-le-portail-pour-toutes-vos-demarches-aupres-de-la-douane#Nouveau "Créer votre compte sur douane.gouv.fr ( nouvel onglet )")
+
+Recherche
+
+![](/themes/custom/portail_externe/assets/images/icon-avatar.svg)
+
+## Mon Espace Personnel
+
+* [Se connecter](/connexion)
+* [S'inscrire](/mon-compte/creer)
+
+# Fiscalité douanière dans les départements d'Outre-mer
+
+* Imprimer
+* Envoyer par email
+* Partager
+
+Mise à jour le 20/02/2026
+
+L’octroi de mer est une imposition spécifique des départements d’Outre-mer dont l’origine est très ancienne puisqu’il était perçu dès 1670 dans la colonie de Martinique.
+
+## L'octroi de mer
+
+Dans les régions de Guadeloupe, de Guyane, de Martinique, de Mayotte et de La Réunion, une taxe dénommée « octroi de mer » est applicable.
+
+### **Les opérations soumises à l’octroi de mer sont les suivantes :**
+
+* Les importations de biens ;
+* Les livraisons de biens, faites à titre onéreux, par des personnes qui y exercent des activités de production (les « assujettis »).
+
+Sont considérées comme des activités de production les opérations de fabrication, de transformation ou de rénovation d’un bien meuble corporel, ainsi que les opérations agricoles et extractives.
+
+Est considérée comme une transformation toute modification de l’état d’un bien, qu’il y ait ou non un changement de position tarifaire, à l’exception des opérations de conditionnement ou de manutention.
+
+La livraison d'un bien s'entend du transfert du pouvoir de disposer d'un bien meuble corporel comme un propriétaire. Les prestations de service n'entrent pas dans le champ d'application de cette taxe.
+
+Les conseils régionaux (ou le conseil général à Mayotte) peuvent également instituer un octroi de mer régional dont l’assiette est identique à celle de l'octroi de mer.
+
+### **La base d'imposition est constituée** **:**
+
+* Pour les importations de biens, par la valeur en douane au sens de la réglementation communautaire ;
+* Pour les livraisons de biens produits localement, par le prix hors taxe sur la valeur ajoutée et hors accises.
+
+### **L'octroi de mer et l'octroi de mer régional sont exigibles** **:**
+
+* Pour les importations de biens, lors de l'entrée dans l’une des cinq régions précitées ou lors de la mise à la consommation en cas de placement des biens, lors de cette entrée, sous un régime suspensif douanier ou fiscal ;
+* Pour les livraisons de biens, au moment de la livraison.
+
+### **Ils sont liquidés :**
+
+* Pour les importations de biens, sur la déclaration en douane ;
+* Pour les livraisons de biens, sur les déclarations trimestrielles souscrites par les assujettis auprès du bureau de douane territorialement compétent.
+
+## Opérations imposables
+
+### **L'octroi de mer et l'octroi de mer régional sont applicables** **:**
+
+* Aux importations de biens, quelle que soit leur provenance (octroi de mer dit « externe ») ;
+* Aux livraisons de biens faites à titre onéreux par des personnes qui exercent des activités de production (octroi de mer dit « interne »).
+
+## Opérations exonérées
+
+* **Les exonérations obligatoires (articles 4, 5 et 8 de** [**la loi 2004-639 du 2 juillet 2004 relative à l’octroi de mer modifiée par la loi 2015-762 du 29 juin 2015**](http://legifrance.gouv.fr/affichTexte.do?cidTexte=JORFTEXT000000253374)**)** **:**
+  + Les exportations (article 4-1° et 3° de la loi) ;
+  + Les importations de productions locales dans le cadre du marché antillo-guyanais (article 4-2° de la loi) sauf pour certains biens listés au I de l’article 5 ;
+  + Les importations de biens bénéficiant des franchises applicables aux autres droits et taxes en vigueur (article 8 de la loi).
+* **Les exonérations facultatives (articles 6, 7 et 7-1 de la loi)** **:** les conseils régionaux (ou le conseil général à Mayotte) ont la faculté d’exonérer :
+  + Les importations de certains types de biens (article 6 de la loi) ;
+  + Les livraisons de biens réalisées par des personnes assujetties par la fixation d'un taux zéro ou d'un taux réduit (article 7 de la loi) ;
+  + Les importations, mises à la consommation et livraisons de biens destinés à l’avitaillement des navires et aéronefs et de carburants (tracés/colorés) destinés à un usage professionnel (article 7-1 de la loi).
+
+## Opérations désormais « hors champ » de cette fiscalité
+
+Les livraisons réalisées par les personnes dont le chiffre d'affaires annuel relatif à leur activité de production est inférieur à 550 000 € sont désormais hors du champ d'application de la réglementation sur l'octroi de mer (article 2 de la loi).
+
+## Taux
+
+Le régime d’octroi de mer mis en place en 2004 et modifié en 2015 autorise, pour un nombre limité de produits listés dans la décision du Conseil 940/2014/UE, l’instauration d’un différentiel de taux entre les biens produits localement (octroi de mer interne) et les biens identiques importés (octroi de mer externe) afin de permettre aux économies ultramarines de compenser les handicaps structurels auxquelles elles doivent faire face.
+
+Les taux d’octroi de mer interne et d’octroi de mer externe sont fixés par délibérations des conseils régionaux (ou du conseil général à Mayotte).
+
+## Formalités
+
+La douane est l’administration de perception, de contrôle et de recouvrement de l’octroi de mer. Les assujettis doivent s’identifier auprès de ses services en fournissant une copie de leur déclaration d’existence et en communiquant leur chiffre d’affaires et la nature de leur production. Cette démarche est obligatoire et vous concerne si vous exercez une activité de production (fabrication, transformation ou rénovation) de biens meubles corporels ou une activité agricole ou extractive, dès lors que votre entreprise présente un chiffre d’affaires de production supérieur ou égal à 300 000 €.
+
+Vous devrez également souscrire chaque trimestre une déclaration (« déclaration trimestrielle ») pour acquitter l’octroi de mer dont vous êtes redevables.
+
+## Contacts
+
+### **GUADELOUPE**
+
+Bureau de douane de Pointe-à-Pitre  
+Immeuble Lysa Impasse André Ampère  
+CEDEX / BP 2201  
+97196 JARRY
+
+* Tél. : 05 90 89 76 00
+* Télécopie : 05 90 89 59 00
+
+### **MARTINIQUE**
+
+Bureau de douane du Lamentin  
+Aéroport – Aérogare du frêt  
+BP 81005  
+97232 LE LAMENTIN
+
+* Tél. : 05 96 51 73 96
+* Télécopie : 05 96 51 95 30
+
+### **MAYOTTE**
+
+Direction Régionale des Douanes et des Droits Indirects de Mayotte  
+Pôle d'action économique  
+8 Avenue de la Préfecture  
+97615 DZAOUDZI
+
+* Tél. : 06 39 64 23 73
+* Fax : 02.69.61.02.07
+
+### **GUYANE**
+
+Bureau de douane de Degrad des Cannes  
+Port – ZI Degrad des Cannes  
+97354 REMIRE-MONTJOLY
+
+* Tél. : 05 94 25 23 40
+* Télécopie : 05 94 25 23 57
+
+### **LA RÉUNION**
+
+Bureau de douane de Saint-Denis-Gillot  
+Aéroport de Saint-Denis-Gillot  
+Nouvelle aérogare frêt-Bal 13  
+97438 SAINTE MARIE
+
+* Tél. : 02 62 94 05 49
+* Télécopie : 02 62 94 03 70
+
+## Bases règlementaires
+
+* [Décision du Conseil 940/2014 UE du 17 décembre 2014](https://eur-lex.europa.eu/legal-content/FR/TXT/?uri=OJ:L:2014:367:TOC)
+* [Loi 2004-639 du 2 juillet 2004 relative à l’octroi de mer modifiée par la loi n…](https://www.legifrance.gouv.fr/affichTexte.do?cidTexte=JORFTEXT000000253374)
+* [Décret d’application 2015-1077 du 26 août 2015](https://www.legifrance.gouv.fr/affichTexte.do?cidTexte=JORFTEXT000031108041)
+
+## Liens utiles
+
+* [L'octroi de mer se modernise avec DOMINO](/actualites/loctroi-de-mer-se-modernise )
+* [L'octroi de mer à La Réunion](/fiche/loctroi-de-mer-la-reunion )
+* [Octroi de mer applicable à Mayotte au 11/09/2018](/sites/default/files/uploads/files/2019-04/2018-mayotte-octroi-de-mer-delib-00165-2018.pdf)  - PDF 6 Mo
