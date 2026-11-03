@@ -410,6 +410,25 @@ async def execute_run(db, state, run_id: str, label: str = "",
                     failed_batches.append({"mrgid": z.get("mrgid"), "zone": z.get("name"), **d})
         except Exception:
             pass
+        # Judge calls that failed (invalid JSON after repair and one strict retry, timeout,
+        # no provider) or answered only part of the zone: zone, reason, ports left without
+        # a verdict (runs f3993a / 608d85: the Canaries and Martinique lost theirs unseen).
+        judge_failed: list[dict] = []
+        try:
+            async for z in db.poe_run_zones.find(
+                    {"run_id": run_id, "$or": [{"judge.failed": True},
+                                               {"judge.ports_without_verdict.0": {"$exists": True}}]},
+                    {"mrgid": 1, "name": 1, "judge": 1}):
+                j = z.get("judge") or {}
+                judge_failed.append({
+                    "mrgid": z.get("mrgid"), "zone": z.get("name"),
+                    "reason": j.get("reason") or "incomplete answer",
+                    "failed": bool(j.get("failed")),
+                    "ports_without_verdict": j.get("ports_without_verdict") or [],
+                    "json_repaired": bool(j.get("json_repaired")),
+                    "strict_retry": bool(j.get("strict_retry"))})
+        except Exception:
+            pass
         catalog_skipped = 0
         try:
             catalog_skipped = await db.poe_run_events.count_documents({
@@ -426,6 +445,7 @@ async def execute_run(db, state, run_id: str, label: str = "",
             "ports_total": ports_total,
             "zones_partial": zones_partial,
             "failed_batches": failed_batches,
+            "judge_failed": judge_failed,
             "errors": counter["errors"],
             "cancelled": cancelled,
             "duration_s": round(time.time() - t0, 1),

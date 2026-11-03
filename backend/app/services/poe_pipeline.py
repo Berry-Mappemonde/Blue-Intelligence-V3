@@ -4311,6 +4311,11 @@ async def _judge_zone_run(zone: dict, docs: list[dict], raw: str, used_sources: 
             log(f"juge Nemotron: sauté ({summary['reason']})")
         else:
             log(f"juge Nemotron: {summary['judged']} verdict(s) {summary['verdicts']}")
+        if summary.get("failed") or summary.get("ports_without_verdict"):
+            left = summary.get("ports_without_verdict") or []
+            log(f"juge Nemotron: {'échec' if summary.get('failed') else 'réponse incomplète'} "
+                f"({summary['reason'] or 'verdicts manquants'}), {len(left)} port(s) sans "
+                f"verdict: {', '.join(left[:8])}" + (" …" if len(left) > 8 else ""))
         return summary
 
     summary = {"status": "skipped", "reason": None, "provider": None, "served_model": None,
@@ -4339,7 +4344,9 @@ async def _judge_zone_run(zone: dict, docs: list[dict], raw: str, used_sources: 
     cert_texts = certify_texts(raw, used_sources)
     llm, judged, reason = await poe_judge.ask(
         name, docs, texts, run.run_id, timeout_s, gate=_take_judge_call)
-    summary.update(provider=llm.get("provider"), served_model=llm.get("served_model"))
+    summary.update(provider=llm.get("provider"), served_model=llm.get("served_model"),
+                   json_repaired=bool(llm.get("json_repaired")),
+                   strict_retry=bool(llm.get("strict_retry")), attempts=llm.get("attempts"))
     for d in docs:
         judgment = None if reason else judged.get(port_key(d.get("name")))
         if judgment:
@@ -4353,6 +4360,13 @@ async def _judge_zone_run(zone: dict, docs: list[dict], raw: str, used_sources: 
         reason = "no usable answer"
     summary["status"] = "skipped" if reason else "ok"
     summary["reason"] = reason
+    # A failed call (invalid JSON after repair and retry, timeout, no provider, no usable
+    # answer), not a decision (no official text, cap): listed in the run summary with the
+    # ports it left without a verdict. A repaired cut-off answer lists its missing ports too.
+    summary["failed"] = bool(reason) and reason not in poe_judge.DELIBERATE_SKIPS
+    summary["ports_without_verdict"] = (
+        [d.get("name") for d in docs if not d.get("judge")]
+        if (summary["failed"] or (not reason and summary["judged"] < len(docs))) else [])
     await emit(rec, "judge", **summary)
     return done(summary)
 

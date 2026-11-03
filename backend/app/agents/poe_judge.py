@@ -36,6 +36,16 @@ MAX_EXCERPT_CHARS = 400
 MAX_TEXTS = 20
 TRACE_TEXT_CHARS = 200  # reason / excerpt length in the trace event (port.judge keeps them whole)
 GATE_REFUSED = 'formalities.extract_max_llm_calls reached'
+# One strict re-ask after a reply that was not valid JSON, even once repaired (#34's
+# extraction recovery, applied to the judge: runs f3993a / 608d85 lost the Canaries'
+# and Martinique's verdicts to one invalid Nightshift answer).
+JUDGE_STRICT_RETRY = (
+    '\n\nREMINDER (new attempt, the previous answer was not valid JSON): answer with ONE '
+    'JSON object {"ports": [...]} and nothing else: no markdown, no ``` fence, no comment. '
+    'Double quotes, no trailing comma, close every bracket. Keep each reason under 20 words '
+    'and each quoted_excerpt under 200 characters so the answer fits.')
+# Skip reasons that are a decision, not a failed call: the run summary lists the others.
+DELIBERATE_SKIPS = ('SAMPLE_MODE=true', 'no official evidence text for this zone', GATE_REFUSED)
 RETRY_HINT = 'Nemotron judge: named a port of entry in the official text; re-check its sources'
 JUDGE_SYSTEM = (
     'You audit port-of-entry designations for a maritime clearance tool. Use only the official '
@@ -124,18 +134,61 @@ async def ask(zone_name: str, ports: list[dict], texts: list[dict], run_id: str,
         return {}, {}, 'no official evidence text for this zone'
     if gate is not None and not gate():
         return {}, {}, GATE_REFUSED
-    try:
-        result = await asyncio.wait_for(generator.generate(
-            judge_prompt(zone_name, ports, texts), JUDGE_SYSTEM, json_mode=True, role='judge',
-            run_id=run_id, sample_fn=lambda prompt, system: {'ports': []}), timeout=timeout_s)
-    except asyncio.TimeoutError:
-        return {}, {}, f'no answer within {timeout_s:g}s'
-    except Exception as exc:  # noqa: BLE001 - an advisory step never fails the run
-        return {}, {}, f'judge failed: {type(exc).__name__}'
-    llm = dict(provider=result['provider'], served_model=result['model'])
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout_s
+    prompt = judge_prompt(zone_name, ports, texts)
+    result, att, err = await _generate_once(prompt, run_id, timeout_s)
+    recovery = dict(json_repaired=bool(att.get('repaired')), strict_retry=False, attempts=1)
+    if _invalid_json(result, att):
+        # Repair already ran inside the call (llm.repair_json): still invalid, so one strict
+        # "JSON only" re-ask, paid from the same call share as the first one.
+        left = deadline - loop.time()
+        if left <= 1 or (gate is not None and not gate()):
+            why = 'no time left' if left <= 1 else GATE_REFUSED
+            return _llm(result, recovery), {}, f'invalid JSON; strict retry not run ({why})'
+        recovery.update(strict_retry=True, attempts=2)
+        result, att, err = await _generate_once(prompt + JUDGE_STRICT_RETRY, run_id, left)
+        recovery['json_repaired'] = recovery['json_repaired'] or bool(att.get('repaired'))
+        if _invalid_json(result, att):
+            return _llm(result, recovery), {}, 'invalid JSON after repair and one strict retry'
+    if err:
+        return dict(recovery), {}, err
+    llm = _llm(result, recovery)
     if result['provider'] == 'sample':
         return llm, {}, result.get('fallback_reason') or 'no provider answered'
     return llm, parse_judgments(result.get('parsed'), texts), None
+
+
+def _llm(result: dict | None, recovery: dict) -> dict:
+    result = result or {}
+    return dict(provider=result.get('provider'), served_model=result.get('model'), **recovery)
+
+
+def _invalid_json(result: dict | None, att: dict) -> bool:
+    """The generator found no usable JSON: a provider said invalid_json and none answered."""
+    if not result or result.get('provider') != 'sample':
+        return False
+    return bool(att.get('invalid_json')) or 'invalid_json' in (result.get('fallback_reason') or '')
+
+
+async def _generate_once(prompt: str, run_id: str, timeout_s: float):
+    """One judge call with #34's repair on (llm.extract_attempt scope): a fenced reply, a
+    trailing comma or a verdict list cut at max_tokens is parsed by llm.repair_json, which
+    keeps only complete verdicts and never completes a cut one. -> (result, attempt, error)."""
+    from app.core import llm
+    att = {'invalid_json': [], 'repaired': []}
+    token = llm.extract_attempt.set(att)
+    try:
+        result = await asyncio.wait_for(generator.generate(
+            prompt, JUDGE_SYSTEM, json_mode=True, role='judge',
+            run_id=run_id, sample_fn=lambda prompt, system: {'ports': []}), timeout=timeout_s)
+    except asyncio.TimeoutError:
+        return None, att, f'no answer within {timeout_s:g}s'
+    except Exception as exc:  # noqa: BLE001 - an advisory step never fails the run
+        return None, att, f'judge failed: {type(exc).__name__}'
+    finally:
+        llm.extract_attempt.reset(token)
+    return result, att, None
 
 
 _ask = ask  # judge_zone (run_pipeline) and existing callers
