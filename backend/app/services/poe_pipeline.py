@@ -3177,13 +3177,24 @@ async def _find_sources(zone: dict, whitelist: list[str], exceptions: dict, log,
         d = (c.get("domain") or domain_of(c.get("url") or "")).lower()
         if d and d not in domains:
             domains.append(d)
+    # Own-domain site: hops are skipped once a list-looking official URL is in hand
+    # (list_url_bonus). The sovereign's hops of an overseas territory are not: that URL
+    # heuristic says "a list", not "this territory's list" (Martinique: France's national
+    # pleasure-port PDF on douane.gouv.fr scores 0.8 and closed both hops in run
+    # 20261103-143422-608d85, so gouv.fr was never searched for Martinique).
     sov_hops = bool(sovereign_search_domains(zone, exceptions))
-    if (official or sov_hops) and not any(
-        (c.get("url") or "").lower().endswith(".pdf")
-        and list_url_bonus(c.get("url") or "") >= 0.5
-        for c in official
-    ):
-        extra_pdfs = await _site_list_pdf_search(domains, zone, log)
+    list_pdf = next((c.get("url") for c in official
+                     if (c.get("url") or "").lower().endswith(".pdf")
+                     and list_url_bonus(c.get("url") or "") >= 0.5), None)
+    list_page = next((c.get("url") for c in official
+                      if list_url_bonus(c.get("url") or "") >= 0.45), None)
+    own_pdf_hops = bool(official) and not list_pdf
+    own_page_hops = bool(official) and not list_page
+    if sov_hops and not (own_pdf_hops and own_page_hops):
+        log("site: hops propres sautés (liste déjà trouvée: "
+            f"{(list_pdf or list_page or '')[:90]}); hops souverains lancés quand même")
+    if own_pdf_hops or sov_hops:
+        extra_pdfs = await _site_list_pdf_search(domains if own_pdf_hops else [], zone, log)
         await _emit_search(engine=_served_by(extra_pdfs), lang="site-pdf",
                            query="site:domain filetype:pdf", n=len(extra_pdfs),
                            results=extra_pdfs, domains=domains[:3],
@@ -3193,9 +3204,11 @@ async def _find_sources(zone: dict, whitelist: list[str], exceptions: dict, log,
             candidates = _merge_candidates(candidates, extra_pdfs)
             official = [c for c in candidates if url_allowed(c.get("url") or "", whitelist)]
             log(f"site PDF: {len(extra_pdfs)} candidat(s) sur {domains[:3]}")
-    if (official or sov_hops) and not any(list_url_bonus(c.get("url") or "") >= 0.45
-                                          for c in official):
-        extra_pages = await _site_list_page_search(domains, zone, log)
+    list_page = next((c.get("url") for c in official
+                      if list_url_bonus(c.get("url") or "") >= 0.45), None)
+    own_page_hops = bool(official) and not list_page
+    if own_page_hops or sov_hops:
+        extra_pages = await _site_list_page_search(domains if own_page_hops else [], zone, log)
         await _emit_search(engine=_served_by(extra_pages), lang="site-page",
                            query="site:domain liste", n=len(extra_pages),
                            results=extra_pages, domains=domains[:3],

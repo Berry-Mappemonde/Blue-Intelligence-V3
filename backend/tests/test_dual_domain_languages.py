@@ -306,3 +306,40 @@ def test_overseas_territory_with_no_official_hit_still_runs_the_sovereign_hops(p
     _find(VG)
     assert any(q.startswith("site:gov.uk") and '"British Virgin Islands"' in q
                for q in calls["searxng"])
+
+
+# --- gate: a list already found closes the own-domain hops, never the sovereign's ----
+# Run 20261103-143422-608d85: search_volume showed 0 sovereign site: hops everywhere and
+# 0 site: hops for Martinique. France's national pleasure-port PDF on douane.gouv.fr
+# (list_url_bonus 0.8) closed both hops, gouv.fr included.
+FR_LIST_PDF = ("https://www.douane.gouv.fr/sites/default/files/2026-07/06/"
+               "Liste-ports-de-plaisance-eligibles.pdf")
+
+
+def test_list_found_still_runs_the_sovereign_hops_of_an_overseas_territory(providers):
+    calls, answers = providers
+    answers["searxng"] = lambda q: [] if q.startswith("site:") else [
+        FR_LIST_PDF, "https://www.martinique.gouv.fr/Actions-de-l-Etat/Mer/plaisance"]
+    assert poe.list_url_bonus(FR_LIST_PDF) >= 0.5
+    logs, rec = [], _Rec()
+    _find(MQ, logs, rec)
+    site_q = [q for q in calls["searxng"] if q.startswith("site:")]
+    sov = poe.sovereign_search_domains(MQ)
+    # only the sovereign's hops, PDF and page, each naming Martinique
+    assert site_q and all(any(q.startswith(f"site:{d} ") for d in sov) for q in site_q)
+    assert all('"Martinique"' in q for q in site_q)
+    assert len(site_q) == 2 * len(sov)
+    (ev,) = [p for step, p in rec.events if step == "search_volume"]
+    assert ev["sovereign_site_hops"] == ev["site_hops"] == 2 * len(sov)
+    assert any("hops propres sautés" in m for m in logs)
+
+
+def test_list_found_still_closes_the_hops_of_a_zone_that_is_its_own_sovereign(providers):
+    calls, answers = providers
+    answers["searxng"] = lambda q: [] if q.startswith("site:") else [
+        "https://www.govt.lc/media.govt.lc/www/resources/legislation/CustomsAct.pdf"]
+    logs, rec = [], _Rec()
+    _find(LC, logs, rec)
+    assert not [q for q in calls["searxng"] if q.startswith("site:")]
+    (ev,) = [p for step, p in rec.events if step == "search_volume"]
+    assert ev["site_hops"] == 0 and ev["sovereign_site_hops"] == 0
