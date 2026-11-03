@@ -284,9 +284,12 @@ def _full_keys(*names: str | None) -> set[str]:
 
 
 def grounding_variants(name: str | None, alternates: tuple = ()) -> list[Variant]:
-    """Name variants as token tuples, longest first: whole words, 4+ characters, not generic."""
+    """Name variants as token tuples, longest first: whole words, 4+ characters, not generic.
+    A one-word singular made from another one-word variant ("canne" from "Cannes", "ingle"
+    from "Inglês") is not a variant: it is a fragment, often a common word."""
     keys = {" ".join(_TOKENS.get(t, t) for t in v.split()) for v in name_variants(name, *alternates)}
     keys = {k for k in keys if len(k) >= 4 and k not in _GENERIC}
+    keys = {k for k in keys if " " in k or k + "s" not in keys}
     full = _full_keys(name, *alternates)
     out = []
     for key in sorted(keys, key=len, reverse=True):
@@ -329,6 +332,27 @@ def _spans(tokens: list[tuple[str, int, int]], phrase: tuple[str, ...], plural_s
         if words[:-1] == list(phrase[:-1]) and (
                 words[-1] == phrase[-1] or (plural_s and words[-1] == phrase[-1] + "s")):
             yield tokens[i][1], tokens[i + n - 1][2]
+
+
+def name_spans(text: str, tokens: list[tuple[str, int, int]], variant: tuple[str, ...]):
+    """(start, end) of a name variant in text, whole words.
+
+    A one-word variant matches that word only, without a plural "s", and a one-word or
+    stripped variant ("novo" left from "Porto Novo") only where the text writes it as a
+    proper noun, first letter capitalized: "os novos que venham a surgir" and "na praia"
+    are common words, "Porto Novo" and "ALFÂNDEGA DA PRAIA" are names. A stripped one-word
+    variant that the same text also writes in lower case is a common word there ("Novo
+    regulamento" at the start of a sentence, "novo" elsewhere): it does not match in that
+    text. A full name of several words matches as before (plural "s" on its last word,
+    any case)."""
+    single = len(variant) == 1
+    if single and getattr(variant, "stripped", False) and any(
+            t == variant[0] and text[s:s + 1].islower() for t, s, _ in tokens):
+        return
+    for ns, ne in _spans(tokens, variant, plural_s=not single):
+        if (single or getattr(variant, "stripped", False)) and not text[ns:ns + 1].isupper():
+            continue
+        yield ns, ne
 
 
 def _in_address(text: str, tokens: list[tuple[str, int, int]], start: int, end: int) -> bool:
@@ -386,7 +410,7 @@ def entry_mention(text: str | None, variants: list[tuple[str, ...]], *,
                 if exclude else [])
     best = None
     for variant in variants:
-        for ns, ne in _spans(tokens, variant, plural_s=True):
+        for ns, ne in name_spans(text, tokens, variant):
             if _in_address(text, tokens, ns, ne):
                 continue
             line_lo, line_hi = _line_bounds(text, ns, ne) if excluded else (0, 0)
