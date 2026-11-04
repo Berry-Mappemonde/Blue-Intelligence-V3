@@ -456,6 +456,14 @@ async def execute_run(db, state, run_id: str, label: str = "",
         attach(summary, run_id)
         from app.core.tavily import attach as tavily_attach
         tavily_attach(summary, run_id)
+        # Score against a hand-checked gold file when one covers every zone of the run
+        # (backend/data/gold, app/services/gold_score.py); None otherwise. Read only.
+        try:
+            from app.services import gold_score
+            score = await gold_score.score_run(db, run_id)
+            summary["gold_score"] = gold_score.summary_view(score) if score else None
+        except Exception as e:  # noqa: BLE001 — scoring never fails a run
+            summary["gold_score"] = {"error": f"{type(e).__name__}: {str(e)[:160]}"}
         await db.poe_runs.update_one({"_id": run_id}, {"$set": {
             "state": "cancelled" if cancelled else "done",
             "finished_at": poe.now_iso(),

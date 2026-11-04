@@ -1,0 +1,11 @@
+{
+  "_about": "Extra names a run may give a gold entry, by zone mrgid then gold name (the name exactly as in the gold file). Read by app/services/gold_score.py. Only aliases decided by hand are listed: a run name that matches no gold name or alias goes to the scorer's unmatched list, it is never guessed. Kept apart from the gold files so Clément's files stay verbatim.",
+  "33178": {
+    "Port de plaisance Capitainerie du port (nouvelle extension)": ["Le Marin"],
+    "Capitainerie Marina - Pointe Bateau": ["Pointe Bateau", "Le François"]
+  },
+  "8362": {
+    "Tarrafal": ["São Nicolau", "Tarrafal de São Nicolau"],
+    "Mindelo – Porto Grande de São Vicente": ["Mindelo", "Porto Grande"]
+  }
+}

@@ -1,0 +1,308 @@
+{
+  "_about": "Ground truth for the BI V3 pilot, checked by hand by Clément (3 Nov 2026) against run 20261103-161330-59c1e5. PoE = a place where a foreign pleasure boat completes entry formalities, according to a State source. See REPORT-EN.md / PROCEDURE-REVERIFICATION-EN.md.",
+  "checked_by": "Clément",
+  "checked_on": "2026-11-03",
+  "run": "20261103-161330-59c1e5",
+  "criteria": {
+    "all": "State source only; guides, noonsite, agents and forums are secondary.",
+    "Martinique": "Only marinas and capitaineries on the douane clearance list count; cybercafés, snack bars, shops, tourist office, customs brigade, fuel and careening stations are excluded.",
+    "Cape Verde": "Only habilitated border posts (DL 2/2015 as amended by DL 13/2025, art. 2(1)); the art. 2(9) exception is not a PoE.",
+    "Canary Islands": "Entry from outside EU/Schengen: habilitated border crossing points (Schengen Handbook Annex 4; Orden INT/859/2023 Annex V)."
+  },
+  "zones": [
+    {
+      "zone": "Saint Lucia",
+      "mrgid": 8416,
+      "poe": [
+        {
+          "name": "Castries",
+          "run_level": "C2",
+          "note": "https://www.customs.gov.lc/uploads/customs_control_and_management_act_cap_15_05_f1ec58be23.pdf#page=180 – Customs Regulations reg.136(2)(h) (S.I. 241/2000), Laws of Saint Lucia Cap.15.05, PDF p.180 (printed p.176): 'at the boarding stations (a) Castries and Vieux-Fort (A) for the boarding and clearance of vessels 8:00am – 12 noon and 1:00pm – 4:00pm daily'. Arrival rule: Act s.21(1)(a) (PDF p.26): a vessel from abroad shall not 'arrive at any place other than a customs port'. 2026 check: still listed under 'Entry & Clearance Ports' by the Saint Lucia Tourism Authority (statutory body) https://stlucia.org/en/plan-your-saint-lucia-trip/navigation-clearance ('Castries – Primarily serves cruise liners and cargo vessels'); Customs Castries Port office https://customs.gov.lc/contact."
+        },
+        {
+          "name": "Marigot Bay Marina",
+          "run_level": "C2",
+          "note": "https://www.customs.gov.lc/uploads/customs_control_and_management_act_cap_15_05_f1ec58be23.pdf#page=180 – Customs Regulations reg.136(2)(h) (S.I. 241/2000), Laws of Saint Lucia Cap.15.05, PDF p.180 (printed p.176): '(iii) Marigot Bay Marina (A) for the boarding and clearance of vessels 8:00am – 12 noon and 1:30pm – 4:00pm daily'. Also customs office code 'Marigot Bay 00MB' (PDF p.201)."
+        },
+        {
+          "name": "Rodney Bay Marina",
+          "run_level": "C2",
+          "note": "https://www.customs.gov.lc/uploads/customs_control_and_management_act_cap_15_05_f1ec58be23.pdf#page=180 – Customs Regulations reg.136(2)(h) (S.I. 241/2000), Laws of Saint Lucia Cap.15.05, PDF p.180 (printed p.176): '(ii) Rodney Bay Marina (A) for the boarding and clearance of vessels 8:00am – 12 noon and 1:00pm – 4:30pm daily'. Also https://www.stlucia.org/en/plan-your-saint-lucia-trip/navigation-clearance ('Entry & Clearance Ports')."
+        },
+        {
+          "name": "Soufriere Bay",
+          "run_level": "C2",
+          "note": "https://www.customs.gov.lc/uploads/customs_control_and_management_act_cap_15_05_f1ec58be23.pdf#page=131 – Customs (Port of Soufriere Bay) Order, S.I. 60/1994, Cap.15.05 (printed p.127), art.3: the area from Grand Caille Pointe to Petit Piton Pointe is 'hereby appointed as a customs port called Port of Soufrière Bay'; art.4 'PORT, FOR PLEASURE CRAFT ONLY: The Port of Soufrière Bay shall be used solely by pleasure craft'."
+        },
+        {
+          "name": "Vieux-Fort",
+          "run_level": "C2",
+          "note": "https://www.customs.gov.lc/uploads/customs_control_and_management_act_cap_15_05_f1ec58be23.pdf#page=180 – Customs Regulations reg.136(2)(h) (S.I. 241/2000), Laws of Saint Lucia Cap.15.05, PDF p.180 (printed p.176): 'at the boarding stations (a) Castries and Vieux-Fort (A) for the boarding and clearance of vessels'. Customs office code 'Vieux-Fort Main Office 00VF' (PDF p.201). Arrival rule: Act s.21(1)(a) (PDF p.26): a vessel from abroad shall not 'arrive at any place other than a customs port'. 2026 check: not on stlucia.org entry list; Customs Notice No.1 of 2014 (Comptroller) says yacht 'clearance be obtained at the Customs office there [Vieux Fort]' https://www.customs.gov.lc/uploads/notice_2014_01_927e46363b.pdf#page=1; Customs still runs Vieux Fort Docks/Pier units https://customs.gov.lc/contact. Secondary: Cox & Co agent lists 5 ports incl. Vieux Fort (immigration at Hewanorra airport) https://coxcoltd.com/yachting-services/ports-of-entry-marinas."
+        }
+      ],
+      "not_poe": []
+    },
+    {
+      "zone": "Martinique",
+      "mrgid": 33178,
+      "poe": [
+        {
+          "name": "Capitainerie Marina - Pointe Bateau",
+          "run_level": "C2",
+          "note": "https://www.douane.gouv.fr/sites/default/files/2026-01/30/liste-points-clearance-agrees-mise-a-jour.pdf p.1 (douane, list of approved yacht clearance points, 2026-01) – 'Le François: Capitainerie, Marina - Pointe Bateau, tous les jours 8h-18h'. Legal basis: arrêté préfectoral 5 Aug 2024, https://www.douane.gouv.fr/fiche/navigation-dans-les-departements-doutre-mer Criterion (Clément 03/11): only marinas / harbour offices (capitaineries) count; cybercafés, snacks, shops, fuel/careening stations, tourist office excluded.",
+          "place": "Le François"
+        },
+        {
+          "name": "Port de plaisance Capitainerie du port (nouvelle extension)",
+          "run_level": "C2",
+          "note": "https://www.douane.gouv.fr/sites/default/files/2026-01/30/liste-points-clearance-agrees-mise-a-jour.pdf p.1 – 'Le Marin: Port de plaisance, Capitainerie du port (nouvelle extension)' (+ 'Station-service CAP Ponton N°3: point de clearance ouvert tous les jours jusqu'à 16h30') Criterion (Clément 03/11): only marinas / harbour offices (capitaineries) count; cybercafés, snacks, shops, fuel/careening stations, tourist office excluded.",
+          "place": "Le Marin"
+        },
+        {
+          "name": "Régie Port de Plaisance Marina de la pointe du bout",
+          "run_level": "C2",
+          "note": "https://www.douane.gouv.fr/sites/default/files/2026-01/30/liste-points-clearance-agrees-mise-a-jour.pdf p.2 – 'Trois-ilets: Régie Port de Plaisance, Marina de la pointe du bout' Criterion (Clément 03/11): only marinas / harbour offices (capitaineries) count; cybercafés, snacks, shops, fuel/careening stations, tourist office excluded.",
+          "place": "Trois-Îlets"
+        },
+        {
+          "name": "La marina de l'Étang Z'Abricot",
+          "run_level": "C1",
+          "note": "https://www.douane.gouv.fr/sites/default/files/2026-01/30/liste-points-clearance-agrees-mise-a-jour.pdf p.1 – 'Fort-de-France: Port de plaisance communautaire de l'Étang Z'abricots, Bureau du Port: ZAC de l'Etang Z'Abricots' Criterion (Clément 03/11): only marinas / harbour offices (capitaineries) count; cybercafés, snacks, shops, fuel/careening stations, tourist office excluded.",
+          "place": "Fort-de-France"
+        }
+      ],
+      "not_poe": [
+        {
+          "name": "Fort de France",
+          "run_level": "C1",
+          "note": "Generic town name. In Fort-de-France the only marina on the douane list is the Port de plaisance de l'Étang Z'Abricots (row 12), already ✅; other FdF points are Station CAP DCML (careening/fuel) and Sea Services (ship chandler), excluded. https://www.douane.gouv.fr/sites/default/files/2026-01/30/liste-points-clearance-agrees-mise-a-jour.pdf#page=1. Criterion (Clément 03/11): only marinas / harbour offices (capitaineries) count; cybercafés, snacks, shops, fuel/careening stations, tourist office excluded.",
+          "place": "Fort-de-France"
+        },
+        {
+          "name": "Fort-de-France (Martinique)",
+          "run_level": "C1",
+          "note": "Duplicate of 'Fort de France' (row 10)",
+          "place": "Fort-de-France"
+        },
+        {
+          "name": "La marina du Marin",
+          "run_level": "C1",
+          "note": "Duplicate of row 8 (Le Marin, Port de plaisance / Capitainerie) – same marina, listed p.1 of https://www.douane.gouv.fr/sites/default/files/2026-01/30/liste-points-clearance-agrees-mise-a-jour.pdf",
+          "place": "Le Marin"
+        },
+        {
+          "name": "Le Robert (Martinique)",
+          "run_level": "C1",
+          "note": "Le Robert is NOT on the douane list of approved yacht clearance points https://www.douane.gouv.fr/sites/default/files/2026-01/30/liste-points-clearance-agrees-mise-a-jour.pdf (pp.1-2). Only an ICS cargo entry point – not a yacht PoE",
+          "place": "Le Robert"
+        },
+        {
+          "name": "Port de plaisance communautaire de l'Étang Z'abricots",
+          "run_level": "C1",
+          "note": "Duplicate of row 12 (Étang Z'Abricot)",
+          "place": "Fort-de-France"
+        },
+        {
+          "name": "Saint-Pierre (Martinique)",
+          "run_level": "C1",
+          "note": "Saint-Pierre points on the douane list are the Office municipal du tourisme and 'L'alsace en Kay' (shop), no marina/capitainerie. https://www.douane.gouv.fr/sites/default/files/2026-01/30/liste-points-clearance-agrees-mise-a-jour.pdf#page=2. Criterion (Clément 03/11): only marinas / harbour offices (capitaineries) count; cybercafés, snacks, shops, fuel/careening stations, tourist office excluded.",
+          "place": "Saint-Pierre"
+        },
+        {
+          "name": "Station CAP DCML Centre de carénage - Baie des Tourelles",
+          "run_level": "C1",
+          "note": "Listed by douane p.1 as 'Station CAP DCML, Centre de carénage – Baie des Tourelles' = careening/fuel station, not a marina or capitainerie. https://www.douane.gouv.fr/sites/default/files/2026-01/30/liste-points-clearance-agrees-mise-a-jour.pdf#page=1. Criterion (Clément 03/11): only marinas / harbour offices (capitaineries) count; cybercafés, snacks, shops, fuel/careening stations, tourist office excluded.",
+          "place": "Fort-de-France"
+        }
+      ]
+    },
+    {
+      "zone": "Cape Verde",
+      "mrgid": 8362,
+      "poe": [
+        {
+          "name": "Furna",
+          "run_level": "C1",
+          "note": "Habilitated maritime border post: \"m) Fronteira marítima – Porto de Furna, situado na Ilha Brava\". Decreto-Lei n.º 13/2025 (Boletim Oficial I Série n.º 38, 15 May 2025, in force next day; 2nd amendment of DL 2/2015), consolidated art. 2(1), BO pág. 39 = https://boe.incv.cv/Bulletins/DownloadAct?id=85465#page=27 (amending text pág. 16 = #page=4). Preamble pág. 15 (#page=3): \"alargamento dos postos habilitados de fronteira marítima ... novos postos nas ilhas de Santo Antão, São Nicolau, Boavista, Maio, Fogo e Brava ... turismo de cruzeiro e de iates\".",
+          "place": "Brava"
+        },
+        {
+          "name": "Palmeira",
+          "run_level": "C1",
+          "note": "Habilitated maritime border post: \"g) Fronteira marítima – Porto de Palmeiras, situado na Ilha do Sal\". Decreto-Lei n.º 13/2025 (Boletim Oficial I Série n.º 38, 15 May 2025, in force next day; 2nd amendment of DL 2/2015), consolidated art. 2(1), BO pág. 39 = https://boe.incv.cv/Bulletins/DownloadAct?id=85465#page=27 (amending text pág. 16 = #page=4). Preamble pág. 15 (#page=3): \"alargamento dos postos habilitados de fronteira marítima ... novos postos nas ilhas de Santo Antão, São Nicolau, Boavista, Maio, Fogo e Brava ... turismo de cruzeiro e de iates\".",
+          "place": "Sal"
+        },
+        {
+          "name": "Porto Novo",
+          "run_level": "C1",
+          "note": "Habilitated maritime border post: \"h) Fronteira marítima – Porto de Porto Novo, situado na Ilha de Santo Antão\". Decreto-Lei n.º 13/2025 (Boletim Oficial I Série n.º 38, 15 May 2025, in force next day; 2nd amendment of DL 2/2015), consolidated art. 2(1), BO pág. 39 = https://boe.incv.cv/Bulletins/DownloadAct?id=85465#page=27 (amending text pág. 16 = #page=4). Preamble pág. 15 (#page=3): \"alargamento dos postos habilitados de fronteira marítima ... novos postos nas ilhas de Santo Antão, São Nicolau, Boavista, Maio, Fogo e Brava ... turismo de cruzeiro e de iates\".",
+          "place": "Santo Antão"
+        },
+        {
+          "name": "Porto da Praia",
+          "run_level": "C1",
+          "note": "Habilitated maritime border post: \"e) Fronteira marítima – Porto da Praia, situado na cidade da Praia\". Decreto-Lei n.º 13/2025 (Boletim Oficial I Série n.º 38, 15 May 2025, in force next day; 2nd amendment of DL 2/2015), consolidated art. 2(1), BO pág. 39 = https://boe.incv.cv/Bulletins/DownloadAct?id=85465#page=27 (amending text pág. 16 = #page=4). Preamble pág. 15 (#page=3): \"alargamento dos postos habilitados de fronteira marítima ... novos postos nas ilhas de Santo Antão, São Nicolau, Boavista, Maio, Fogo e Brava ... turismo de cruzeiro e de iates\".",
+          "place": "Santiago"
+        },
+        {
+          "name": "Sal Rei",
+          "run_level": "C1",
+          "note": "Habilitated maritime border post: \"j) Fronteira marítima – Porto de Sal Rei, situado na Ilha da Boavista\". Decreto-Lei n.º 13/2025 (Boletim Oficial I Série n.º 38, 15 May 2025, in force next day; 2nd amendment of DL 2/2015), consolidated art. 2(1), BO pág. 39 = https://boe.incv.cv/Bulletins/DownloadAct?id=85465#page=27 (amending text pág. 16 = #page=4). Preamble pág. 15 (#page=3): \"alargamento dos postos habilitados de fronteira marítima ... novos postos nas ilhas de Santo Antão, São Nicolau, Boavista, Maio, Fogo e Brava ... turismo de cruzeiro e de iates\".",
+          "place": "Boa Vista"
+        },
+        {
+          "name": "Tarrafal",
+          "run_level": "C1",
+          "note": "Habilitated maritime border post: \"i) Fronteira marítima – Porto do Tarrafal, situado na Ilha de São Nicolau\". Decreto-Lei n.º 13/2025 (Boletim Oficial I Série n.º 38, 15 May 2025, in force next day), consolidated art. 2(1), BO pág. 39 = https://boe.incv.cv/Bulletins/DownloadAct?id=85465#page=27. Island corrected Santiago→São Nicolau (Clément decision 03/11); probable labelling error in the run.",
+          "place": "São Nicolau"
+        },
+        {
+          "name": "Vale de Cavaleiros",
+          "run_level": "C1",
+          "note": "Habilitated maritime border post: \"l) Fronteira marítima – Porto Vale de Cavaleiros, situado na Ilha do Fogo\". Decreto-Lei n.º 13/2025 (Boletim Oficial I Série n.º 38, 15 May 2025, in force next day; 2nd amendment of DL 2/2015), consolidated art. 2(1), BO pág. 39 = https://boe.incv.cv/Bulletins/DownloadAct?id=85465#page=27 (amending text pág. 16 = #page=4). Preamble pág. 15 (#page=3): \"alargamento dos postos habilitados de fronteira marítima ... novos postos nas ilhas de Santo Antão, São Nicolau, Boavista, Maio, Fogo e Brava ... turismo de cruzeiro e de iates\".",
+          "place": "Fogo"
+        },
+        {
+          "name": "Mindelo – Porto Grande de São Vicente",
+          "run_level": null,
+          "missed_by_run": true,
+          "source": "https://dgtcv.gov.cv/index.php?option=com_jdownloads&task=download.send&id=32%3Adecreto-lei-n-2-2015-de-06-de-janeiro&catid=15&m=0&Itemid=437#page=5",
+          "note": "Decreto-Lei 2/2015 art. 2(1)(e), p.5: \"Fronteira marítima – Porto Grande de S. Vicente, situado na cidade do Mindelo\". Also aai.gov.cv PHF page."
+        },
+        {
+          "name": "Porto Inglês (Maio)",
+          "run_level": null,
+          "missed_by_run": true,
+          "source": "https://boe.incv.cv/Bulletins/DownloadAct?id=85465#page=27",
+          "note": "DL 13/2025, art. 2(1) k) \"Porto de Porto Inglês, situado na Ilha do Maio\", BO I Série n.º 38 of 15/05/2025, pág. 39"
+        }
+      ],
+      "not_poe": [
+        {
+          "name": "São Filipe",
+          "run_level": "C1",
+          "note": "Duplicate of row 25 (Vale de Cavaleiros): the only habilitated Fogo port is \"l) Porto Vale de Cavaleiros, situado na Ilha do Fogo\" (the port serving São Filipe). Decreto-Lei n.º 13/2025 (Boletim Oficial I Série n.º 38, 15 May 2025, in force next day; 2nd amendment of DL 2/2015), consolidated art. 2(1), BO pág. 39 = https://boe.incv.cv/Bulletins/DownloadAct?id=85465#page=27 (amending text pág. 16 = #page=4). Preamble pág. 15 (#page=3): \"alargamento dos postos habilitados de fronteira marítima ... novos postos nas ilhas de Santo Antão, São Nicolau, Boavista, Maio, Fogo e Brava ... turismo de cruzeiro e de iates\".",
+          "place": "Fogo"
+        }
+      ]
+    },
+    {
+      "zone": "Canary Islands",
+      "mrgid": 8364,
+      "poe": [
+        {
+          "name": "Arrecife (Lanzarote)",
+          "run_level": null,
+          "missed_by_run": true,
+          "source": "https://home-affairs.ec.europa.eu/document/download/43debf3f-adfc-4f7a-908a-49fe29f65aa5_en?filename=handbook-annex-04_en.pdf",
+          "note": "Spain Sea borders item (4), p.25; persons on board from a third country must enter here (EU 2016/399 Annex VI 3.2.5 exception otherwise). Also listed in Orden INT/859/2023, Annex V \"Puestos fronterizos\" (Spanish national list), BOE 176 of 25/07/2023, pág. 108066 = https://www.boe.es/boe/dias/2023/07/25/pdfs/BOE-A-2023-17072.pdf#page=35"
+        },
+        {
+          "name": "Las Palmas de Gran Canaria – Puerto de La Luz",
+          "run_level": null,
+          "missed_by_run": true,
+          "source": "https://home-affairs.ec.europa.eu/document/download/43debf3f-adfc-4f7a-908a-49fe29f65aa5_en?filename=handbook-annex-04_en.pdf",
+          "note": "Spain Sea borders item (18) 'La Luz (Las Palmas)', p.25; persons on board from a third country must enter here (EU 2016/399 Annex VI 3.2.5 exception otherwise). Also listed in Orden INT/859/2023, Annex V \"Puestos fronterizos\" (Spanish national list), BOE 176 of 25/07/2023, pág. 108066 = https://www.boe.es/boe/dias/2023/07/25/pdfs/BOE-A-2023-17072.pdf#page=35"
+        },
+        {
+          "name": "Puerto del Rosario (Fuerteventura)",
+          "run_level": null,
+          "missed_by_run": true,
+          "source": "https://home-affairs.ec.europa.eu/document/download/43debf3f-adfc-4f7a-908a-49fe29f65aa5_en?filename=handbook-annex-04_en.pdf ; https://www.boe.es/buscar/doc.php?id=BOE-A-2007-16729",
+          "note": "Spain Sea borders item (24), p.25; Orden PRE/2729/2007 'se habilita el Puerto del Rosario como puesto fronterizo'; persons on board from a third country must enter here (EU 2016/399 Annex VI 3.2.5 exception otherwise). Also listed in Orden INT/859/2023, Annex V \"Puestos fronterizos\" (Spanish national list), BOE 176 of 25/07/2023, pág. 108066 = https://www.boe.es/boe/dias/2023/07/25/pdfs/BOE-A-2023-17072.pdf#page=35"
+        },
+        {
+          "name": "Santa Cruz de La Palma (La Palma)",
+          "run_level": null,
+          "missed_by_run": true,
+          "source": "https://home-affairs.ec.europa.eu/document/download/43debf3f-adfc-4f7a-908a-49fe29f65aa5_en?filename=handbook-annex-04_en.pdf ; https://www.boe.es/buscar/doc.php?id=BOE-A-2008-4487",
+          "note": "Spain Sea borders item (25), p.26; Orden PRE/613/2008 'se habilita el Puerto de Santa Cruz de La Palma como puesto fronterizo'; persons on board from a third country must enter here (EU 2016/399 Annex VI 3.2.5 exception otherwise). Also listed in Orden INT/859/2023, Annex V \"Puestos fronterizos\" (Spanish national list), BOE 176 of 25/07/2023, pág. 108066 = https://www.boe.es/boe/dias/2023/07/25/pdfs/BOE-A-2023-17072.pdf#page=35"
+        },
+        {
+          "name": "Santa Cruz de Tenerife (Tenerife)",
+          "run_level": null,
+          "missed_by_run": true,
+          "source": "https://home-affairs.ec.europa.eu/document/download/43debf3f-adfc-4f7a-908a-49fe29f65aa5_en?filename=handbook-annex-04_en.pdf",
+          "note": "Spain Sea borders item (28), p.26; persons on board from a third country must enter here (EU 2016/399 Annex VI 3.2.5 exception otherwise). Also listed in Orden INT/859/2023, Annex V \"Puestos fronterizos\" (Spanish national list), BOE 176 of 25/07/2023, pág. 108066 = https://www.boe.es/boe/dias/2023/07/25/pdfs/BOE-A-2023-17072.pdf#page=35"
+        }
+      ],
+      "not_poe": [
+        {
+          "name": "Arguineguín",
+          "run_level": "C1",
+          "note": "Arguineguín is not a Schengen border crossing point (EU Annex 4, Spain sea borders, pp.25-26). Regulation (EU) 2016/399 Annex VI 3.2.5 (DOUE L77, p.43 of https://www.boe.es/doue/2016/077/L00001-00052.pdf#page=43): \"una embarcación de recreo procedente de un tercer país podrá entrar excepcionalmente en un puerto que no esté reconocido como paso fronterizo\" (exception only). Under 3.2.4, boats from an EU port may enter any port: see Clément decision on Schengen criterion. Spain RD 557/2011 art.1: entry \"por los puestos habilitados al efecto\" https://www.boe.es/buscar/act.php?id=BOE-A-2011-7703 Criterion (Clément 03/11): port where a boat from OUTSIDE EU/Schengen may enter = habilitated border crossing point. Conclusion ❌ kept. Also not in Spain's national list: Orden INT/859/2023, Annex V \"Puestos fronterizos\", BOE 176 of 25/07/2023, pág. 108066 = https://www.boe.es/boe/dias/2023/07/25/pdfs/BOE-A-2023-17072.pdf#page=35 (34 seaports; Canary ones: Arrecife, Las Palmas, Puerto Rosario, Santa Cruz de la Palma, Santa Cruz de Tenerife)."
+        },
+        {
+          "name": "Caleta del Sebo",
+          "run_level": "C1",
+          "note": "Caleta del Sebo is not a Schengen border crossing point (EU Annex 4, Spain sea borders, pp.25-26). Regulation (EU) 2016/399 Annex VI 3.2.5 (DOUE L77, p.43 of https://www.boe.es/doue/2016/077/L00001-00052.pdf#page=43): \"una embarcación de recreo procedente de un tercer país podrá entrar excepcionalmente en un puerto que no esté reconocido como paso fronterizo\" (exception only). Under 3.2.4, boats from an EU port may enter any port: see Clément decision on Schengen criterion. Spain RD 557/2011 art.1: entry \"por los puestos habilitados al efecto\" https://www.boe.es/buscar/act.php?id=BOE-A-2011-7703 Criterion (Clément 03/11): port where a boat from OUTSIDE EU/Schengen may enter = habilitated border crossing point. Conclusion ❌ kept. Also not in Spain's national list: Orden INT/859/2023, Annex V \"Puestos fronterizos\", BOE 176 of 25/07/2023, pág. 108066 = https://www.boe.es/boe/dias/2023/07/25/pdfs/BOE-A-2023-17072.pdf#page=35 (34 seaports; Canary ones: Arrecife, Las Palmas, Puerto Rosario, Santa Cruz de la Palma, Santa Cruz de Tenerife)."
+        },
+        {
+          "name": "Cana -rias",
+          "run_level": "C1",
+          "note": "Junk name ('Cana -rias' = hyphenated 'Canarias' from a PDF), not a port"
+        },
+        {
+          "name": "Corralejo",
+          "run_level": "C1",
+          "note": "Corralejo is not a Schengen border crossing point (EU Annex 4, Spain sea borders, pp.25-26). Regulation (EU) 2016/399 Annex VI 3.2.5 (DOUE L77, p.43 of https://www.boe.es/doue/2016/077/L00001-00052.pdf#page=43): \"una embarcación de recreo procedente de un tercer país podrá entrar excepcionalmente en un puerto que no esté reconocido como paso fronterizo\" (exception only). Under 3.2.4, boats from an EU port may enter any port: see Clément decision on Schengen criterion. Spain RD 557/2011 art.1: entry \"por los puestos habilitados al efecto\" https://www.boe.es/buscar/act.php?id=BOE-A-2011-7703 Criterion (Clément 03/11): port where a boat from OUTSIDE EU/Schengen may enter = habilitated border crossing point. Conclusion ❌ kept. Also not in Spain's national list: Orden INT/859/2023, Annex V \"Puestos fronterizos\", BOE 176 of 25/07/2023, pág. 108066 = https://www.boe.es/boe/dias/2023/07/25/pdfs/BOE-A-2023-17072.pdf#page=35 (34 seaports; Canary ones: Arrecife, Las Palmas, Puerto Rosario, Santa Cruz de la Palma, Santa Cruz de Tenerife)."
+        },
+        {
+          "name": "Garachico",
+          "run_level": "C1",
+          "note": "Garachico is not a Schengen border crossing point (EU Annex 4, Spain sea borders, pp.25-26). Regulation (EU) 2016/399 Annex VI 3.2.5 (DOUE L77, p.43 of https://www.boe.es/doue/2016/077/L00001-00052.pdf#page=43): \"una embarcación de recreo procedente de un tercer país podrá entrar excepcionalmente en un puerto que no esté reconocido como paso fronterizo\" (exception only). Under 3.2.4, boats from an EU port may enter any port: see Clément decision on Schengen criterion. Spain RD 557/2011 art.1: entry \"por los puestos habilitados al efecto\" https://www.boe.es/buscar/act.php?id=BOE-A-2011-7703 Criterion (Clément 03/11): port where a boat from OUTSIDE EU/Schengen may enter = habilitated border crossing point. Conclusion ❌ kept. Also not in Spain's national list: Orden INT/859/2023, Annex V \"Puestos fronterizos\", BOE 176 of 25/07/2023, pág. 108066 = https://www.boe.es/boe/dias/2023/07/25/pdfs/BOE-A-2023-17072.pdf#page=35 (34 seaports; Canary ones: Arrecife, Las Palmas, Puerto Rosario, Santa Cruz de la Palma, Santa Cruz de Tenerife)."
+        },
+        {
+          "name": "Gran Tarajal",
+          "run_level": "C1",
+          "note": "Gran Tarajal is not a Schengen border crossing point (EU Annex 4, Spain sea borders, pp.25-26). Regulation (EU) 2016/399 Annex VI 3.2.5 (DOUE L77, p.43 of https://www.boe.es/doue/2016/077/L00001-00052.pdf#page=43): \"una embarcación de recreo procedente de un tercer país podrá entrar excepcionalmente en un puerto que no esté reconocido como paso fronterizo\" (exception only). Under 3.2.4, boats from an EU port may enter any port: see Clément decision on Schengen criterion. Spain RD 557/2011 art.1: entry \"por los puestos habilitados al efecto\" https://www.boe.es/buscar/act.php?id=BOE-A-2011-7703 Criterion (Clément 03/11): port where a boat from OUTSIDE EU/Schengen may enter = habilitated border crossing point. Conclusion ❌ kept. Also not in Spain's national list: Orden INT/859/2023, Annex V \"Puestos fronterizos\", BOE 176 of 25/07/2023, pág. 108066 = https://www.boe.es/boe/dias/2023/07/25/pdfs/BOE-A-2023-17072.pdf#page=35 (34 seaports; Canary ones: Arrecife, Las Palmas, Puerto Rosario, Santa Cruz de la Palma, Santa Cruz de Tenerife)."
+        },
+        {
+          "name": "La Restinga",
+          "run_level": "C1",
+          "note": "La Restinga is not a Schengen border crossing point (EU Annex 4, Spain sea borders, pp.25-26). Regulation (EU) 2016/399 Annex VI 3.2.5 (DOUE L77, p.43 of https://www.boe.es/doue/2016/077/L00001-00052.pdf#page=43): \"una embarcación de recreo procedente de un tercer país podrá entrar excepcionalmente en un puerto que no esté reconocido como paso fronterizo\" (exception only). Under 3.2.4, boats from an EU port may enter any port: see Clément decision on Schengen criterion. Spain RD 557/2011 art.1: entry \"por los puestos habilitados al efecto\" https://www.boe.es/buscar/act.php?id=BOE-A-2011-7703 Criterion (Clément 03/11): port where a boat from OUTSIDE EU/Schengen may enter = habilitated border crossing point. Conclusion ❌ kept. Also not in Spain's national list: Orden INT/859/2023, Annex V \"Puestos fronterizos\", BOE 176 of 25/07/2023, pág. 108066 = https://www.boe.es/boe/dias/2023/07/25/pdfs/BOE-A-2023-17072.pdf#page=35 (34 seaports; Canary ones: Arrecife, Las Palmas, Puerto Rosario, Santa Cruz de la Palma, Santa Cruz de Tenerife)."
+        },
+        {
+          "name": "Las Nieves",
+          "run_level": "C1",
+          "note": "Las Nieves is not a Schengen border crossing point (EU Annex 4, Spain sea borders, pp.25-26). Regulation (EU) 2016/399 Annex VI 3.2.5 (DOUE L77, p.43 of https://www.boe.es/doue/2016/077/L00001-00052.pdf#page=43): \"una embarcación de recreo procedente de un tercer país podrá entrar excepcionalmente en un puerto que no esté reconocido como paso fronterizo\" (exception only). Under 3.2.4, boats from an EU port may enter any port: see Clément decision on Schengen criterion. Spain RD 557/2011 art.1: entry \"por los puestos habilitados al efecto\" https://www.boe.es/buscar/act.php?id=BOE-A-2011-7703 Criterion (Clément 03/11): port where a boat from OUTSIDE EU/Schengen may enter = habilitated border crossing point. Conclusion ❌ kept. Also not in Spain's national list: Orden INT/859/2023, Annex V \"Puestos fronterizos\", BOE 176 of 25/07/2023, pág. 108066 = https://www.boe.es/boe/dias/2023/07/25/pdfs/BOE-A-2023-17072.pdf#page=35 (34 seaports; Canary ones: Arrecife, Las Palmas, Puerto Rosario, Santa Cruz de la Palma, Santa Cruz de Tenerife)."
+        },
+        {
+          "name": "Morro Jable",
+          "run_level": "C1",
+          "note": "Morro Jable is not a Schengen border crossing point (EU Annex 4, Spain sea borders, pp.25-26). Regulation (EU) 2016/399 Annex VI 3.2.5 (DOUE L77, p.43 of https://www.boe.es/doue/2016/077/L00001-00052.pdf#page=43): \"una embarcación de recreo procedente de un tercer país podrá entrar excepcionalmente en un puerto que no esté reconocido como paso fronterizo\" (exception only). Under 3.2.4, boats from an EU port may enter any port: see Clément decision on Schengen criterion. Spain RD 557/2011 art.1: entry \"por los puestos habilitados al efecto\" https://www.boe.es/buscar/act.php?id=BOE-A-2011-7703 Criterion (Clément 03/11): port where a boat from OUTSIDE EU/Schengen may enter = habilitated border crossing point. Conclusion ❌ kept. Also not in Spain's national list: Orden INT/859/2023, Annex V \"Puestos fronterizos\", BOE 176 of 25/07/2023, pág. 108066 = https://www.boe.es/boe/dias/2023/07/25/pdfs/BOE-A-2023-17072.pdf#page=35 (34 seaports; Canary ones: Arrecife, Las Palmas, Puerto Rosario, Santa Cruz de la Palma, Santa Cruz de Tenerife)."
+        },
+        {
+          "name": "Playa Blanca",
+          "run_level": "C1",
+          "note": "Playa Blanca is not a Schengen border crossing point (EU Annex 4, Spain sea borders, pp.25-26). Regulation (EU) 2016/399 Annex VI 3.2.5 (DOUE L77, p.43 of https://www.boe.es/doue/2016/077/L00001-00052.pdf#page=43): \"una embarcación de recreo procedente de un tercer país podrá entrar excepcionalmente en un puerto que no esté reconocido como paso fronterizo\" (exception only). Under 3.2.4, boats from an EU port may enter any port: see Clément decision on Schengen criterion. Spain RD 557/2011 art.1: entry \"por los puestos habilitados al efecto\" https://www.boe.es/buscar/act.php?id=BOE-A-2011-7703 Criterion (Clément 03/11): port where a boat from OUTSIDE EU/Schengen may enter = habilitated border crossing point. Conclusion ❌ kept. Also not in Spain's national list: Orden INT/859/2023, Annex V \"Puestos fronterizos\", BOE 176 of 25/07/2023, pág. 108066 = https://www.boe.es/boe/dias/2023/07/25/pdfs/BOE-A-2023-17072.pdf#page=35 (34 seaports; Canary ones: Arrecife, Las Palmas, Puerto Rosario, Santa Cruz de la Palma, Santa Cruz de Tenerife)."
+        },
+        {
+          "name": "Playa San Juan",
+          "run_level": "C1",
+          "note": "Playa San Juan is not a Schengen border crossing point (EU Annex 4, Spain sea borders, pp.25-26). Regulation (EU) 2016/399 Annex VI 3.2.5 (DOUE L77, p.43 of https://www.boe.es/doue/2016/077/L00001-00052.pdf#page=43): \"una embarcación de recreo procedente de un tercer país podrá entrar excepcionalmente en un puerto que no esté reconocido como paso fronterizo\" (exception only). Under 3.2.4, boats from an EU port may enter any port: see Clément decision on Schengen criterion. Spain RD 557/2011 art.1: entry \"por los puestos habilitados al efecto\" https://www.boe.es/buscar/act.php?id=BOE-A-2011-7703 Criterion (Clément 03/11): port where a boat from OUTSIDE EU/Schengen may enter = habilitated border crossing point. Conclusion ❌ kept. Also not in Spain's national list: Orden INT/859/2023, Annex V \"Puestos fronterizos\", BOE 176 of 25/07/2023, pág. 108066 = https://www.boe.es/boe/dias/2023/07/25/pdfs/BOE-A-2023-17072.pdf#page=35 (34 seaports; Canary ones: Arrecife, Las Palmas, Puerto Rosario, Santa Cruz de la Palma, Santa Cruz de Tenerife)."
+        },
+        {
+          "name": "Playa Santiago",
+          "run_level": "C1",
+          "note": "Playa Santiago is not a Schengen border crossing point (EU Annex 4, Spain sea borders, pp.25-26). Regulation (EU) 2016/399 Annex VI 3.2.5 (DOUE L77, p.43 of https://www.boe.es/doue/2016/077/L00001-00052.pdf#page=43): \"una embarcación de recreo procedente de un tercer país podrá entrar excepcionalmente en un puerto que no esté reconocido como paso fronterizo\" (exception only). Under 3.2.4, boats from an EU port may enter any port: see Clément decision on Schengen criterion. Spain RD 557/2011 art.1: entry \"por los puestos habilitados al efecto\" https://www.boe.es/buscar/act.php?id=BOE-A-2011-7703 Criterion (Clément 03/11): port where a boat from OUTSIDE EU/Schengen may enter = habilitated border crossing point. Conclusion ❌ kept. Also not in Spain's national list: Orden INT/859/2023, Annex V \"Puestos fronterizos\", BOE 176 of 25/07/2023, pág. 108066 = https://www.boe.es/boe/dias/2023/07/25/pdfs/BOE-A-2023-17072.pdf#page=35 (34 seaports; Canary ones: Arrecife, Las Palmas, Puerto Rosario, Santa Cruz de la Palma, Santa Cruz de Tenerife)."
+        },
+        {
+          "name": "Tazacorte",
+          "run_level": "C1",
+          "note": "Tazacorte is not a Schengen border crossing point (EU Annex 4, Spain sea borders, pp.25-26). Regulation (EU) 2016/399 Annex VI 3.2.5 (DOUE L77, p.43 of https://www.boe.es/doue/2016/077/L00001-00052.pdf#page=43): \"una embarcación de recreo procedente de un tercer país podrá entrar excepcionalmente en un puerto que no esté reconocido como paso fronterizo\" (exception only). Under 3.2.4, boats from an EU port may enter any port: see Clément decision on Schengen criterion. Spain RD 557/2011 art.1: entry \"por los puestos habilitados al efecto\" https://www.boe.es/buscar/act.php?id=BOE-A-2011-7703 Criterion (Clément 03/11): port where a boat from OUTSIDE EU/Schengen may enter = habilitated border crossing point. Conclusion ❌ kept. Also not in Spain's national list: Orden INT/859/2023, Annex V \"Puestos fronterizos\", BOE 176 of 25/07/2023, pág. 108066 = https://www.boe.es/boe/dias/2023/07/25/pdfs/BOE-A-2023-17072.pdf#page=35 (34 seaports; Canary ones: Arrecife, Las Palmas, Puerto Rosario, Santa Cruz de la Palma, Santa Cruz de Tenerife)."
+        },
+        {
+          "name": "Vueltas",
+          "run_level": "C1",
+          "note": "Vueltas is not a Schengen border crossing point (EU Annex 4, Spain sea borders, pp.25-26). Regulation (EU) 2016/399 Annex VI 3.2.5 (DOUE L77, p.43 of https://www.boe.es/doue/2016/077/L00001-00052.pdf#page=43): \"una embarcación de recreo procedente de un tercer país podrá entrar excepcionalmente en un puerto que no esté reconocido como paso fronterizo\" (exception only). Under 3.2.4, boats from an EU port may enter any port: see Clément decision on Schengen criterion. Spain RD 557/2011 art.1: entry \"por los puestos habilitados al efecto\" https://www.boe.es/buscar/act.php?id=BOE-A-2011-7703 Criterion (Clément 03/11): port where a boat from OUTSIDE EU/Schengen may enter = habilitated border crossing point. Conclusion ❌ kept. Also not in Spain's national list: Orden INT/859/2023, Annex V \"Puestos fronterizos\", BOE 176 of 25/07/2023, pág. 108066 = https://www.boe.es/boe/dias/2023/07/25/pdfs/BOE-A-2023-17072.pdf#page=35 (34 seaports; Canary ones: Arrecife, Las Palmas, Puerto Rosario, Santa Cruz de la Palma, Santa Cruz de Tenerife)."
+        },
+        {
+          "name": "Órzola",
+          "run_level": "C1",
+          "note": "Órzola is not a Schengen border crossing point (EU Annex 4, Spain sea borders, pp.25-26). Regulation (EU) 2016/399 Annex VI 3.2.5 (DOUE L77, p.43 of https://www.boe.es/doue/2016/077/L00001-00052.pdf#page=43): \"una embarcación de recreo procedente de un tercer país podrá entrar excepcionalmente en un puerto que no esté reconocido como paso fronterizo\" (exception only). Under 3.2.4, boats from an EU port may enter any port: see Clément decision on Schengen criterion. Spain RD 557/2011 art.1: entry \"por los puestos habilitados al efecto\" https://www.boe.es/buscar/act.php?id=BOE-A-2011-7703 Criterion (Clément 03/11): port where a boat from OUTSIDE EU/Schengen may enter = habilitated border crossing point. Conclusion ❌ kept. Also not in Spain's national list: Orden INT/859/2023, Annex V \"Puestos fronterizos\", BOE 176 of 25/07/2023, pág. 108066 = https://www.boe.es/boe/dias/2023/07/25/pdfs/BOE-A-2023-17072.pdf#page=35 (34 seaports; Canary ones: Arrecife, Las Palmas, Puerto Rosario, Santa Cruz de la Palma, Santa Cruz de Tenerife)."
+        }
+      ]
+    }
+  ]
+}

@@ -178,3 +178,21 @@ with `POST /api/v3/runs/<run_id>/upload` or `python backend/run.py --upload <run
 the folder is first checked against its manifest (sizes, SHA-256, no extra
 file, manifest hash recorded on the run), and refused (409 / exit 2) if it
 does not match. Each attempt is recorded under `poe_runs.uploads`.
+
+## Scoring a run against a gold file
+
+`backend/data/gold/` holds hand-checked ground truth (`pilot_4zones.json`: Clément, 3 Nov 2026,
+4 zones, 23 PoEs and 23 rejected names, each with its note and source; kept verbatim).
+`backend/data/gold/aliases.json` lists the extra names a run may give a gold entry
+(Le Marin, Le François, São Nicolau, Porto Grande), decided by hand.
+
+`app/services/gold_score.py` scores a run per zone and overall: C2 precision and recall,
+any-level recall, wrong C2s (with their quote), missed gold PoEs, C1 noise (ports below C2
+that match a rejected name) and unmatched run names (listed, never guessed). A run port is
+matched by its name, its `merged_names` and its `clearance_points` names.
+
+    python backend/scripts/score_gold.py --run-id <run_id>
+    python backend/scripts/score_gold.py --csv <export.csv> --gold backend/data/gold/pilot_4zones.json
+
+At the end of a run, `summary.gold_score` holds the score when a gold file covers every zone
+of the run (else `null`).
