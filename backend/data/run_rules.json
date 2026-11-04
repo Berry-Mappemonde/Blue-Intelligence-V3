@@ -2167,6 +2167,35 @@
       "group": "budget"
     },
     {
+      "id": "formalities.gazette_stub_chars",
+      "mode": "formalities",
+      "kind": "budget",
+      "value": 3000,
+      "numeric": "int",
+      "unit": "chars",
+      "interval": [
+        0,
+        20000
+      ],
+      "vary": false,
+      "principle": "Une page de journal officiel plus courte que ce seuil est une notice : le créneau lit aussi son unique lien vers le texte intégral de l'acte, sans compter dans formalities.max_fetch. Seuls les journaux officiels de whitelist_sources.json (gazettes) sont concernés. 0 désactive.",
+      "cdc": "CAHIER_DES_CHARGES_POE.md §5 (Official source)",
+      "code": [
+        "app/services/poe_pipeline.py:GAZETTE_STUB_CHARS",
+        "app/services/poe_pipeline.py:_collect_texts",
+        "app/core/extract.py:full_text_link"
+      ],
+      "title": {
+        "fr": "Notice de journal officiel",
+        "en": "Gazette stub threshold"
+      },
+      "help": {
+        "fr": "Longueur en dessous de laquelle une page de journal officiel est une notice dont on lit le texte intégral.",
+        "en": "Length below which a gazette page is a stub whose full act is read in the same slot."
+      },
+      "group": "budget"
+    },
+    {
       "id": "formalities.authority_seed_fallback",
       "mode": "formalities",
       "kind": "budget",

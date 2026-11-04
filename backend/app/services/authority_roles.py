@@ -76,14 +76,19 @@ def _zone_record(zone: dict | None) -> dict:
     return rec or {}
 
 
+def zone_gazettes(zone: dict | None) -> list[str]:
+    """The zone's official gazettes (``gazettes`` of whitelist_sources.json), as hosts."""
+    keys = [_match_key(g) for g in _zone_record(zone).get("gazettes") or ()]
+    return [k for k in keys if k]
+
+
 def list_publishers(zone: dict | None) -> list[str]:
     """Hosts that publish the designating lists of a zone outside Schengen: its official
     gazettes (``gazettes``), then its authorities, all from whitelist_sources.json. A
     bare government label stays on the authority's own host, as for a role: a random
     ``*.gov.cv`` page is no publisher. An unaudited zone has none."""
-    rec = _zone_record(zone)
-    keys = [_match_key(a) for a in (*(rec.get("gazettes") or ()), *(rec.get("authorities") or ()))]
-    return list(dict.fromkeys(k for k in keys if k))
+    keys = [_match_key(a) for a in _zone_record(zone).get("authorities") or ()]
+    return list(dict.fromkeys([*zone_gazettes(zone), *(k for k in keys if k)]))
 
 
 def zone_authorities(zone: dict | None) -> list[dict]:

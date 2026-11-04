@@ -51,7 +51,7 @@ from app.core.extract import (
     audit_serp_filter, catalog_is_sufficient, catalog_ports_to_keep,
     catalog_ports_with_coords, extract_cascade, extract_structured_ports,
     _PORT_OF_RE, fold_place_name, split_territory_rows,
-    internal_followups, is_geocodeable_name, looks_like_port_catalog,
+    full_text_link, internal_followups, is_geocodeable_name, looks_like_port_catalog,
     official_attachments, serp_filter, should_follow_attachments,
 )
 from app.core.geo import (
@@ -904,6 +904,10 @@ ENTRY_LIST_QUERIES = {
 # formalities.designating_fetch_slots; at most DESIGNATING_PER_PUBLISHER from one publisher.
 DESIGNATING_FETCH_SLOTS = 6
 DESIGNATING_PER_PUBLISHER = 3
+# A gazette's page for an act can be a stub, the title and a link to the text (Cape Verde's
+# Boletim Oficial: 1,332 chars, the act's 151,226 one link away, with no ".pdf" for the
+# attachment rules to see). Below this many chars, the slot also reads that link.
+GAZETTE_STUB_CHARS = 3000
 # What a URL says of a designating list, once its separators are spaces and accents gone.
 _DESIGNATING_URL = re.compile(
     r"\b(?:points? (?:de )?clearance|clearance points?"
@@ -3561,8 +3565,11 @@ async def _collect_texts(official: list[dict], log, rec=None, max_fetch: int | N
     8 fetches on transport and tax pages, no port authority read). A role counts as
     served only once one of its sources is kept in ``texts``."""
     from app.core.run_rules import get_rule
-    from app.services.authority_roles import ROLE_PRIORITY, role_quotas, roles_of, zone_authorities
+    from app.services.authority_roles import (ROLE_PRIORITY, role_quotas, roles_of, zone_authorities,
+                                              zone_gazettes)
     source_max = int(get_rule("formalities.source_max_chars", SOURCE_MAX_CHARS))
+    gazette_stub = int(get_rule("formalities.gazette_stub_chars", GAZETTE_STUB_CHARS))
+    gazettes = zone_gazettes(zone)
     if max_fetch is None:
         max_fetch = int(get_rule("formalities.max_fetch", MAX_FETCH))
     texts, hashes, used_sources, excerpts = [], {}, [], {}
@@ -3726,6 +3733,22 @@ async def _collect_texts(official: list[dict], log, rec=None, max_fetch: int | N
                     await emit(rec, "depth2", parent=url, url=fu,
                                chars=len(sub["text"]), level=sub["level"])
                     text = (text + "\n" + sub["text"]).strip()
+        # A gazette stub: its act is read in this same slot (not counted in the cap).
+        if res.get("html") and len(res["text"] or "") < gazette_stub and _on_publisher(url, gazettes):
+            act = full_text_link(res["html"], url)
+            if act and act not in seen_urls:
+                seen_urls.add(act)
+                try:
+                    sub = await extract_cascade(act, min_chars=200, log=log)
+                except Exception:
+                    sub = {}
+                if sub.get("text") and not sub.get("blocked"):
+                    log(f"journal officiel: {act[:80]} → {len(sub['text'])} chars")
+                    await emit(rec, "depth2", parent=url, url=act, chars=len(sub["text"]),
+                               level=sub.get("level"), gazette_act=True)
+                    text = (text + "\n" + sub["text"]).strip()
+                else:
+                    log(f"journal officiel: texte non lu, reste la page: {act[:80]}")
         keep_short_pdf = (
             (url or "").lower().endswith(".pdf")
             and list_url_bonus(url) >= 0.45

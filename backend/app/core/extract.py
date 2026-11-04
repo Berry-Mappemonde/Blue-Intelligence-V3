@@ -753,6 +753,27 @@ def internal_followups(html: str, base_url: str, patterns=FOLLOWUP_PATTERNS, lim
     return out
 
 
+_FULL_TEXT_LINK_RE = re.compile(
+    r"\b(?:pdf|download\w*|descarreg\w*|descarg\w*|t[ée]l[ée]charg\w*|scaric\w*|herunterlad\w*)\b", re.I)
+
+
+def full_text_link(html: str, base_url: str) -> str | None:
+    """The one link of a page, on its own host, that offers its full text ("Descarregar a
+    versão PDF"), by its href, title or text. None when there is none, or several: a
+    gazette page may also offer the whole bulletin, and that is never guessed."""
+    soup = BeautifulSoup(html or "", "html.parser")
+    base_host = urlparse(base_url).netloc
+    found: list[str] = []
+    for a in soup.find_all("a", href=True):
+        href = urljoin(base_url, a["href"]).split("#")[0]
+        if urlparse(href).netloc != base_host or href.rstrip("/") == base_url.rstrip("/"):
+            continue
+        said = " ".join((a["href"], a.get("title") or "", a.get_text(" ", strip=True)))
+        if _FULL_TEXT_LINK_RE.search(said) and href not in found:
+            found.append(href)
+    return found[0] if len(found) == 1 else None
+
+
 # ---------------------------------------------------------------------------
 # Main cascade
 # ---------------------------------------------------------------------------
