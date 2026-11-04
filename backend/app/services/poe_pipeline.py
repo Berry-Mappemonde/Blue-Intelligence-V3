@@ -66,7 +66,8 @@ from app.adapters import evidence_store
 from app.adapters.zetaris import ZetarisClient
 from app.agents import registry_check
 from app.services.poe_confidence import apply_score, listing_role, score_port, zone_confidence_avg
-from app.services.v3_certify import LEVEL_FIELDS, attach_confidence_level, clearance_rows
+from app.services.v3_certify import (CAP_NOT_CLEARANCE_POINT, LEVEL_FIELDS,
+                                     attach_confidence_level, clearance_rows)
 from app.services.poe_zone_label import (
     keep_extracted_in_zone, search_polygon_name, serp_place_name,
     zone_qualifier, zone_search_location,
@@ -3727,7 +3728,10 @@ def same_port(a: dict, b: dict, max_km: float) -> bool:
     and, when both are placed, no farther apart than ``max_km``. Two different facilities
     of one commune never merge, even on the same commune point: their cores differ
     (Baie des Tourelles careening station / Étang Z'Abricot marina), or both name a
-    facility and not the same one ("Port du Marin" / "Marina du Marin")."""
+    facility and not the same one ("Port du Marin" / "Marina du Marin"). A row that is not
+    a clearance point stays on its own (§10.2): it never joins, or stands for, a port."""
+    if a.get("clearance_excluded") or b.get("clearance_excluded"):
+        return False
     fa, ca, wa = _port_name_parts(a.get("name") or "")
     fb, cb, wb = _port_name_parts(b.get("name") or "")
     if not fa or not fb:
@@ -3888,26 +3892,44 @@ def only_area_hits(geo: dict, name: str | None) -> bool:
                or (c.get("geonames_fcode") or "").upper() in _AREA_GN_CODES for c in cands)
 
 
+def _excluded_row(doc: dict, row: dict) -> dict:
+    """A row of the list that is not a clearance point: kept under its own name, at C1 at
+    most, with what the list says of it."""
+    out = dict(doc, clearance_excluded={"reason": row["exclusion"], "commune": row["commune"],
+                                        "quote": row["quote"], "source": row["url"]})
+    level = doc.get("confidence_level")
+    if _LEVEL_RANK.get(level or "", -1) > _LEVEL_RANK["C1"]:
+        out.update(confidence_level="C1", confidence_downgraded_from=level,
+                   confidence_cap_reason=CAP_NOT_CLEARANCE_POINT)
+    return out
+
+
 def group_clearance_points(docs: list[dict], texts: list[dict] | None, zone: dict | None = None,
                            whitelist: list[str] | None = None
                            ) -> tuple[list[dict], list[tuple[dict, list[dict]]]]:
     """Several clearance points in one port are one PoE (Clément, 3 Nov 2026).
 
-    The rows of one clearance list under one commune (``v3_certify.clearance_rows``) become
+    The clearance points of one list under one commune (``v3_certify.clearance_rows``) become
     one record named after the commune, with ``clearance_points`` = [{name, quote, source}]
-    in the list's order. It takes the best row's level, judge, evidence and point
+    in the list's order. It takes the best point's level, judge, evidence and GPS
     (``_evidence_rank``), with no new certification: the row is what was judged, and the
-    commune's name is not. Rows of different documents or communes stay apart.
-    Returns (docs, [(PoE, its rows)])."""
+    commune's name is not. Points of different documents or communes stay apart.
+
+    Only marinas and capitaineries are points. Any other row of the list stays a record of
+    its own at C1 at most, with ``clearance_excluded``, and adds nothing to its commune: a
+    commune with no point is no PoE. Returns (docs, [(PoE, its points)])."""
     rows = clearance_rows(docs, texts, zone, whitelist)
     groups: dict[tuple, list[int]] = {}
     for i, row in sorted(rows.items(), key=lambda kv: kv[1]["position"]):
-        groups.setdefault((row["url"], row["commune_key"]), []).append(i)
+        if not row["exclusion"]:
+            groups.setdefault((row["url"], row["commune_key"]), []).append(i)
     first = {members[0]: members for members in groups.values()}
     out, grouped = [], []
     for i, doc in enumerate(docs or []):
         if i not in rows:
             out.append(doc)
+        elif rows[i]["exclusion"]:
+            out.append(_excluded_row(doc, rows[i]))
         elif i in first:
             points = [docs[m] for m in first[i]]
             poe = dict(max(points, key=_evidence_rank))
@@ -3943,6 +3965,13 @@ async def _group_clearance_points(zone: dict, docs: list[dict], raw: str,
                    source=poe["clearance_points"][0]["source"],
                    points=[{"name": p.get("name"), "confidence_level": p.get("confidence_level"),
                             "judge": (p.get("judge") or {}).get("verdict")} for p in points])
+    for doc in docs:
+        if doc.get("clearance_excluded"):
+            log(f"  ⚓ pas un point de clearance: {doc.get('name')} "
+                f"({doc['clearance_excluded']['reason']})")
+            await emit(rec, "clearance_excluded", name=doc.get("name"),
+                       confidence_level=doc.get("confidence_level"),
+                       **doc["clearance_excluded"])
     if not grouped:
         return docs
     docs, merges = merge_same_ports(docs, float(get_rule("formalities.port_merge_km",

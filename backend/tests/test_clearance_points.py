@@ -1,5 +1,6 @@
-"""Several clearance points in one port are one PoE (Clément, 3 Nov 2026), on the rows of
-run 20261103-181506-d7963f: the douane list of clearance points, as flat text. Offline."""
+"""Several clearance points in one port are one PoE, and only marinas and capitaineries are
+clearance points (Clément, 3 Nov 2026), on the rows of run 20261103-181506-d7963f: the douane
+list of clearance points, as flat text. Offline."""
 import asyncio
 import inspect
 from pathlib import Path
@@ -16,6 +17,7 @@ GUIDE = "https://www.martinique.gouv.fr/contenu/telechargement/22986/180253/file
 WHITELIST = ["douane.gouv.fr", "martinique.gouv.fr"]
 MARTINIQUE = {"name": "Martinique", "geoname": "Martinique", "mrgid": 33178}
 GUADELOUPE = {"name": "Guadeloupe", "geoname": "Guadeloupe"}
+CAPITAINERIE = "Port de plaisance Capitainerie du port (nouvelle extension)"
 
 
 def _list() -> str:
@@ -68,29 +70,28 @@ def _by_name(docs):
     return {d["name"]: d for d in docs}
 
 
-def test_le_marin_is_one_poe_with_its_two_rows():
+def test_le_marin_is_a_poe_through_its_capitainerie():
     poe_marin = _by_name(_grouped()[0])["Le Marin"]
-    assert poe_marin["city"] == "Le Marin"
+    assert poe_marin["city"] == "Le Marin" and poe_marin["confidence_level"] == "C2"
     assert [p["name"] for p in poe_marin["clearance_points"]] == [
-        "Port de plaisance Capitainerie du port (nouvelle extension)",
-        "Station-service CAP Ponton N°3"]
+        "Port de plaisance Capitainerie du port (nouvelle extension)"]
     assert {p["source"] for p in poe_marin["clearance_points"]} == {URL}
     assert poe_marin["clearance_points"][0]["quote"] == (
         "Port de plaisance Capitainerie du port (nouvelle extension) +596 596 748 383 "
         "contact@marina-martinique.fr lun-sam dim et jours fériés 8h-17h8h-12h30")
-    assert poe_marin["clearance_points"][1]["quote"].startswith(
-        "Station-service CAP Ponton N°3 + 596 596 765 161 lun-dim et jours fériés "
-        "7h30-13h/14h-17h")
 
 
-def test_the_poe_takes_the_best_level_and_evidence_of_its_points():
-    docs = [_port("Station-service CAP Ponton N°3", "Le Marin", "C1", "not_poe"),
-            _port("Port de plaisance Capitainerie du port (nouvelle extension)", "Le Marin",
-                  "C2", "poe", lat=14.4711)]
-    (only,), grouped = _grouped(docs)
+def test_several_points_of_a_commune_are_one_poe_with_the_best_level_and_evidence():
+    text = ("Liste des points de clearance Martinique Le Marin Capitainerie Ouest lun-dim 8h-17h "
+            "Marina Est lun-dim 8h-17h")
+    docs = [_port("Marina Est", "Le Marin", "C1", "not_poe"),
+            _port("Capitainerie Ouest", "Le Marin", "C2", "poe", lat=14.4711)]
+    (only,), grouped = _grouped(docs, [{"url": URL, "text": text}])
+    assert only["name"] == "Le Marin"
     assert only["confidence_level"] == "C2" and only["judge"]["verdict"] == "poe"
     assert only["lat"] == 14.4711
-    assert only["judge"]["excerpt"].startswith("Port de plaisance Capitainerie")
+    assert only["judge"]["excerpt"] == "Capitainerie Ouest"
+    assert [p["name"] for p in only["clearance_points"]] == ["Capitainerie Ouest", "Marina Est"]
     assert len(grouped) == 1 and len(grouped[0][1]) == 2
 
 
@@ -98,9 +99,8 @@ def test_the_commune_is_the_lists_not_the_records_city():
     # The reader said Le Lamentin; the list has the row under Fort-de-France.
     fdf = _by_name(_grouped()[0])["Fort-de-France"]
     assert [p["name"] for p in fdf["clearance_points"]] == [
-        "Station CAP DCML Centre de carénage - Baie des Tourelles",
         "Port de plaisance communautaire de l'Étang Z'abricots"]
-    assert fdf["clearance_points"][1]["quote"].endswith("Accueil Permanence 7h-17h 6h-18h")
+    assert fdf["clearance_points"][0]["quote"].endswith("Accueil Permanence 7h-17h 6h-18h")
 
 
 def test_a_commune_with_one_row_is_a_poe_too():
@@ -111,41 +111,52 @@ def test_a_commune_with_one_row_is_a_poe_too():
 
 
 def test_the_name_is_the_list_s_with_the_records_spelling():
-    # The list writes "Trois-ilets" and "Trinité"; the records "Les Trois-Îlets", "La Trinité".
+    # The list writes "Trois-ilets"; the record "Les Trois-Îlets".
     docs = _by_name(_grouped()[0])
     assert docs["Trois-Îlets"]["clearance_points"][0]["name"].startswith("Régie Port")
-    assert docs["Trinité"]["confidence_level"] == "C1"
     assert docs["Le Marin"]["dedup_key"].startswith("33178:")
 
 
-def test_martinique_list_of_d7963f_after_the_same_port_merge():
+GOLD_POES = ["Fort-de-France", "Le François", "Le Marin", "Trois-Îlets"]
+
+
+def test_clements_gold_for_martinique_on_d7963f():
     docs, _ = _grouped()
-    assert len(docs) == 11
+    assert len(docs) == 13
     merged, merges = poe.merge_same_ports(docs)
-    assert sorted(d["name"] for d in merged) == sorted([
-        "Fort-de-France", "Fort-de-France (Martinique)", "Le François", "Le Marin",
-        "Trois-Îlets", "Trinité", "Le Robert (Martinique)", "Saint-Pierre (Martinique)",
-        "La marina de l'Étang Z'Abricot"])
+    assert sorted(d["name"] for d in merged if d.get("clearance_points")) == GOLD_POES
     names = _by_name(merged)
+    points = {n: [p["name"] for p in names[n]["clearance_points"]] for n in GOLD_POES}
+    assert points == {
+        "Le François": ["Capitainerie Marina - Pointe Bateau"],
+        "Le Marin": ["Port de plaisance Capitainerie du port (nouvelle extension)"],
+        "Trois-Îlets": ["Régie Port de Plaisance Marina de la pointe du bout"],
+        "Fort-de-France": ["Port de plaisance communautaire de l'Étang Z'abricots"]}
+    assert "Trinité" not in names
+    # Recorded, not PoEs: the rows the rule excludes, and what no point of the list backs.
+    assert {n: d["clearance_excluded"]["reason"] for n, d in names.items()
+            if d.get("clearance_excluded")} == {
+        "Station-service CAP Ponton N°3": "fuel station",
+        "Station CAP DCML Centre de carénage - Baie des Tourelles": "careening station",
+        "Brigade de surveillance des douanes Cité des douanes Quartier Raisinier":
+            "customs brigade"}
+    assert all(d["confidence_level"] == "C1" for n, d in names.items() if n not in GOLD_POES
+               or n == "Fort-de-France")
     assert names["Le Marin"]["merged_names"] == ["La marina du Marin"]
-    # "Fort de France" (legal wording, no row) joins by #47, and the list's name is kept.
-    assert names["Fort-de-France"]["merged_names"] == ["Fort de France"]
-    assert len(names["Fort-de-France"]["clearance_points"]) == 2
-    assert {k["name"]: len(r) for k, r in merges} == {
-        "Le Marin": 1, "Fort-de-France": 1}
+    assert {k["name"]: len(r) for k, r in merges} == {"Le Marin": 1}
 
 
 def test_rows_of_two_communes_stay_apart():
     docs, _ = _grouped([_port("Capitainerie Marina - Pointe Bateau", "Le François", "C2", "poe"),
-                        _port("Station-service CAP Ponton N°3", "Le Marin", "C2", "poe")])
+                        _port(CAPITAINERIE, "Le Marin", "C2", "poe")])
     assert sorted(d["name"] for d in docs) == ["Le François", "Le Marin"]
 
 
 def test_rows_of_two_documents_stay_apart_until_the_same_port_merge():
     head = "Liste des points de clearance Martinique Le Marin "
-    texts = [{"url": URL, "text": head + "Station-service CAP Ponton N°3 lun-dim 8h-17h"},
+    texts = [{"url": URL, "text": head + "Capitainerie Marina Est lun-dim 8h-17h"},
              {"url": GUIDE, "text": head + "Capitainerie Marina Ouest lun-dim 8h-17h"}]
-    docs, grouped = _grouped([_port("Station-service CAP Ponton N°3", "Le Marin"),
+    docs, grouped = _grouped([_port("Capitainerie Marina Est", "Le Marin"),
                               _port("Capitainerie Marina Ouest", "Le Marin")], texts)
     assert [d["name"] for d in docs] == ["Le Marin", "Le Marin"] and len(grouped) == 2
     merged, _ = poe.merge_same_ports(docs)
@@ -171,7 +182,7 @@ def test_a_study_naming_two_marinas_of_a_town_groups_nothing():
 
 def test_a_row_of_another_territorys_section_is_not_this_zones():
     row = _port("Capitainerie Marina Bas du Fort", "Pointe-à-Pitre")
-    docs, grouped = _grouped([row, _port("Station-service CAP Ponton N°3", "Le Marin")])
+    docs, grouped = _grouped([row, _port(CAPITAINERIE, "Le Marin")])
     assert not any(d["name"] == "Pointe-à-Pitre" for d in docs)
     assert row in docs and len(grouped) == 1
 
@@ -179,24 +190,28 @@ def test_a_row_of_another_territorys_section_is_not_this_zones():
 def test_the_office_name_antilles_guyane_opens_no_section():
     # "Direction Interrégionale des douanes aux Antilles-Guyane" heads Martinique's section.
     rows = v3_certify.clearance_rows(
-        [_port("Station-service CAP Ponton N°3", "Le Marin")], TEXTS, MARTINIQUE, WHITELIST)
+        [_port(CAPITAINERIE, "Le Marin")], TEXTS, MARTINIQUE, WHITELIST)
     assert rows[0]["commune"] == "Le Marin"
 
 
 def test_another_zone_reads_its_own_section_of_the_list():
     rows = [_port("SAS Sud Ancrage Capitainerie Marina Rivière Sens", "Gourbeyre"),
             _port("Restaurant Barracuda Marina Rivière Sens", "Gourbeyre"),
-            _port("Station-service CAP Ponton N°3", "Le Marin")]
+            _port(CAPITAINERIE, "Le Marin")]
     for row in rows:
         row.pop("mrgid")
     docs, _ = _grouped(rows, zone=GUADELOUPE)
-    assert sorted(d["name"] for d in docs) == ["Gourbeyre", "Station-service CAP Ponton N°3"]
-    assert len(_by_name(docs)["Gourbeyre"]["clearance_points"]) == 2
+    names = _by_name(docs)
+    assert sorted(names) == ["Gourbeyre", CAPITAINERIE, "Restaurant Barracuda Marina Rivière Sens"]
+    assert [p["name"] for p in names["Gourbeyre"]["clearance_points"]] == [
+        "SAS Sud Ancrage Capitainerie Marina Rivière Sens"]
+    # A marina in the name does not make a restaurant a clearance point.
+    assert names["Restaurant Barracuda Marina Rivière Sens"]["clearance_excluded"]
 
 
 def test_a_record_named_after_the_commune_is_not_a_row():
     docs, grouped = _grouped([_port("Le Marin", "Le Marin", "C1"),
-                              _port("Station-service CAP Ponton N°3", "Le Marin", "C2", "poe")])
+                              _port(CAPITAINERIE, "Le Marin", "C2", "poe")])
     assert sorted(d["name"] for d in docs) == ["Le Marin", "Le Marin"] and len(grouped) == 1
     merged, _ = poe.merge_same_ports(docs)
     assert len(merged) == 1 and merged[0]["confidence_level"] == "C2"
@@ -205,8 +220,8 @@ def test_a_record_named_after_the_commune_is_not_a_row():
 
 def test_a_record_without_a_city_on_the_list_needs_a_heading():
     # No record gives the commune: no heading is known, so nothing is grouped.
-    docs, grouped = _grouped([_port("Station-service CAP Ponton N°3", None)])
-    assert docs[0]["name"] == "Station-service CAP Ponton N°3" and not grouped
+    docs, grouped = _grouped([_port(CAPITAINERIE, None)])
+    assert docs[0]["name"] == CAPITAINERIE and not grouped
 
 
 def test_saint_lucia_boarding_stations_are_not_a_clearance_list():
@@ -225,6 +240,140 @@ def test_same_port_still_keeps_two_facilities_apart():
                              _port("Capitainerie du port", "Le Marin"), poe.PORT_MERGE_KM)
 
 
+# --- only marinas and capitaineries are clearance points (Clément, 3 Nov 2026) ----------
+
+# Every row of Martinique's section that is not a clearance point, with its commune's city.
+NOT_POINTS = [
+    ("Cyberbase", "Les Anses-d'Arlet", "cybercafé"),
+    ("Snack BOUBOU", "Sainte-Anne", "snack bar"),
+    ("Office municipal du tourisme", "Saint-Pierre", "tourist office"),
+    ("L'alsace en Kay", "Saint-Pierre", v3_certify.NOT_A_MARINA_OR_OFFICE),
+    ("Sea Services ShipChandler", "Fort-de-France", "shop"),
+    ("Brigade de surveillance des douanes Cité des douanes Quartier Raisinier", "La Trinité",
+     "customs brigade"),
+    ("Station-service CAP Ponton N°3", "Le Marin", "fuel station"),
+    ("Station CAP DCML Centre de carénage - Baie des Tourelles", "Fort-de-France",
+     "careening station"),
+]
+POINTS = ["Capitainerie Marina - Pointe Bateau", CAPITAINERIE,
+          "Régie Port de Plaisance Marina de la pointe du bout",
+          "Port de plaisance communautaire de l'Étang Z'abricots",
+          "SAS Sud Ancrage Capitainerie Marina Rivière Sens", "Capitainerie Port Gustavia",
+          "Marina Fort-louis Capitainerie Baie de Marigot", "Mairie de Deshaies Service portuaire"]
+
+
+@pytest.mark.parametrize("name", POINTS)
+def test_marinas_and_capitaineries_are_clearance_points(name):
+    assert v3_certify.clearance_point_exclusion(name) is None
+
+
+@pytest.mark.parametrize("name,city,reason", NOT_POINTS)
+def test_the_other_rows_of_the_list_are_not(name, city, reason):
+    assert v3_certify.clearance_point_exclusion(name) == reason
+
+
+@pytest.mark.parametrize("name", ["Restaurant Barracuda Marina Rivière Sens",
+                                  "Brigade garde-côtes Z.I Port de Paraicabo",
+                                  "I.S.M Les saintes multiservices", "Chez ZELES"])
+def test_the_other_territories_rows_are_read_the_same(name):
+    assert v3_certify.clearance_point_exclusion(name)
+
+
+def _judged(name, city=None):
+    """A port the judge called a PoE on a verified excerpt: C2 anywhere else."""
+    return {"name": name, "city": city, "mrgid": 33178, "zone_name": "Martinique",
+            "lat": 14.47, "lon": -60.87, "validated": True, "spatial_kind": "in_eez",
+            "extraction_engine": "nightshift", "source_urls": [URL], "confidence": 60,
+            "judge": {"verdict": "poe", "reason": "", "quoted_excerpt": name,
+                      "excerpt_verified": True}}
+
+
+def _certified(port, texts=TEXTS):
+    return v3_certify.attach_confidence_level(port, whitelist=WHITELIST, zone=MARTINIQUE,
+                                              texts=texts)
+
+
+def test_a_clearance_point_the_judge_confirms_is_c2():
+    assert _certified(_judged(CAPITAINERIE, "Le Marin"))["confidence_level"] == "C2"
+
+
+@pytest.mark.parametrize("name", [n for n, _, r in NOT_POINTS
+                                  if r != v3_certify.NOT_A_MARINA_OR_OFFICE])
+@pytest.mark.parametrize("city", ["Le Marin", None])
+def test_an_excluded_row_never_reaches_c2_even_if_the_judge_says_poe(name, city):
+    # No city: no commune is read for the row, and the cap still holds.
+    port = _certified(_judged(name, city))
+    assert port["confidence_level"] == "C1"
+    assert port["confidence_cap_reason"] == v3_certify.CAP_NOT_CLEARANCE_POINT
+    assert port["confidence_downgraded_from"] == "C2"
+
+
+@pytest.mark.parametrize("name,city,reason", [r for r in NOT_POINTS if r[0] != "Snack BOUBOU"])
+def test_an_excluded_row_never_makes_its_commune_a_poe(name, city, reason):
+    (row,), grouped = _grouped([{**_judged(name, city), "confidence_level": "C2"}])
+    assert not grouped and not row.get("clearance_points")
+    assert row["name"] == name and row["confidence_level"] == "C1"
+    assert row["confidence_downgraded_from"] == "C2"
+    assert row["clearance_excluded"]["reason"] == reason
+    assert row["clearance_excluded"]["source"] == URL
+    assert row["clearance_excluded"]["quote"].startswith(name.replace("'", "’"))
+
+
+def test_snack_boubou_under_a_commune_the_list_misspells():
+    # "Saint Anne" on the list, "Sainte-Anne" in the record: no heading is found for the row.
+    snack = _certified(_judged("Snack BOUBOU", "Sainte-Anne"))
+    assert snack["confidence_level"] == "C1"
+    (alone,), grouped = _grouped([snack])
+    assert alone["name"] == "Snack BOUBOU" and not grouped
+    # With Le Marin's records it reads the heading above, and still adds nothing to Le Marin.
+    docs, _ = _grouped([snack, _port(CAPITAINERIE, "Le Marin", "C2", "poe")])
+    marin = _by_name(docs)["Le Marin"]
+    assert [p["name"] for p in marin["clearance_points"]] == [CAPITAINERIE]
+    assert _by_name(docs)["Snack BOUBOU"]["clearance_excluded"]["reason"] == "snack bar"
+
+
+def test_a_commune_with_only_excluded_rows_is_no_poe():
+    docs, grouped = _grouped([_port("Office municipal du tourisme", "Saint-Pierre", "C2", "poe"),
+                              _port("L'alsace en Kay", "Saint-Pierre", "C2", "poe")])
+    assert not grouped and "Saint-Pierre" not in _by_name(docs)
+    assert {d["confidence_level"] for d in docs} == {"C1"}
+
+
+def test_an_excluded_row_adds_nothing_to_its_communes_poe():
+    excluded = _port("Station-service CAP Ponton N°3", "Le Marin", "C2", "poe", confidence=99,
+                     source_urls=[URL, GUIDE])
+    point = _port(CAPITAINERIE, "Le Marin", "C1", "not_poe")
+    docs, _ = _grouped([excluded, point])
+    marin = _by_name(docs)["Le Marin"]
+    assert marin["confidence_level"] == "C1" and marin["judge"]["verdict"] == "not_poe"
+    assert marin["source_urls"] == [URL]
+    assert [p["name"] for p in marin["clearance_points"]] == [CAPITAINERIE]
+
+
+def test_an_excluded_row_stays_out_of_the_same_port_merge():
+    docs, _ = _grouped([_port("Brigade de surveillance des douanes du Marin", "Le Marin"),
+                        _port(CAPITAINERIE, "Le Marin", "C2", "poe")],
+                       [{"url": URL, "text": "Point de clearance Martinique Le Marin Capitainerie "
+                         "Port de plaisance Capitainerie du port (nouvelle extension) 8h-17h "
+                         "Brigade de surveillance des douanes du Marin 8h-17h"}])
+    assert len(poe.merge_same_ports(docs + [_port("Marin", "Le Marin")])[0]) == 2
+    excluded = next(d for d in docs if d.get("clearance_excluded"))
+    assert not poe.same_port(excluded, dict(excluded), poe.PORT_MERGE_KM)
+
+
+def test_a_fuel_station_off_a_clearance_list_is_not_capped_by_the_rule():
+    text = _list().replace("Point de clearance", "Point d'accueil")
+    port = _certified(_judged("Station-service CAP Ponton N°3", "Le Marin"),
+                      [{"url": URL, "text": text}])
+    assert port["confidence_level"] == "C2"
+
+
+def test_an_excluded_kind_in_another_territorys_section_is_not_capped_for_this_zone():
+    assert not v3_certify._is_excluded_row(
+        {"name": "Restaurant Barracuda Marina Rivière Sens", "mrgid": 33178}, TEXTS, WHITELIST,
+        MARTINIQUE)
+
+
 def test_the_step_never_certifies_the_commune_name(monkeypatch):
     def refuse(*a, **k):
         raise AssertionError("the commune's name is not certified")
@@ -239,12 +388,17 @@ def test_the_step_never_certifies_the_commune_name(monkeypatch):
     monkeypatch.setattr(poe, "certify_texts", lambda raw, sources: TEXTS)
     docs = asyncio.run(poe._group_clearance_points(
         MARTINIQUE, _d7963f(), "", [], WHITELIST, lambda m: None, Rec()))
-    assert len(docs) == 9
+    assert len(docs) == 12
     steps = [s for s, _ in events]
-    assert steps.count("clearance_points") == 5 and steps.count("port_merge") == 2
+    assert steps.count("clearance_points") == 4 and steps.count("port_merge") == 1
+    assert steps.count("clearance_excluded") == 3
     marin = next(p for s, p in events if s == "clearance_points" and p["poe"] == "Le Marin")
     assert marin["confidence_level"] == "C2" and marin["source"] == URL
-    assert [p["judge"] for p in marin["points"]] == ["poe", "poe"]
+    assert [p["judge"] for p in marin["points"]] == ["poe"]
+    station = next(p for s, p in events if s == "clearance_excluded"
+                   and p["name"].startswith("Station-service"))
+    assert station["confidence_level"] == "C1" and station["reason"] == "fuel station"
+    assert station["commune"] == "Le Marin"
 
 
 def test_rows_are_grouped_after_the_judge_and_the_evidence_and_only_in_a_run():
