@@ -1,0 +1,27 @@
+# CONSTRUCTED fixture, not verbatim. The real Schengen Handbook Annex 4 could not be fetched
+# (environment network policy). Layout from the row format quoted in Clément's gold notes
+# (3 Nov 2026): Spain, sea borders, items (4) Arrecife, (18) La Luz (Las Palmas),
+# (24) Puerto del Rosario, (25) Santa Cruz de La Palma, (27) San Sebastián (the Basque port,
+# Clément's note), (28) Santa Cruz de Tenerife. Other items are filler Spanish ports.
+ANNEX 4
+List of border crossing points
+SPAIN
+Air borders
+(1) Alicante
+(2) Almería
+(3) Arrecife (Lanzarote)
+Sea borders
+(1) Alicante (2) Almería (3) Algeciras
+(4) Arrecife
+(5) Barcelona
+(18) La Luz (Las Palmas)
+(24) Puerto del Rosario
+(25) Santa Cruz de La Palma
+(27) San Sebastián
+(28) Santa Cruz de Tenerife
+(29) Tarragona
+Land borders
+(1) La Línea de la Concepción
+FRANCE
+Sea borders
+(1) Le Havre

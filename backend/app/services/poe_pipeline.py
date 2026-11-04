@@ -1058,6 +1058,18 @@ def zone_catalog(text: str, zone: dict | None) -> tuple[list[dict], bool]:
             continue
         seen.add(p["name"].casefold())
         ports.append(p)
+    # A list of border crossing points (Schengen Handbook Annex 4, Orden INT/859/2023
+    # Annex V) designates the zone's sea posts; only rows confirmed in the zone are kept.
+    from app.services import border_crossing
+    if zone and border_crossing.is_border_crossing_list(text):
+        kept, _dropped = border_crossing.zone_rows(text, zone, border_crossing.zone_state_name(zone))
+        for r in kept:
+            if r["name"].casefold() in seen:
+                continue
+            seen.add(r["name"].casefold())
+            ports.append({"name": r["name"], "city": r["matched"] if r["matched"] != r["name"] else None,
+                          "note": f"poste frontalier maritime (liste officielle) : {r['row']}",
+                          "extraction_engine": "border_list"})
     return ports, missed
 
 
@@ -4545,7 +4557,7 @@ def judge_texts(zone: dict, docs: list[dict], raw: str, used_sources: list[dict]
     records = evidence_store.build_records(
         zone.get("mrgid"), [d.get("name") for d in docs or []],
         evidence_store.documents_from_context(raw, used_sources),
-        places=registry_check.zone_names(zone), whitelist=whitelist)
+        places=registry_check.zone_names(zone), whitelist=whitelist, zone=zone)
     out, seen = [], set()
     for r in records:
         key = (r.get("url"), r.get("snippet"))
@@ -4723,7 +4735,7 @@ async def _store_evidence(db, zone: dict, docs: list[dict], raw: str,
         records = await asyncio.to_thread(lambda: evidence_store.build_records(
             zone.get("mrgid"), [d.get("name") for d in docs or []],
             evidence_store.documents_from_context(raw, used_sources),
-            places=registry_check.zone_names(zone), whitelist=whitelist))
+            places=registry_check.zone_names(zone), whitelist=whitelist, zone=zone))
         stored = await evidence_store.store(db, records, run_id=run_id)
     except Exception as e:  # noqa: BLE001 — evidence is optional, generation must finish
         log(f"evidence: non stockée ({type(e).__name__}: {str(e)[:100]})")

@@ -136,3 +136,83 @@ def test_martinique_sends_no_border_crossing_query(search):
     calls, _answers = search
     _find(MQ)
     assert not any("border crossing points" in q or "puestos fronterizos" in q for q in calls)
+
+
+# --- reading the lists (§10.1: a row of a designating list) -------------------------------
+# Fixtures are CONSTRUCTED from the row formats (Clément's notes; the user's description of
+# Orden INT Annex V), not verbatim: the documents could not be fetched here.
+
+from pathlib import Path  # noqa: E402
+
+from app.adapters import evidence_store  # noqa: E402
+from app.services import border_crossing as bc  # noqa: E402
+
+FIX = Path(__file__).resolve().parent / "fixtures"
+ANNEX4_TXT = (FIX / "annex4_spain_sea_borders_constructed.txt").read_text(encoding="utf-8")
+ORDEN_TXT = (FIX / "orden_int_859_2023_annex_v_constructed.txt").read_text(encoding="utf-8")
+CANARY_POSTS = {"Arrecife", "Puerto del Rosario", "Santa Cruz de La Palma", "Santa Cruz de Tenerife"}
+
+
+def test_annex4_reads_the_sea_border_items_of_its_state_only():
+    rows = bc.annex4_rows(ANNEX4_TXT, "Spain")
+    assert [r["number"] for r in rows] == [1, 2, 3, 4, 5, 18, 24, 25, 27, 28, 29]
+    assert rows[-2]["row"] == "(28) Santa Cruz de Tenerife"
+    assert any(r["name"] == "La Luz (Las Palmas)" for r in rows)
+    names = {r["name"] for r in rows}
+    assert "Arrecife (Lanzarote)" not in names  # an air-border item
+    assert "Le Havre" not in names and "La Línea de la Concepción" not in names
+
+
+def test_orden_int_reads_the_post_column_only():
+    rows = bc.orden_int_rows(ORDEN_TXT)
+    names = [r["name"] for r in rows]
+    assert names == ["Arrecife", "Las Palmas", "Puerto del Rosario", "Santa Cruz de La Palma",
+                     "Santa Cruz de Tenerife", "San Sebastián", "Algeciras"]
+    # the police-station column is full of place names and is never a post
+    assert not any(r["row"].startswith("Comisaría") for r in rows)
+    # airports sit in the same table and are skipped
+    assert not any("Aeropuerto" in r["row"] for r in rows)
+
+
+@pytest.mark.parametrize("text", [ANNEX4_TXT, ORDEN_TXT])
+def test_country_wide_list_keeps_the_zone_posts_and_drops_homonyms(text):
+    kept, dropped = bc.zone_rows(text, CANARIES, bc.zone_state_name(CANARIES))
+    assert CANARY_POSTS <= {r["name"] for r in kept}
+    assert any(r["matched"] == "Las Palmas" for r in kept)
+    # (27) San Sebastián is the Basque port (Clément), never La Gomera's
+    sansebastian = [d for d in dropped if d["name"] == "San Sebastián"]
+    assert sansebastian and "San Sebastián" not in {r["name"] for r in kept}
+    assert "Algeciras" in {d["name"] for d in dropped}
+
+
+def test_mainland_spain_keeps_its_own_posts_not_the_canaries():
+    mainland = {"mrgid": 5693, "name": "Spain", "iso2": "ES", "sov_iso2": "ES"}
+    kept, _dropped = bc.zone_rows(ANNEX4_TXT, mainland, bc.zone_state_name(mainland))
+    names = {r["name"] for r in kept}
+    assert {"Algeciras", "Barcelona", "Tarragona"} <= names
+    assert not names & CANARY_POSTS
+
+
+def test_rows_enter_the_zone_catalogue():
+    ports, _missed = poe.zone_catalog(ORDEN_TXT, CANARIES)
+    border = {p["name"] for p in ports if p.get("extraction_engine") == "border_list"}
+    assert CANARY_POSTS <= border and "San Sebastián" not in border and "Algeciras" not in border
+
+
+def test_a_row_is_evidence_for_the_judge_on_an_official_list_only():
+    docs = [{"url": ORDEN, "text": ORDEN_TXT}]
+    wl = poe.zone_whitelist(CANARIES)
+    names = ["Santa Cruz de Tenerife", "Arrecife", "San Sebastián", "Corralejo"]
+    recs = evidence_store.build_records(8364, names, docs, whitelist=wl, zone=CANARIES)
+    by = {r["matched_name"]: r for r in recs}
+    assert set(by) == {"Santa Cruz de Tenerife", "Arrecife"}
+    assert "Puerto de Santa Cruz de Tenerife." in by["Santa Cruz de Tenerife"]["snippet"]
+    # not official for this zone (Martinique's whitelist): no record
+    assert not evidence_store.build_records(8364, names, docs, whitelist=poe.zone_whitelist(MQ),
+                                            zone=CANARIES)
+
+
+def test_not_a_border_crossing_list_reads_nothing():
+    text = "Puerto de Arrecife. Horario de atención al público. Comisaría Local de Arrecife."
+    assert not bc.is_border_crossing_list(text)
+    assert bc.zone_rows(text, CANARIES, "Spain") == ([], [])

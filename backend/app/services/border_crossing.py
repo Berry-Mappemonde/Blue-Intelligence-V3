@@ -1,0 +1,215 @@
+"""Lists of border crossing points: a designating list (CAHIER_DES_CHARGES_POE §10.1).
+
+Clément, 3 Nov 2026: for a Schengen zone the PoE list is the list of sea border crossing
+points, e.g. the Canaries' five posts in the Schengen Handbook Annex 4 (Spain, sea borders)
+and in Orden INT/859/2023 Annex V "Puestos fronterizos".
+
+Two row formats are read:
+  - Annex 4: numbered items under a State's "Sea borders" heading, "(27) Santa Cruz de
+    Tenerife", "(18) La Luz (Las Palmas)";
+  - Orden INT Annex V: a two-column table, post | responsible police station,
+    "Puerto de Arrecife.   Comisaría Local de Arrecife.". Only the post column counts: a
+    "Comisaría …" cell is never a post (it is full of place names), and an "Aeropuerto de …"
+    row is an airport.
+
+Both lists are country-wide, so a row belongs to a zone only when a port of that exact name
+with known coordinates (WPI, OSM port priors) lies in the zone: "(27) San Sebastián" is the
+Basque port, not San Sebastián de La Gomera, and is never a Canaries row. A row no gazetteer
+confirms is dropped (and listed by ``zone_rows``), never guessed.
+"""
+from __future__ import annotations
+
+import json
+import re
+import unicodedata
+from functools import lru_cache
+from pathlib import Path
+
+DATA = Path(__file__).resolve().parents[2] / "data"
+
+LIST_MARKERS = re.compile(
+    r"border crossing points?|puestos? fronterizos?|points? de passage frontaliers?"
+    r"|valichi di frontiera|grenz(?:ü|ue)bergangsstellen|pontos? de passagem fronteiri",
+    re.I)
+_SEA_HEADING = re.compile(r"(?im)^\s*(?:sea borders|fronteras mar[ií]timas|fronti[eè]res maritimes)\b")
+_OTHER_HEADING = re.compile(r"(?im)^\s*(?:air borders|land borders|airports|fronteras (?:a[ée]reas|terrestres))\b")
+_ITEM = re.compile(r"\((\d{1,3})\)\s*([^\n(]+?(?:\([^)\n]*\))?)\s*(?=\(\d{1,3}\)|\n|$)")
+_SEGMENT_END = re.compile(r"(?<=\.)\s+|\n+")
+_POST = re.compile(r"^Puerto\s+(?:(?:de|del)\s+(?:(?:la|las|los)\s+)?)?(.+?)\.?$")
+
+
+def _fold(name: str | None) -> str:
+    nfd = unicodedata.normalize("NFD", (name or "").casefold())
+    s = "".join(c for c in nfd if unicodedata.category(c) != "Mn")
+    return " ".join(re.sub(r"[^a-z0-9]+", " ", s).split())
+
+
+def is_border_crossing_list(text: str | None) -> bool:
+    return bool(LIST_MARKERS.search(text or ""))
+
+
+# --- the two row formats -----------------------------------------------------------------
+
+def annex4_rows(text: str, state: str) -> list[dict]:
+    """Numbered items of ``state``'s sea-border section of the Schengen Handbook Annex 4.
+
+    The section starts at the first sea-border heading after the State's own heading
+    (its English name on a line of its own, any case) and ends at the next air / land
+    heading or the next State heading. -> [{number, name, row}]."""
+    t = text or ""
+    head = re.search(rf"(?im)^\s*{re.escape(state)}\s*$", t)
+    start = head.end() if head else 0
+    sea = _SEA_HEADING.search(t, start)
+    if not sea:
+        return []
+    end_m = _OTHER_HEADING.search(t, sea.end())
+    nxt = re.search(r"(?m)^\s*[A-Z][A-Z \-]{3,}\s*$", t[sea.end():])
+    end = min(end_m.start() if end_m else len(t), sea.end() + nxt.start() if nxt else len(t))
+    out = []
+    for m in _ITEM.finditer(t[sea.end():end]):
+        name = " ".join(m.group(2).split()).rstrip(" .;,")
+        if name:
+            out.append({"number": int(m.group(1)), "name": name, "row": f"({m.group(1)}) {name}"})
+    return out
+
+
+def orden_int_rows(text: str) -> list[dict]:
+    """Posts of a "Puestos fronterizos" table: each cell ends with a full stop; a cell that
+    starts with "Puerto" is a post, one that starts with "Comisaría" (the police-station
+    column) or "Aeropuerto" (an airport) is not. -> [{name, row}], name without "Puerto de"."""
+    out = []
+    for cell in _SEGMENT_END.split(text or ""):
+        cell = " ".join(cell.split())
+        if not cell.startswith("Puerto ") and not cell.startswith("Puerto "):
+            continue
+        m = _POST.match(cell)
+        if m and m.group(1).strip():
+            out.append({"name": m.group(1).strip(), "row": cell})
+    return out
+
+
+def _row_forms(name: str) -> list[str]:
+    """"La Luz (Las Palmas)" -> ["La Luz (Las Palmas)", "La Luz", "Las Palmas"]."""
+    forms = [name]
+    base = re.sub(r"\(.*?\)", " ", name).strip()
+    forms += [base] + [q.strip() for q in re.findall(r"\(([^)]*)\)", name)]
+    return [f for f in dict.fromkeys(forms) if f]
+
+
+# --- the zone filter -------------------------------------------------------------------------
+
+@lru_cache(maxsize=1)
+def _gazetteer() -> list[tuple[str, float, float, frozenset]]:
+    """(folded name, lat, lon, mrgids it is recorded in) of WPI ports and OSM port priors."""
+    out = []
+    try:
+        for p in json.loads((DATA / "wpi_ports.json").read_text(encoding="utf-8")).get("ports") or []:
+            if p.get("lat") is not None and p.get("lon") is not None:
+                out.append((_fold(p.get("name")), float(p["lat"]), float(p["lon"]), frozenset()))
+    except (OSError, ValueError):
+        pass
+    try:
+        for p in json.loads((DATA / "osm_port_priors.json").read_text(encoding="utf-8")).get("ports") or []:
+            mrgids = frozenset(int(e["mrgid"]) for e in p.get("eez") or []
+                               if e.get("mrgid") is not None and e.get("relation") in ("in_eez", "coastal_15km"))
+            if p.get("lat") is not None and p.get("lon") is not None:
+                out.append((_fold(p.get("name")), float(p["lat"]), float(p["lon"]), mrgids))
+    except (OSError, ValueError):
+        pass
+    return out
+
+
+@lru_cache(maxsize=64)
+def _zone_shape(mrgid: int):
+    try:
+        from shapely.geometry import shape
+        doc = json.loads((DATA / "eez_world_map.geojson").read_text(encoding="utf-8"))
+    except (OSError, ValueError, ImportError):
+        return None
+    for f in doc.get("features") or []:
+        if int((f.get("properties") or {}).get("mrgid") or 0) == int(mrgid):
+            return shape(f["geometry"])
+    return None
+
+
+def _zone_geometry(zone: dict | None):
+    zone = zone or {}
+    if zone.get("geometry"):
+        try:
+            from shapely.geometry import shape
+            return shape(zone["geometry"])
+        except Exception:  # noqa: BLE001 — fall back to the map by mrgid
+            pass
+    try:
+        return _zone_shape(int(zone.get("mrgid")))
+    except (TypeError, ValueError):
+        return None
+
+
+def in_zone(name: str, zone: dict | None) -> tuple[bool, str]:
+    """(True, how) when a port of exactly this name is recorded in the zone: an OSM prior
+    tagged with its mrgid, or a WPI / OSM point in its polygon (within ~15 km of the shore).
+    (False, reason) otherwise, with a homonym elsewhere named in the reason."""
+    key = _fold(name)
+    if not key:
+        return False, "empty name"
+    hits = [g for g in _gazetteer() if g[0] == key]
+    if not hits:
+        return False, "no port of that name in WPI / OSM"
+    try:
+        mrgid = int((zone or {}).get("mrgid"))
+    except (TypeError, ValueError):
+        mrgid = None
+    if mrgid is not None and any(mrgid in g[3] for g in hits):
+        return True, "OSM port prior of this zone"
+    geom = _zone_geometry(zone)
+    if geom is not None:
+        from shapely.geometry import Point
+        for _k, lat, lon, _m in hits:
+            if geom.buffer(0.15).contains(Point(lon, lat)):
+                return True, f"WPI / OSM point {lat:.2f}, {lon:.2f} in the zone"
+        lat, lon = hits[0][1], hits[0][2]
+        return False, f"homonym outside the zone ({lat:.2f}, {lon:.2f})"
+    return False, "no zone geometry"
+
+
+def zone_rows(text: str, zone: dict | None, state_name: str | None = None
+              ) -> tuple[list[dict], list[dict]]:
+    """Rows of a border-crossing-point list that belong to ``zone``, and the rows dropped
+    (with why). Annex 4 items of ``state_name``'s sea borders and Orden INT posts.
+    -> (kept [{name, row, matched, how}], dropped [{name, row, reason}])."""
+    if not is_border_crossing_list(text):
+        return [], []
+    rows = (annex4_rows(text, state_name) if state_name else []) + orden_int_rows(text)
+    kept, dropped, seen = [], [], set()
+    for r in rows:
+        if r["row"] in seen:
+            continue
+        seen.add(r["row"])
+        names = _row_forms(r["name"])
+        if r["row"].startswith("Puerto ") and _fold(r["row"].rstrip(".")) != _fold(r["name"]):
+            names.insert(0, r["row"].rstrip(".")[len("Puerto de "):] if r["row"].startswith("Puerto de ")
+                         else r["row"].rstrip("."))
+        verdicts = [(n, in_zone(n, zone)) for n in dict.fromkeys(names)]
+        ok = next(((n, how) for n, (good, how) in verdicts if good), None)
+        if ok:
+            kept.append({"name": r["name"], "row": r["row"], "matched": ok[0], "how": ok[1]})
+        else:
+            dropped.append({"name": r["name"], "row": r["row"],
+                            "reason": "; ".join(f"{n}: {how}" for n, (_g, how) in verdicts)})
+    return kept, dropped
+
+
+def zone_state_name(zone: dict | None) -> str | None:
+    """English name of the zone's Schengen State, as Annex 4 heads its section."""
+    from app.services.territory_ref import schengen_state, with_sovereign_iso2
+    zone = with_sovereign_iso2(zone or {})
+    state = schengen_state(zone.get("iso2"), zone.get("mrgid"))
+    if not state:
+        return None
+    try:
+        import pycountry
+        c = pycountry.countries.get(alpha_2=state)
+        return (getattr(c, "common_name", None) or c.name) if c else None
+    except ImportError:
+        return None

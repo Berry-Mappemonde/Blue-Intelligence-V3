@@ -47,7 +47,8 @@ def sha256_text(text: str) -> str:
 
 
 def build_records(mrgid: int | None, port_names: list[str], documents: list[dict],
-                  places: tuple = (), whitelist: list[str] | None = None) -> list[dict]:
+                  places: tuple = (), whitelist: list[str] | None = None,
+                  zone: dict | None = None) -> list[dict]:
     """Evidence records for each port name from official documents.
 
     documents: [{url, text, sha256, fetched_at, extract_level}], where sha256 is the hash of
@@ -56,19 +57,24 @@ def build_records(mrgid: int | None, port_names: list[str], documents: list[dict
     a list is a match without an entry term (``v3_certify.clearance_row_mention``). ``places``: the
     zone's own names (registry_check.zone_names), never a port-name variant. ``whitelist``:
     the zone's PoE whitelist, which decides "official" (is_official_source); without it,
-    the naming heuristic.
+    the naming heuristic. ``zone``: the zone doc (geometry, iso2), for the rows of a list of
+    border crossing points (services.border_crossing): a row confirmed in the zone is
+    evidence when no entry term sits near the name (§10.1, a row of a designating list).
     """
     if mrgid is None:
         return []
     official = [d for d in documents
                 if d.get("text") and is_official_source([d.get("url") or ""], whitelist)]
     records = []
+    rows_cache: dict = {}
     for name in dict.fromkeys(n for n in port_names if n):
         variants = registry_check.grounding_variants(name, places=places)
         best: dict[str, tuple[int, dict]] = {}
         for doc in official:
             mention = (registry_check.entry_mention(doc["text"], variants)
                        or v3_certify.clearance_row_mention(name, doc["text"], mrgid, places))
+            if not mention:
+                mention = _border_row_mention(doc, name, zone or {"mrgid": mrgid}, rows_cache)
             if not mention:
                 continue
             record = dict(mrgid=int(mrgid), port_key=registry_check.port_key(name), url=doc["url"],
@@ -79,6 +85,30 @@ def build_records(mrgid: int | None, port_names: list[str], documents: list[dict
                 best[doc["url"]] = (mention["gap"], record)
         records += [r for _, r in sorted(best.values(), key=lambda item: item[0])][:MAX_PER_PORT]
     return records
+
+
+BORDER_ROW_SNIPPET_CHARS = 200  # each side of a border-crossing row
+
+
+def _border_row_mention(doc: dict, name: str, zone: dict, cache: dict) -> dict | None:
+    """A mention for ``name`` when it is a row of this official document's list of border
+    crossing points, confirmed in the zone (services.border_crossing.zone_rows)."""
+    from app.services import border_crossing
+    text = doc.get("text") or ""
+    if not border_crossing.is_border_crossing_list(text):
+        return None
+    key = (doc.get("url"), id(text))
+    if key not in cache:
+        cache[key] = border_crossing.zone_rows(text, zone, border_crossing.zone_state_name(zone))[0]
+    want = {border_crossing._fold(n) for n in border_crossing._row_forms(name)}
+    for r in cache[key]:
+        if want & {border_crossing._fold(r["name"]), border_crossing._fold(r["matched"])}:
+            at = text.find(r["row"]) if r["row"] in text else text.find(r["name"])
+            if at < 0:
+                continue
+            lo, hi = max(0, at - BORDER_ROW_SNIPPET_CHARS), at + len(r["row"]) + BORDER_ROW_SNIPPET_CHARS
+            return {"matched_name": r["name"], "snippet": " ".join(text[lo:hi].split()), "gap": 0}
+    return None
 
 
 def documents_from_context(text: str | None, used_sources: list[dict]) -> list[dict]:
