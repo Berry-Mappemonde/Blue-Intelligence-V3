@@ -57,8 +57,8 @@ def _match_key(auth: dict) -> str:
     return dom
 
 
-def zone_authorities(zone: dict | None) -> list[dict]:
-    """[{role, key}] for the zone: by mrgid, else by whitelist_key == ISO2."""
+def _zone_record(zone: dict | None) -> dict:
+    """The zone's audited record: by mrgid, else by whitelist_key == ISO2; {} when none."""
     zone = zone or {}
     zones = _zones()
     rec = None
@@ -73,8 +73,23 @@ def zone_authorities(zone: dict | None) -> list[dict]:
         if cc:
             rec = next((z for z in zones.values()
                         if (z.get("whitelist_key") or "") == cc), None)
+    return rec or {}
+
+
+def list_publishers(zone: dict | None) -> list[str]:
+    """Hosts that publish the designating lists of a zone outside Schengen: its official
+    gazettes (``gazettes``), then its authorities, all from whitelist_sources.json. A
+    bare government label stays on the authority's own host, as for a role: a random
+    ``*.gov.cv`` page is no publisher. An unaudited zone has none."""
+    rec = _zone_record(zone)
+    keys = [_match_key(a) for a in (*(rec.get("gazettes") or ()), *(rec.get("authorities") or ()))]
+    return list(dict.fromkeys(k for k in keys if k))
+
+
+def zone_authorities(zone: dict | None) -> list[dict]:
+    """[{role, key}] for the zone: by mrgid, else by whitelist_key == ISO2."""
     out = []
-    for a in (rec or {}).get("authorities") or []:
+    for a in _zone_record(zone).get("authorities") or []:
         role, key = a.get("role"), _match_key(a)
         if role and key:
             out.append({"role": role, "key": key, "url": a.get("url") or "",

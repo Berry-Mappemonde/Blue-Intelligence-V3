@@ -96,9 +96,12 @@ def test_searxng_empty_tavily_runs_the_full_query_set(providers):
     # Grounded search stays the last resort and was not needed.
     assert calls["grounded"] == 0
     searches = [p for s, p in rec.events if s == "search"]
-    assert {p["query"] for p in searches if p.get("fallback_for") == "searxng"} == set(HINTS)
+    # So did the list-discovery query of a zone outside Schengen: one more Tavily call.
+    fallback = set(HINTS) | {q for _lang, q in poe.entry_list_queries(SAINT_LUCIA)}
+    assert len(fallback) == len(HINTS) + 1
+    assert {p["query"] for p in searches if p.get("fallback_for") == "searxng"} == fallback
     summary = [p["engines"] for s, p in rec.events if s == "search_providers"]
-    assert summary and summary[0]["tavily"]["fallback"] == len(HINTS)
+    assert summary and summary[0]["tavily"]["fallback"] == len(fallback)
     assert summary[0]["searxng"]["results"] == 0
 
 

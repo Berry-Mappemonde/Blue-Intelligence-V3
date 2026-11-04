@@ -31,7 +31,7 @@ no customs post) is listed under "no authority" with the official text that says
 | 8309 | Christmas Island | Australia | CX | `gov.cx` | not checked |  |
 | 8418 | Barbados | Barbados | BB | `gov.bb` | not checked |  |
 | 8493 | Canada | Canada | CA | `canada.ca`, `gc.ca` | not checked |  |
-| 8362 | Cape Verde | Cape Verde | CV | `enapor.cv`, `gov.cv`, `governo.cv`, `imp.cv`, `policianacional.cv` | no | audited; was missing immigration, maritime authority, port authority |
+| 8362 | Cape Verde | Cape Verde | CV | `enapor.cv`, `gov.cv`, `governo.cv`, `imp.cv`, `incv.cv`, `policianacional.cv` | no | audited; was missing immigration, maritime authority, port authority |
 | 8426 | Colombia | Colombia | CO | `gov.co` | not checked |  |
 | 8424 | Costa Rica | Costa Rica | CR | `go.cr` | not checked |  |
 | 48968 | Costa Rica | Costa Rica | CR | `go.cr` | not checked |  |
