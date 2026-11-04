@@ -32,6 +32,10 @@ WL = ["gouv.fr"]
 def _wl(fn):
     def call(*args, **kwargs):
         kwargs.setdefault("whitelist", WL)
+        port = args[0] if args else None
+        if isinstance(port, dict) and port.get("extraction_agreement") is True:
+            # LLM∩NER needs its designating context: pass texts=[] to test without it.
+            kwargs.setdefault("texts", [{"url": GOV, "text": f"Port d'entrée : {port['name']}."}])
         return fn(*args, **kwargs)
     return call
 
@@ -69,7 +73,8 @@ def _judged(verdict, excerpt=EXCERPT):
     return next(iter(poe_judge.parse_judgments(parsed, EVIDENCE_TEXT).values()))
 
 
-# C2 without the judge: LLM extraction + an independent reader (LLM∩NER).
+# C2 without the judge: LLM extraction + an independent reader (LLM∩NER), with an official
+# text that puts the name next to entry wording (`_wl` supplies one).
 CORROBORATED = {"extraction_engine": "llm", "extraction_agreement": True}
 # C2 zone guard: placed in this zone by the pipeline (8face05: a GPS outside the
 # mrgid is never written, so coordinates on the port mean "in this polygon").

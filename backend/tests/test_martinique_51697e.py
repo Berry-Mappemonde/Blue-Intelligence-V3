@@ -10,6 +10,7 @@ Offline: the LLM reader answers with what it read in run d7963f on the same list
 geocoders with what Nominatim returned, and the judge records what it is given.
 """
 import asyncio
+import copy
 import hashlib
 import json
 from pathlib import Path
@@ -176,6 +177,26 @@ def test_the_rows_become_the_gold_poes(run_zone):
             for poe_doc, _ in grouped} == {
         "Le François": [LE_FRANCOIS], "Le Marin": [LE_MARIN],
         "Trois-Îlets": [TROIS_ILETS], "Fort-de-France": [ETANG]}
+
+
+def test_with_a_judge_saying_poe_to_everything_the_run_gives_the_gold(run_zone):
+    """The rules hold on this run's records, whatever the judge answers."""
+    texts = [{"url": s["url"], "text": s["text"]} for s in SOURCES]
+    whitelist = poe.zone_whitelist(MARTINIQUE)
+    docs = copy.deepcopy(run_zone.docs)
+    for doc in docs:
+        doc["judge"] = {"verdict": "poe", "reason": "stub", "quoted_excerpt": doc["name"],
+                        "excerpt_verified": True}
+        poe.attach_confidence_level(doc, whitelist=whitelist, texts=texts, zone=MARTINIQUE)
+    docs, _ = poe.group_clearance_points(docs, texts, MARTINIQUE, whitelist)
+    merged, _ = poe.merge_same_ports(docs)
+    levels = {d["name"]: d["confidence_level"] for d in merged}
+    for gold in ("Le François", "Le Marin", "Trois-Îlets", "Fort-de-France"):
+        assert levels[gold] == "C2"
+    for name in ("Trinité", "Le Robert", "Saint-Pierre", "Martinique-Aimé-Césaire"):
+        assert levels[name] == "C1"
+    assert sorted(n for n, level in levels.items() if level == "C2") == [
+        "Fort-de-France", "Le François", "Le Marin", "Trois-Îlets"]
 
 
 def test_the_catalogue_still_skips_the_llm_without_a_clearance_list(monkeypatch):

@@ -98,7 +98,7 @@ def _judge(docs, run_id="run-judge", **rules):
 def test_verdicts_reach_the_level(judge_calls):
     docs = _docs()
     for d in docs:
-        poe.attach_confidence_level(d, whitelist=WL)
+        poe.attach_confidence_level(d, whitelist=WL, texts=[{"url": URL, "text": f"{FDF} {MARIN}"}])
     assert [d["confidence_level"] for d in docs] == ["C1", "C3"]
 
     summary, state, gaps = _judge(docs)
