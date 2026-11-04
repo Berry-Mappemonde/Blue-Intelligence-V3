@@ -97,8 +97,13 @@ def test_unmapped_zone_is_unchanged(iso2, sov2, mrgid, exc):
     assert not tr.territory_for_mrgid(mrgid)
     with_zone = build_whitelist(iso2, sov2, exc, mrgid=mrgid)
     assert with_zone == build_whitelist(iso2, sov2, exc)
-    # Same formula as before this change: the national labels of `iso2 or sov_iso2`.
-    assert with_zone == sorted(poe._national_labels(iso2 or sov2, exc, poe.eez_iso2_set()))
+    # Same formula as before this change: the national labels of `iso2 or sov_iso2`,
+    # plus, for a Schengen zone, the publishers of the border-crossing-point lists
+    # (fix/v3-border-crossing-points: mainland Spain gets boe.es, home-affairs.ec.europa.eu).
+    labels = set(poe._national_labels(iso2 or sov2, exc, poe.eez_iso2_set()))
+    pubs = set(tr.schengen_publishers(tr.schengen_state(iso2, mrgid))) if labels else set()
+    assert with_zone == sorted(labels | pubs)
+    assert bool(pubs) == (iso2 == "ES")
     # One definition of "official": the registry check reads the zone's whitelist too.
     zone = {"mrgid": mrgid, "iso2": iso2, "sov_iso2": sov2}
     assert poe.registry_whitelist(zone) == poe.zone_whitelist(zone)

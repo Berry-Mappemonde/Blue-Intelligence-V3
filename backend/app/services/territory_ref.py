@@ -216,3 +216,30 @@ def td_url_fits_polygon(url: str, zone: dict | None) -> bool:
         return True
     cc = iso2.lower()
     return host == cc or host.endswith("." + cc)
+
+
+def schengen_state(iso2: str | None, mrgid=None) -> str:
+    """The Schengen State a zone belongs to for border-crossing lists, or "".
+
+    A curated territory's own ``schengen`` flag decides (the Canaries are in, the French
+    overseas territories are out, whatever their sovereign); any other polygon is in when
+    its own ISO2 is a Schengen State (the Azores and Madeira carry PT). Returns the
+    State's ISO2: the territory's sovereign, or the polygon's ISO2."""
+    block = _table().get("schengen") or {}
+    states = {str(s).upper() for s in block.get("states") or []}
+    terr = territory_for_mrgid(mrgid) if mrgid is not None else {}
+    if terr:
+        if terr.get("schengen") is True:
+            return str(terr.get("sovereign_iso2") or terr.get("iso2") or "").upper()
+        return ""
+    cc = str(iso2 or "").upper()
+    return cc if cc in states else ""
+
+
+def schengen_publishers(state: str | None) -> list[str]:
+    """Hosts that publish the border-crossing-point lists of ``state`` (and of every
+    Schengen State: the Schengen Handbook Annex 4)."""
+    if not state:
+        return []
+    pubs = (_table().get("schengen") or {}).get("publishers") or {}
+    return list(dict.fromkeys([*(pubs.get("*") or []), *(pubs.get(str(state).upper()) or [])]))

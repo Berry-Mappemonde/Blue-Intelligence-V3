@@ -13,6 +13,12 @@
     "GL": "Greenland: self-governing within the Kingdom of Denmark, own customs",
     "FO": "Faroe Islands: self-governing within the Kingdom of Denmark, own customs"
   },
+  "schengen": {
+    "_about": "Schengen area membership for search and the gatekeeper (fix/v3-border-crossing-points). A curated territory's own `schengen` flag decides; any other zone is in the area when its polygon ISO2 is one of `states` (so the Azores and Madeira, ISO2 PT, are; SX, AW, CW, BQ, FO, GL, SJ, which carry their own ISO2, are not). `publishers`: hosts that publish the lists of border crossing points, official for the zones of that State (\"*\" = every Schengen zone).",
+    "source": "Schengen Borders Code, Regulation (EU) 2016/399, and the Schengen Handbook Annex 4 (list of border crossing points per State), https://home-affairs.ec.europa.eu. Bulgaria and Romania: Council decisions of 30 December 2023 (air and sea borders from 31 March 2024) and of 12 December 2024 (land borders from 1 January 2025).",
+    "states": ["AT", "BE", "BG", "CH", "CZ", "DE", "DK", "EE", "ES", "FI", "FR", "GR", "HR", "HU", "IS", "IT", "LI", "LT", "LU", "LV", "MT", "NL", "NO", "PL", "PT", "RO", "SE", "SI", "SK"],
+    "publishers": {"*": ["home-affairs.ec.europa.eu"], "ES": ["boe.es"]}
+  },
   "blacklist_domains": [
     "noonsite.com",
     "cruisersforum.com",
@@ -32,6 +38,8 @@
   "territories": [
     {
       "code": "france_metropolitaine",
+      "schengen": true,
+      "schengen_source": "European territory of France, a Schengen State. Convention implementing the Schengen Agreement (OJ L 239, 22.9.2000), art. 138: as regards the French Republic, the Convention applies only to its European territory.",
       "name_fr": "France métropolitaine",
       "name_en": "Metropolitan France",
       "regime": "metropole",
@@ -75,6 +83,8 @@
     },
     {
       "code": "martinique",
+      "schengen": false,
+      "schengen_source": "Outside the Schengen area. Convention implementing the Schengen Agreement (OJ L 239, 22.9.2000), art. 138: as regards the French Republic, the Convention applies only to its European territory.",
       "name_fr": "Martinique",
       "name_en": "Martinique",
       "regime": "drom",
@@ -106,6 +116,8 @@
     },
     {
       "code": "guadeloupe",
+      "schengen": false,
+      "schengen_source": "Outside the Schengen area. Convention implementing the Schengen Agreement (OJ L 239, 22.9.2000), art. 138: as regards the French Republic, the Convention applies only to its European territory.",
       "name_fr": "Guadeloupe",
       "name_en": "Guadeloupe",
       "regime": "drom",
@@ -136,6 +148,8 @@
     },
     {
       "code": "saint_barthelemy",
+      "schengen": false,
+      "schengen_source": "Outside the Schengen area. Convention implementing the Schengen Agreement (OJ L 239, 22.9.2000), art. 138: as regards the French Republic, the Convention applies only to its European territory.",
       "name_fr": "Saint-Barthélemy",
       "name_en": "Saint-Barthélemy",
       "regime": "com",
@@ -167,6 +181,8 @@
     },
     {
       "code": "saint_martin",
+      "schengen": false,
+      "schengen_source": "Outside the Schengen area. Convention implementing the Schengen Agreement (OJ L 239, 22.9.2000), art. 138: as regards the French Republic, the Convention applies only to its European territory.",
       "name_fr": "Saint-Martin",
       "name_en": "Saint-Martin (French)",
       "regime": "com",
@@ -197,6 +213,8 @@
     },
     {
       "code": "guyane",
+      "schengen": false,
+      "schengen_source": "Outside the Schengen area. Convention implementing the Schengen Agreement (OJ L 239, 22.9.2000), art. 138: as regards the French Republic, the Convention applies only to its European territory.",
       "name_fr": "Guyane",
       "name_en": "French Guiana",
       "regime": "drom",
@@ -226,6 +244,8 @@
     },
     {
       "code": "saint_pierre_et_miquelon",
+      "schengen": false,
+      "schengen_source": "Outside the Schengen area. Convention implementing the Schengen Agreement (OJ L 239, 22.9.2000), art. 138: as regards the French Republic, the Convention applies only to its European territory.",
       "name_fr": "Saint-Pierre-et-Miquelon",
       "name_en": "Saint-Pierre and Miquelon",
       "regime": "com",
@@ -261,6 +281,8 @@
     },
     {
       "code": "polynesie_francaise",
+      "schengen": false,
+      "schengen_source": "Outside the Schengen area. Convention implementing the Schengen Agreement (OJ L 239, 22.9.2000), art. 138: as regards the French Republic, the Convention applies only to its European territory.",
       "name_fr": "Polynésie française",
       "name_en": "French Polynesia",
       "regime": "com",
@@ -292,6 +314,8 @@
     },
     {
       "code": "wallis_et_futuna",
+      "schengen": false,
+      "schengen_source": "Outside the Schengen area. Convention implementing the Schengen Agreement (OJ L 239, 22.9.2000), art. 138: as regards the French Republic, the Convention applies only to its European territory.",
       "name_fr": "Wallis-et-Futuna",
       "name_en": "Wallis and Futuna",
       "regime": "com",
@@ -320,6 +344,8 @@
     },
     {
       "code": "nouvelle_caledonie",
+      "schengen": false,
+      "schengen_source": "Outside the Schengen area. Convention implementing the Schengen Agreement (OJ L 239, 22.9.2000), art. 138: as regards the French Republic, the Convention applies only to its European territory.",
       "name_fr": "Nouvelle-Calédonie",
       "name_en": "New Caledonia",
       "regime": "sui_generis",
@@ -352,6 +378,8 @@
     },
     {
       "code": "mayotte",
+      "schengen": false,
+      "schengen_source": "Outside the Schengen area. Convention implementing the Schengen Agreement (OJ L 239, 22.9.2000), art. 138: as regards the French Republic, the Convention applies only to its European territory.",
       "name_fr": "Mayotte",
       "name_en": "Mayotte",
       "regime": "drom",
@@ -385,6 +413,8 @@
     },
     {
       "code": "taaf",
+      "schengen": false,
+      "schengen_source": "Outside the Schengen area. Convention implementing the Schengen Agreement (OJ L 239, 22.9.2000), art. 138: as regards the French Republic, the Convention applies only to its European territory.",
       "name_fr": "Terres australes et antarctiques françaises (TAAF)",
       "name_en": "French Southern and Antarctic Lands (TAAF)",
       "regime": "taaf",
@@ -406,6 +436,8 @@
     },
     {
       "code": "la_reunion",
+      "schengen": false,
+      "schengen_source": "Outside the Schengen area. Convention implementing the Schengen Agreement (OJ L 239, 22.9.2000), art. 138: as regards the French Republic, the Convention applies only to its European territory.",
       "name_fr": "La Réunion",
       "name_en": "Réunion",
       "regime": "drom",
@@ -440,6 +472,8 @@
     },
     {
       "code": "islas_canarias",
+      "schengen": true,
+      "schengen_source": "Spanish territory inside the Schengen area (Spain's accession makes no exception for it, unlike Ceuta and Melilla); its sea ports are listed under Spain in the Schengen Handbook Annex 4, items (4), (18), (24), (25), (28) (Clément, gold pilot, 3 Nov 2026).",
       "name_fr": "Îles Canaries",
       "name_en": "Canary Islands",
       "name_es": "Islas Canarias",

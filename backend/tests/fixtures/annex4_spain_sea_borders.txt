@@ -1,0 +1,42 @@
+# FIXTURE Source: https://home-affairs.ec.europa.eu/document/download/43debf3f-adfc-4f7a-908a-49fe29f65aa5_en?filename=handbook-annex-04_en.pdf
+# FIXTURE Fetched: 2026-11-04
+# FIXTURE sha256 of the PDF: fab6626df0847648f2a79ea1d6112d170b3b6118883c29e648d3f02d518e4d82
+# FIXTURE Extract: pdftotext -layout (poppler 26.10.0), PDF pp.26-27, verbatim
+     Sea borders
+      (1)    Algeciras (Cádiz)
+      (2)    Alicante
+      (3)    Almería
+      (4)    Arrecife (Lanzarote)
+      (5)    Avilés (Asturias)
+      (6)    Barcelona
+      (7)    Bilbao
+      (8)    Cádiz
+      (9)    Cartagena (Murcia)
+      (10)   Castellón
+      (11)   Ceuta
+      (12)   Ferrol (La Coruña)
+      (13)   Gijón
+      (14)   Huelva
+      (15)   Ibiza
+      (16)   La Coruña
+      (17)   La Línea de la Concepción
+      (18)   La Luz (Las Palmas)
+      (19)   Mahón
+      (20)   Málaga
+      (21)   Melilla
+      (22)   Motril (Granada)
+      (23)   Palma de Mallorca
+      (24)   Puerto del Rosario (Fuerteventura)
+
+
+EN                                                26   EN
+      (25)   Puerto de Santa Cruz de La Palma (La Palma)
+      (26)   Sagunto (Provincia de Valencia)
+      (27)   San Sebastian
+      (28)   Santa Cruz de Tenerife
+      (29)   Santander
+      (30)   Sevilla
+      (31)   Tarifa
+      (32)   Tarragona
+      (33)   Valencia
+      (34)   Vigo
