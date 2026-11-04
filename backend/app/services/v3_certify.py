@@ -624,6 +624,19 @@ def clearance_point_exclusion(name) -> str | None:
     return NOT_A_MARINA_OR_OFFICE
 
 
+def _is_clearance_list(tokens) -> bool:
+    from app.agents import registry_check as rc
+
+    return any(next(rc._spans(tokens, tuple(t for t, _, _ in rc._tokens(term))), None)
+               for term in CLEARANCE_LIST_TERMS)
+
+
+def _zone_sections(text: str, own: set[str], other: set[str]) -> list[tuple[int, int, bool]]:
+    """Territory heads of a list. "Antilles-Guyane" in an office's name opens no section:
+    the head of a section is the territory's own word."""
+    return [h for h in _territory_hits(text, own, other) if text[h[0] - 1:h[0]] != "-"]
+
+
 def _row_quote(text: str, start: int, stop: int) -> str:
     """The row as the list writes it: from its name to the next known row or commune, or
     to its opening hours when an unread row follows them."""
@@ -729,6 +742,35 @@ def _is_excluded_row(port: Mapping, texts: Sequence[Mapping] | None,
                    for start, _ in rc.name_spans(text, tokens, words)):
                 return True
     return False
+
+
+def clearance_row_mention(name, text: str | None, mrgid: int | None = None,
+                          places: tuple = ()) -> dict | None:
+    """{matched_name, gap, snippet} when the port is a clearance point of a clearance list,
+    in the zone's section. The list designates, not the row's wording: "Port de plaisance
+    communautaire de l'Étang Z'abricots Bureau du Port : ZAC de l'Etang Z'Abricots" has no
+    entry term of its own, and the list's title is not in its text, so ``entry_mention`` finds
+    a row only when another row's "capitainerie" or "douanes" happens to be near. Evidence for
+    the judge, which decides; a row alone lifts nothing (``entry_mentions`` is unchanged). A
+    row that is not a clearance point gets none: it can't reach C2 (§10.2)."""
+    from app.agents import registry_check as rc
+
+    if (not isinstance(text, str) or not name or is_name_fragment(name)
+            or clearance_point_exclusion(name)):
+        return None
+    tokens = rc._tokens(text)
+    if not _is_clearance_list(tokens):
+        return None
+    own = zone_terms({"mrgid": mrgid, "zone_aliases": list(places)})
+    sections = _zone_sections(text, own, _other_territory_terms(own))
+    words = tuple(t for t, _, _ in rc._tokens(name))
+    for start, end in rc.name_spans(text, tokens, words):
+        if not _in_zone_section(sections, start):
+            continue
+        lo = max(0, start - max(0, rc.SNIPPET_CHARS - (end - start)) // 2)
+        return dict(matched_name=" ".join(words), gap=0,
+                    snippet=text[lo:lo + rc.SNIPPET_CHARS].strip())
+    return None
 
 
 def geo_in_zone(port: Mapping) -> bool:

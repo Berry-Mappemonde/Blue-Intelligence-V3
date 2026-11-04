@@ -31,6 +31,7 @@ from app.adapters.zetaris import ZetarisClient
 from app.agents import registry_check
 from app.agents.evaluator import is_official_source
 from app.core import paths
+from app.services import v3_certify
 
 COLLECTION = "poe_evidence"
 RUN_COLLECTION = "poe_run_evidence"  # records written by a versioned run, with run_id
@@ -51,7 +52,8 @@ def build_records(mrgid: int | None, port_names: list[str], documents: list[dict
 
     documents: [{url, text, sha256, fetched_at, extract_level}], where sha256 is the hash of
     the page's full fetched text (text may be a section of it). Only official URLs count;
-    each port keeps its closest match per URL, MAX_PER_PORT URLs at most. ``places``: the
+    each port keeps its closest match per URL, MAX_PER_PORT URLs at most. A clearance point of
+    a list is a match without an entry term (``v3_certify.clearance_row_mention``). ``places``: the
     zone's own names (registry_check.zone_names), never a port-name variant. ``whitelist``:
     the zone's PoE whitelist, which decides "official" (is_official_source); without it,
     the naming heuristic.
@@ -65,7 +67,8 @@ def build_records(mrgid: int | None, port_names: list[str], documents: list[dict
         variants = registry_check.grounding_variants(name, places=places)
         best: dict[str, tuple[int, dict]] = {}
         for doc in official:
-            mention = registry_check.entry_mention(doc["text"], variants)
+            mention = (registry_check.entry_mention(doc["text"], variants)
+                       or v3_certify.clearance_row_mention(name, doc["text"], mrgid, places))
             if not mention:
                 continue
             record = dict(mrgid=int(mrgid), port_key=registry_check.port_key(name), url=doc["url"],
