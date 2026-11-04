@@ -873,6 +873,64 @@ BORDER_CROSSING_QUERIES = {
 }
 
 
+# A candidate that is a designating list has its own fetch slot, ahead of generic pages
+# (run 20261104-125841-ac33e9: search returned Annex 4 and the Orden INT, and
+# ``_best_per_domain`` dropped both, one page per domain, before the fetch queue).
+# formalities.designating_fetch_slots; at most DESIGNATING_PER_PUBLISHER from one publisher.
+DESIGNATING_FETCH_SLOTS = 6
+DESIGNATING_PER_PUBLISHER = 3
+# What a URL says of a designating list, once its separators are spaces and accents gone.
+_DESIGNATING_URL = re.compile(
+    r"\b(?:points? (?:de )?clearance|clearance points?"
+    r"|ports? of entry|designated ports?|ports? d entree"
+    r"|(?:portos?|puertos?|postos?|puestos?) (?:de fronteira |fronterizos? )?habilitad[oa]s?"
+    r"|border crossing points?|puestos? fronterizos?|points? de passage frontaliers?"
+    r"|valichi di frontiera|grenzubergangsstellen|pontos? de passagem fronteiri\w*)\b")
+
+
+def _url_words(url: str | None) -> str:
+    nfd = unicodedata.normalize("NFD", unquote(url or "").casefold())
+    folded = "".join(c for c in nfd if unicodedata.category(c) != "Mn")
+    return " ".join(re.sub(r"[^a-z0-9]+", " ", folded).split())
+
+
+def _on_publisher(url: str | None, publishers: list[str]) -> str | None:
+    host = (urlparse(url or "").hostname or "").lower()
+    return next((p for p in publishers if host == p or host.endswith("." + p)), None)
+
+
+def designating_list_candidates(official: list[dict], zone: dict | None,
+                                max_slots: int | None = None) -> list[dict]:
+    """The candidates that are designating lists, best first, from ``official`` (the zone's
+    whitelisted candidates). A rule, not a seed: no URL or port name here.
+
+    - found by a list-discovery query (``list_discovery``, the rank in its results) on an
+      official publisher of that list: nothing else tells, because search gives a URL only
+      and "act.php?id=BOE-A-2023-17072" says nothing of Annex V;
+    - or its own URL says it is a designating list ("liste-points-clearance-agrees",
+      "postos-habilitados-de-fronteiras").
+    The fetch text decides the rest: a candidate is only read, never taken for a list."""
+    from app.core.run_rules import get_rule
+    from app.services.territory_ref import schengen_publishers, schengen_state, with_sovereign_iso2
+
+    if max_slots is None:
+        max_slots = int(get_rule("formalities.designating_fetch_slots", DESIGNATING_FETCH_SLOTS))
+    zone = with_sovereign_iso2(zone or {})
+    publishers = schengen_publishers(schengen_state(zone.get("iso2"), zone.get("mrgid")))
+    found = [c for c in official or []
+             if (c.get("list_discovery") and _on_publisher(c.get("url"), publishers))
+             or _DESIGNATING_URL.search(_url_words(c.get("url")))]
+    found.sort(key=lambda c: c.get("list_discovery") or len(official) + 1)
+    out: list[dict] = []
+    per_publisher: dict[str, int] = {}
+    for c in found:
+        key = _on_publisher(c.get("url"), publishers) or domain_of(c.get("url") or "")
+        if len(out) < max_slots and per_publisher.get(key, 0) < DESIGNATING_PER_PUBLISHER:
+            per_publisher[key] = per_publisher.get(key, 0) + 1
+            out.append(c)
+    return out
+
+
 def border_crossing_queries(zone: dict) -> list[tuple[str, str]]:
     """(lang, query) for the border-crossing-point list of a Schengen zone; [] otherwise
     (territory_ref.schengen_state: the Canaries yes, Martinique no)."""
@@ -2592,7 +2650,7 @@ def _merge_candidates(*groups: list[dict]) -> list[dict]:
             if key in seen:
                 prev = seen[key]
                 prev["engine"] = _merge_engines(prev, c)
-                for field in ("title", "snippet", "score_serp"):
+                for field in ("title", "snippet", "score_serp", "list_discovery"):
                     if prev.get(field) in (None, "") and c.get(field) not in (None, ""):
                         prev[field] = c[field]
                 continue
@@ -3140,7 +3198,8 @@ async def _find_sources(zone: dict, whitelist: list[str], exceptions: dict, log,
             await _emit_search(engine=engine, lang=f"border-crossing-{qlang}", query=q,
                                n=len(res), results=res, round="classic",
                                **({"fallback_for": "searxng"} if engine == "tavily" else {}))
-        candidates = _merge_candidates(candidates, *[res for res, _ in bcp_out])
+        candidates = _merge_candidates(candidates, *[
+            [dict(c, list_discovery=rank) for rank, c in enumerate(res, 1)] for res, _ in bcp_out])
         log(f"points de passage frontaliers (Schengen): {len(bcp)} requête(s) → "
             f"+{sum(len(r) for r, _ in bcp_out)} candidats")
 
@@ -3337,15 +3396,19 @@ async def _find_sources(zone: dict, whitelist: list[str], exceptions: dict, log,
                     if _normalize_url(c.get("url") or "") not in blocked]
         candidates = [c for c in candidates
                       if _normalize_url(c.get("url") or "") not in blocked]
+    # Ahead of the per-domain pruning, which keeps one page per domain and knows nothing of
+    # what a page is: the zone's list goes first, then the generic pages.
+    designating = designating_list_candidates(
+        [c for c in official if _normalize_url(c.get("url") or "") not in pinned_norm], zone)
+    held = pinned_norm | {_normalize_url(c.get("url") or "") for c in designating}
+    if designating:
+        log(f"listes désignantes: {[c['url'] for c in designating]}")
+        await emit(rec, "designating_lists", urls=[c["url"] for c in designating])
+    rest = _best_per_domain([c for c in official
+                             if _normalize_url(c.get("url") or "") not in held])
+    official = pinned + designating + rest
     if pinned:
-        rest = _best_per_domain([
-            c for c in official
-            if _normalize_url(c.get("url") or "") not in pinned_norm
-        ])
-        official = pinned + rest
         log(f"sources épinglées: {[c['url'] for c in pinned]}")
-    else:
-        official = _best_per_domain(official)
     if audited:
         have = {_normalize_url(c.get("url") or "") for c in official}
         official = official + [c for c in audited if _normalize_url(c["url"]) not in have]

@@ -2139,6 +2139,34 @@
       "group": "budget"
     },
     {
+      "id": "formalities.designating_fetch_slots",
+      "mode": "formalities",
+      "kind": "budget",
+      "value": 6,
+      "numeric": "int",
+      "unit": "fetches",
+      "interval": [
+        0,
+        8
+      ],
+      "vary": true,
+      "principle": "Créneaux de formalities.max_fetch réservés aux listes désignantes trouvées par la recherche (liste de points de passage frontaliers, liste de points de clearance, texte de désignation), devant les pages génériques et avant l'élagage par domaine. Trois au plus par éditeur. Règle, pas une graine : aucune URL ni aucun port dans le code.",
+      "cdc": "CAHIER_DES_CHARGES_POE.md §5 (Official source)",
+      "code": [
+        "app/services/poe_pipeline.py:DESIGNATING_FETCH_SLOTS",
+        "app/services/poe_pipeline.py:designating_list_candidates"
+      ],
+      "title": {
+        "fr": "Créneaux réservés aux listes désignantes",
+        "en": "Fetch slots reserved for designating lists"
+      },
+      "help": {
+        "fr": "Pages garanties aux listes désignantes dans le plafond de fetch. Plus haut laisse moins de place aux pages génériques.",
+        "en": "Pages guaranteed to designating lists within the fetch cap. Higher leaves less room for generic pages."
+      },
+      "group": "budget"
+    },
+    {
       "id": "formalities.authority_seed_fallback",
       "mode": "formalities",
       "kind": "budget",

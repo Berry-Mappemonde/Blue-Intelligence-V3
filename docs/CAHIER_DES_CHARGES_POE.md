@@ -197,6 +197,8 @@ Bus rules:
 
 As soon as one arm has this list: we **stop** seeking other lists for this EEZ. We do not stop the work: we move to the **remainder**.
 
+**A designating list wins a fetch slot** (`designating_list_candidates`, `formalities.designating_fetch_slots`). A candidate on a whitelisted host is one if a list-discovery query found it on an official publisher of that list (`territory_ref.schengen_publishers`), or if its own URL says so. It goes ahead of generic pages and of the per-domain pruning, three at most per publisher. It is a rule, not a seed: there is no URL or port name in the code, and a list that discovery never finds is fixed in the queries. In run `20261104-125841-ac33e9`, search returned Annex 4 and the Orden INT, and `_best_per_domain`, which keeps one page per domain, dropped both before the fetch queue.
+
 **A clearance list among the sources keeps the LLM** (`clearance_list_in_sources`). Such a list reaches us as flat text that no catalogue parser reads, so a catalogue found next to it is not the zone's list. In run `20261104-021155-51697e`, the arrêté du 18 juillet 2023 gave six Martinique names, the LLM was skipped, and the four PoEs of the douane list were never read.
 
 **Judge only on the residue.** The residue = seeds of this EEZ whose name is **not** in the official list (normalised spelling / `dedup_key`). For those only: yes / no / insufficient. We do not relaunch a list crawl, we do not ask the judge again for ports already named by the decree.

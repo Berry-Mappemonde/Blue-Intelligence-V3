@@ -1,0 +1,1108 @@
+{
+"run": "20261104-125841-ac33e9",
+"note": "Whitelisted candidates in ranked order, rebuilt from the run's search events and the SERP model; list_discovery is the rank in a border-crossing query.",
+"zones": {
+"8364": {
+"zone": {
+"mrgid": 8364,
+"name": "Canary Islands",
+"geoname": "Spanish Exclusive Economic Zone (Canary Islands)",
+"iso2": null,
+"sovereign": "Spain"
+},
+"pinned": [
+{
+"url": "https://www.agenciatributaria.es/",
+"domain": "agenciatributaria.es"
+}
+],
+"official": [
+{
+"url": "https://www.sanidad.gob.es/areas/sanidadExterior/importacion/usoConsumoHumano/puntosFronterizos/docs/Rah_01042021.pdf",
+"domain": "sanidad.gob.es",
+"score_serp": 0.7808,
+"list_discovery": 5
+},
+{
+"url": "https://cdn.transportes.gob.es/portal-web-sede/documentos/20180320guidelinesrebeca2018v1.pdf",
+"domain": "transportes.gob.es",
+"score_serp": 0.7792
+},
+{
+"url": "https://home-affairs.ec.europa.eu/document/download/e9e9e193-3cb1-43da-99e0-ec29a91ec4d0_en?filename=List+of+internal+bcp_en.pdf",
+"domain": "europa.eu",
+"score_serp": 0.7682,
+"list_discovery": 4
+},
+{
+"url": "https://www.puertos.es/system/files/2024-09/Lista%20de%20instalaciones%20fronterizas%20de%20control%20de%20mercanci%CC%81as%20autorizadas.pdf",
+"domain": "puertos.es",
+"score_serp": 0.7662
+},
+{
+"url": "https://www.interior.gob.es/opencms/es/servicios-al-ciudadano/tramites-y-gestiones/extranjeria/control-de-fronteras/",
+"domain": "interior.gob.es",
+"score_serp": 0.7655,
+"list_discovery": 9
+},
+{
+"url": "https://www.hacienda.gob.es/DocLeyes/aduanas/22989.htm",
+"domain": "hacienda.gob.es",
+"score_serp": 0.7653
+},
+{
+"url": "https://home-affairs.ec.europa.eu/document/download/43debf3f-adfc-4f7a-908a-49fe29f65aa5_en?filename=handbook-annex-04_en.pdf",
+"domain": "europa.eu",
+"score_serp": 0.7604,
+"list_discovery": 2
+},
+{
+"url": "https://www.boe.es/diario_boe/txt.php?id=BOE-A-2019-320",
+"domain": "boe.es",
+"score_serp": 0.7593,
+"list_discovery": 7
+},
+{
+"url": "https://www.boe.es/buscar/doc.php?id=BOE-A-2003-11272",
+"domain": "boe.es",
+"score_serp": 0.7587
+},
+{
+"url": "https://www.boe.es/diario_boe/txt.php?id=BOE-A-2019-7617",
+"domain": "boe.es",
+"score_serp": 0.7571,
+"list_discovery": 1
+},
+{
+"url": "https://puertoscanarios.es/",
+"domain": "puertoscanarios.es",
+"score_serp": 0.7561
+},
+{
+"url": "https://www.boe.es/buscar/doc.php?id=BOE-A-1978-12832",
+"domain": "boe.es",
+"score_serp": 0.7527
+},
+{
+"url": "https://www.boe.es/buscar/act.php?id=BOE-A-2011-16467",
+"domain": "boe.es",
+"score_serp": 0.7526
+},
+{
+"url": "https://www.gobiernodecanarias.org/pesca/temas/titulaciones-nauticas/",
+"domain": "gobiernodecanarias.org",
+"score_serp": 0.7514
+},
+{
+"url": "https://sede.agenciatributaria.gob.es/Sede/en_gb/aduanas_.html",
+"domain": "agenciatributaria.gob.es",
+"score_serp": 0.7502
+},
+{
+"url": "https://www.boe.es/buscar/act.php?id=BOE-A-2014-10344",
+"domain": "boe.es",
+"score_serp": 0.7491
+},
+{
+"url": "https://www.boe.es/buscar/act.php?id=BOE-A-2023-17072",
+"domain": "boe.es",
+"score_serp": 0.7491,
+"list_discovery": 6
+},
+{
+"url": "https://www.boe.es/buscar/doc.php?id=BOC-j-2025-90249",
+"domain": "boe.es",
+"score_serp": 0.7471
+},
+{
+"url": "https://www.mapa.gob.es/es/agricultura/temas/comercio-exterior-vegetal/puntosdecontrolenfrontera",
+"domain": "mapa.gob.es",
+"score_serp": 0.7468
+},
+{
+"url": "https://www.gobiernodecanarias.org/libroazul/index.jsp",
+"domain": "gobiernodecanarias.org",
+"score_serp": 0.7266
+},
+{
+"url": "https://home-affairs.ec.europa.eu/policies/schengen/border-crossing_en",
+"domain": "europa.eu",
+"score_serp": 0.7259,
+"list_discovery": 1
+},
+{
+"url": "https://sede.agenciatributaria.gob.es/Sede/en_gb/aduanas/islas-canarias.html",
+"domain": "agenciatributaria.gob.es",
+"score_serp": 0.7255
+},
+{
+"url": "https://sede.agenciatributaria.gob.es/Sede/aduanas/islas-canarias.html",
+"domain": "agenciatributaria.gob.es",
+"score_serp": 0.7234
+},
+{
+"url": "https://puertoscanarios.es/en/ports/",
+"domain": "puertoscanarios.es",
+"score_serp": 0.7201
+},
+{
+"url": "https://www.gobiernodecanarias.org/principal/servicios/legislacion.html",
+"domain": "gobiernodecanarias.org",
+"score_serp": 0.7159
+},
+{
+"url": "https://www.gobiernodecanarias.org/boc/index.html",
+"domain": "gobiernodecanarias.org",
+"score_serp": 0.7123
+},
+{
+"url": "https://www.gobiernodecanarias.org/boc/",
+"domain": "gobiernodecanarias.org",
+"score_serp": 0.7059
+},
+{
+"url": "https://sede.gobiernodecanarias.org/boc/",
+"domain": "gobiernodecanarias.org",
+"score_serp": 0.6952
+},
+{
+"url": "https://www.gobiernodecanarias.org/boc/1980/001/009.html",
+"domain": "gobiernodecanarias.org",
+"score_serp": 0.6838
+},
+{
+"url": "https://www.gobiernodecanarias.org/juriscan",
+"domain": "gobiernodecanarias.org",
+"score_serp": 0.6824
+},
+{
+"url": "https://www3.gobiernodecanarias.org/libroazul/",
+"domain": "gobiernodecanarias.org",
+"score_serp": 0.6738
+},
+{
+"url": "https://www.sanidad.gob.es/areas/farmacia/infoIndustria/infoDeducciones/ley8_2010/docs/Deducciones_NOVIEMBRE_2025.pdf",
+"domain": "sanidad.gob.es"
+},
+{
+"url": "https://www.sanidad.gob.es/estadEstudios/estadisticas/sisInfSanSNS/ofertaRecursos/hospitales/docs/CNH_2025.pdf",
+"domain": "sanidad.gob.es"
+},
+{
+"url": "https://www.sanidad.gob.es/areas/farmacia/infoIndustria/infoDeducciones/ley8_2010/docs/Deducciones_MARZO_2025.pdf",
+"domain": "sanidad.gob.es"
+},
+{
+"url": "https://pnsd.sanidad.gob.es/pnsd/legislacion/pdfestatal/2.pdf",
+"domain": "sanidad.gob.es"
+},
+{
+"url": "https://observatoriosaludmujeres.sanidad.gob.es/saludSexualReproductiva/saludReproductiva/guiasProtocolos/guiaIVE2025/docs/Guia_Comun_IVE_SNS_2025.pdf",
+"domain": "sanidad.gob.es"
+},
+{
+"url": "https://ingesa.sanidad.gob.es/dam/jcr:faf4106c-1556-45e5-9810-c561adc66fa8/Memoria%20INGESA%202024.pdf",
+"domain": "sanidad.gob.es"
+},
+{
+"url": "https://www.sanidad.gob.es/areas/sanidadAmbiental/calidadAguas/legionelosis/docs/preguntasRespuestasLegionella_7082024.pdf",
+"domain": "sanidad.gob.es"
+},
+{
+"url": "https://seguridaddelpaciente.sanidad.gob.es/informacion/publicaciones/2024/docs/Cultura-de-seguridad-del-paciente-en-Espana_Estudio-SECA-FIDISP.pdf",
+"domain": "sanidad.gob.es"
+},
+{
+"url": "https://www.sanidad.gob.es/normativa/audiencia/docs/2025.09.15_PRDPEPR_Texto_y_MAIN_para_IP_TA.pdf",
+"domain": "sanidad.gob.es"
+},
+{
+"url": "https://www.transportes.gob.es/recursos_mfom/audienciainfopublica/recursos/proyecto_rd_prf_marpol_2020-12-18.pdf",
+"domain": "transportes.gob.es"
+},
+{
+"url": "https://cdn.transportes.gob.es/portal-web-sede/documentos/BOE-A-2011-16467-consolidado2.pdf",
+"domain": "transportes.gob.es"
+},
+{
+"url": "https://www.transportes.gob.es/recursos_mfom/paginabasica/recursos/2026_plm_ed_manual_puente_0.pdf",
+"domain": "transportes.gob.es"
+},
+{
+"url": "https://cdn.transportes.gob.es/portal-web-transportes/recursos-web/transportes/media/document/audiencia_prd_modificacion_269-2022.pdf",
+"domain": "transportes.gob.es"
+},
+{
+"url": "https://cdn.transportes.gob.es/portal-web-transportes/recursos-web/transportes/media/document/proyecto-rd-reglamento-de-los-registros-maritimos-espanoles-audiencia-publica.pdf",
+"domain": "transportes.gob.es"
+},
+{
+"url": "https://www.transportes.gob.es/recursos_mfom/audienciainfopublica/recursos/nuevas-normas-2025-navegacion-audiencia.pdf",
+"domain": "transportes.gob.es"
+},
+{
+"url": "https://www.transportes.gob.es/recursos_mfom/audienciainfopublica/recursos/proyecto_rd_despacho_de_buques_17_febrero_2021.pdf",
+"domain": "transportes.gob.es"
+},
+{
+"url": "https://www.transportes.gob.es/recursos_mfom/paginabasica/recursos/2022-05-18_normativa_maritima_es.pdf",
+"domain": "transportes.gob.es"
+},
+{
+"url": "https://www.transportes.gob.es/recursos_mfom/comodin/recursos/rp0760o_0.pdf",
+"domain": "transportes.gob.es"
+},
+{
+"url": "https://www.transportes.gob.es/recursos_mfom/paginabasica/recursos/3_ed_manual_de_maquinas.pdf",
+"domain": "transportes.gob.es"
+},
+{
+"url": "https://pnsd.sanidad.gob.es/pnsd/legislacion/pdfestatal/69.pdf",
+"domain": "sanidad.gob.es"
+},
+{
+"url": "https://www.sanidad.gob.es/en/gabinete/notasPrensa.do?id=6996",
+"domain": "sanidad.gob.es"
+},
+{
+"url": "https://pnsd.sanidad.gob.es/pnsd/legislacion/pdfestatal/3.pdf",
+"domain": "sanidad.gob.es"
+},
+{
+"url": "https://www.sanidad.gob.es/profesionales/prestacionesSanitarias/CarteraDeServicios/AccesoUsuariosCS/accesoUniversalSP.htm",
+"domain": "sanidad.gob.es"
+},
+{
+"url": "https://redets.sanidad.gob.es/Consulta_publica/Documentos/Plan_Estrategico_RedETS_2022_2025.pdf",
+"domain": "sanidad.gob.es"
+},
+{
+"url": "https://www.sanidad.gob.es/eu/biblioPublic/publicaciones/recursos_propios/resp/revista_cdrom/VOL74/74_m_045.pdf",
+"domain": "sanidad.gob.es"
+},
+{
+"url": "https://pnsd.sanidad.gob.es/profesionales/sistemasInformacion/sistemaInformacion/pdf/2026/2026_OEDA_IndicadoresClave.pdf",
+"domain": "sanidad.gob.es"
+},
+{
+"url": "https://www.sanidad.gob.es/gabinete/notasPrensa.do?id=4919",
+"domain": "sanidad.gob.es"
+},
+{
+"url": "https://pnsd.sanidad.gob.es/noticiasEventos/notas/2024/pdf/20240214_NP_SANIDAD_Inicio_Regulacion_cannabis_medicinal.pdf",
+"domain": "sanidad.gob.es"
+},
+{
+"url": "https://www.transportes.gob.es/ministerio/buen-gobierno/participacion-publica/proyecto-real-decreto-que-se-establecen-medidas-mejora-proteccion-puertos-transporte-maritimo",
+"domain": "transportes.gob.es"
+},
+{
+"url": "https://decreto.transportes.gob.es/",
+"domain": "transportes.gob.es"
+},
+{
+"url": "https://sede.transportes.gob.es/",
+"domain": "transportes.gob.es"
+},
+{
+"url": "https://www.transportes.gob.es/recursos_mfom/ssmm_puertos.pdf",
+"domain": "transportes.gob.es"
+},
+{
+"url": "https://www.transportes.gob.es/transporte_terrestre/normativa-vigente-en-materia-de-transporte-terrestre",
+"domain": "transportes.gob.es"
+},
+{
+"url": "https://sede.transportes.gob.es/areas-actividad/marina-mercantemaritimo/despacho-buques-gestion-rol/exencion-notificacion-previa-entrada-buque-puerto",
+"domain": "transportes.gob.es"
+},
+{
+"url": "https://sede.transportes.gob.es/areas-actividad/transporte-terrestre",
+"domain": "transportes.gob.es"
+},
+{
+"url": "https://www.transportes.gob.es/informacion-para-el-ciudadano/participacion-publica/proyecto-reglamento-explotacion-y-policia-puertos-del-estado",
+"domain": "transportes.gob.es"
+},
+{
+"url": "https://www.transportes.gob.es/transporte-terrestre/profesionales-transporte/servicios-transportista/documento-electronico-control-administrativo-deca",
+"domain": "transportes.gob.es"
+}
+],
+"gatekeeper_domains": [
+"agenciatributaria.es",
+"sanidad.gob.es",
+"sanidad.gob.es",
+"transportes.gob.es",
+"transportes.gob.es",
+"europa.eu",
+"europa.eu",
+"puertos.es",
+"interior.gob.es",
+"hacienda.gob.es",
+"boe.es",
+"puertoscanarios.es",
+"gobiernodecanarias.org",
+"agenciatributaria.gob.es",
+"mapa.gob.es",
+"salvamentomaritimo.es",
+"policia.es"
+],
+"fetched": [
+{
+"url": "https://www.agenciatributaria.es/",
+"chars": 8822
+},
+{
+"url": "https://www.sanidad.gob.es/en/gabinete/notasPrensa.do?id=6996",
+"chars": 6157
+},
+{
+"url": "https://www.sanidad.gob.es/areas/sanidadExterior/importacion/usoConsumoHumano/puntosFronterizos/docs/Rah_01042021.pdf",
+"chars": 5279
+},
+{
+"url": "https://www.transportes.gob.es/ministerio/buen-gobierno/participacion-publica/proyecto-real-decreto-que-se-establecen-medidas-mejora-proteccion-puertos-transporte-maritimo",
+"chars": 2040
+},
+{
+"url": "https://www.transportes.gob.es/recursos_mfom/ssmm_puertos.pdf",
+"chars": 0
+},
+{
+"url": "https://home-affairs.ec.europa.eu/policies/schengen/border-crossing_en",
+"chars": 14793
+},
+{
+"url": "https://home-affairs.ec.europa.eu/document/download/e9e9e193-3cb1-43da-99e0-ec29a91ec4d0_en?filename=List+of+internal+bcp_en.pdf",
+"chars": 108572
+},
+{
+"url": "https://www.puertos.es/system/files/2024-09/Lista%20de%20instalaciones%20fronterizas%20de%20control%20de%20mercanci%CC%81as%20autorizadas.pdf",
+"chars": 27565
+},
+{
+"url": "https://www.interior.gob.es/opencms/es/servicios-al-ciudadano/tramites-y-gestiones/extranjeria/control-de-fronteras/",
+"chars": 0
+},
+{
+"url": "https://www.hacienda.gob.es/DocLeyes/aduanas/22989.htm",
+"chars": 71924
+},
+{
+"url": "https://www.boe.es/diario_boe/txt.php?id=BOE-A-2019-320",
+"chars": 8855
+},
+{
+"url": "https://www.salvamentomaritimo.es/conocenos",
+"chars": 28070
+},
+{
+"url": "https://www.policia.es/_es/tupolicia_conocenos.php",
+"chars": 591
+},
+{
+"url": "https://puertoscanarios.es/en/ports/",
+"chars": 14028
+}
+]
+},
+"8362": {
+"zone": {
+"mrgid": 8362,
+"name": "Cape Verde",
+"geoname": "Cape Verdean Exclusive Economic Zone",
+"iso2": "CV",
+"sovereign": "Cape Verde"
+},
+"pinned": [],
+"official": [
+{
+"url": "https://www.governo.cv/manualdocomercio/wp-content/uploads/2022/07/AF_Aberta_ManualComercio_VersaoPT.pdf",
+"domain": "governo.cv",
+"score_serp": 0.8074
+},
+{
+"url": "https://www.governo.cv/manualdocomercio/wp-content/uploads/2022/07/AF_ManualComercio_VersaoEN.pdf",
+"domain": "governo.cv",
+"score_serp": 0.8021
+},
+{
+"url": "https://www.mf.gov.cv/documents/89129/1869986/Decreto+Regulamentar++n%C2%BA+82015+-+Bolsa+de+Compet%C3%AAncias.pdf/a23e49e8-bbad-2d6e-8124-28b2b82627cf?version=1.0&t=1624466271067&download=true",
+"domain": "mf.gov.cv",
+"score_serp": 0.7982
+},
+{
+"url": "https://portaldocomercio.gov.cv/web/portal/leis-e-normas/-/asset_publisher/bmgx/content/dga-direcao-geral-das-alfandegas-1",
+"domain": "gov.cv",
+"score_serp": 0.798
+},
+{
+"url": "https://www.reformadoestado.gov.cv/index.php/component/docman/doc_download/521-adesao-a-omc?Itemid=547",
+"domain": "reformadoestado.gov.cv",
+"score_serp": 0.7971
+},
+{
+"url": "https://www.mf.gov.cv/documents/54571/273413/Cabo%20Verde_Estudo%20de%20Tempo%20de%20Desalfandegamento_1.pdf",
+"domain": "gov.cv",
+"score_serp": 0.7881
+},
+{
+"url": "https://www.mf.gov.cv/web/dnre/direca-geral-das-alfandegas",
+"domain": "gov.cv",
+"score_serp": 0.7713
+},
+{
+"url": "https://enapor.cv/web/content/5154?unique=f2e4657aca10787ecd53fa6ff649b9cc1f072354&download=true",
+"domain": "enapor.cv",
+"score_serp": 0.7212
+},
+{
+"url": "https://www.enapor.cv/en_US/page/portos",
+"domain": "enapor.cv",
+"score_serp": 0.6739
+},
+{
+"url": "https://www.enapor.cv/page/homepage",
+"domain": "enapor.cv",
+"score_serp": 0.6682
+},
+{
+"url": "https://www.enapor.cv/page/portos",
+"domain": "enapor.cv",
+"score_serp": 0.6667
+},
+{
+"url": "https://www.imp.cv/legislacao/",
+"domain": "imp.cv",
+"score_serp": 0.6534
+},
+{
+"url": "https://www.imp.cv/",
+"domain": "imp.cv",
+"score_serp": 0.6482
+},
+{
+"url": "https://www.governo.cv/manualdocomercio/wp-content/uploads/2022/07/AF_Fechada_MC_Flyer05_Importacao_ProcLogisticos_PT.pdf",
+"domain": "governo.cv"
+},
+{
+"url": "https://www.governo.cv/documentos/bo-no30-i-serie-conselho-de-ministros-decreto-regulamentar-no8-2022-procede-a-primeira-alteracao-ao-decreto-regulamentar-n-o-7-2013-de-9-de-maio-que-aprova-a-delimitacao-do-parque-natural-de-c/",
+"domain": "governo.cv"
+},
+{
+"url": "https://www.governo.cv/documentos/bo-no36-i-serie-conselho-de-ministros-resolucao-no34-2022-autoriza-a-transferencia-de-verbas-entre-os-ministerios/",
+"domain": "governo.cv"
+},
+{
+"url": "https://www.governo.cv/documentos/analise-da-evolucao-da-pandemia-de-covid-19-em-cabo-verde/",
+"domain": "governo.cv"
+},
+{
+"url": "https://www.governo.cv/wp-content/uploads/2026/04/economiaazul.pdf",
+"domain": "governo.cv"
+},
+{
+"url": "https://www.governo.cv/documentos/plano-nacional-de-contingencia-covid-19/",
+"domain": "governo.cv"
+},
+{
+"url": "https://www.governo.cv/documentos/b-o-estatuto-dos-inspetores-das-pescas-por-decreto-lei-no-13-2021/",
+"domain": "governo.cv"
+},
+{
+"url": "https://www.governo.cv/documentos/boletim-oficial-14-de-dezembro-de-2021/",
+"domain": "governo.cv"
+},
+{
+"url": "https://www.governo.cv/documentos/newsletter-governo-em-acao-v-edicao-novembro-2023/",
+"domain": "governo.cv"
+},
+{
+"url": "https://www.mf.gov.cv/documents/20126/0/TDR+portos+_aeroportos_versa%CC%83o+final+23.pdf/25bb2582-3c23-10b9-e4ae-91ed807c49d1?t=1772458845997",
+"domain": "gov.cv"
+},
+{
+"url": "https://www.mf.gov.cv/documents/198414/4674538/Decreto_Lei+de+Execucao+do+OE+2025.pdf/b6a181b4-e7a5-b3f5-8241-011df4da37a6?version=1.0&t=1735902463077&download=true",
+"domain": "gov.cv"
+},
+{
+"url": "https://www.mf.gov.cv/documents/20126/3611413/Memorando_TMII_PT+Version.pdf/f7f3c00d-a39a-ec27-8e2f-ac31b6e0efae?version=1.0&t=1704906415119&download=true",
+"domain": "gov.cv"
+},
+{
+"url": "https://www.mf.gov.cv/documents/198414/764454/Decreto+Lei+de+Execu%C3%A7%C3%A3o+Or%C3%A7amental+2020.pdf/30b8086b-148f-80f1-136e-348db25c6137?version=1.0&t=1582203547007",
+"domain": "gov.cv"
+},
+{
+"url": "https://www.mf.gov.cv/documents/89288/208073/12_ENAPOR_2025_Anuncio_do_Concurso.pdf",
+"domain": "gov.cv"
+},
+{
+"url": "https://www.mf.gov.cv/documents/89288/208073/01_ENAPOR_2024_Anuncio_do_Concurso.pdf",
+"domain": "gov.cv"
+},
+{
+"url": "https://www.mf.gov.cv/documents/20126/0/REOI+-+044+Anu%CC%81ncio-Extensa%CC%83o.pdf/4b1750d6-176e-05b4-fd90-713ef3985279?t=1773741590642",
+"domain": "gov.cv"
+},
+{
+"url": "https://www.mf.gov.cv/documents/20126/122361/3%20BO%2015-11-2017%20Concess%C3%A3o%20TACV.pdf/394b7d8e-e538-0763-e0b1-15a51a9a5e85?t=1553002043026",
+"domain": "gov.cv"
+},
+{
+"url": "https://www.mf.gov.cv/documents/20126/3611413/Dec%C2%BA-Lei+n+%C2%BA+19+2016+-+Procedimentos+aplic%C3%A1veis+%C3%A0+entrada+e+saida+de+navios+dos+portos.pdf/8ece43c2-dbda-9d49-04b8-44c53009b27a?version=1.0&t=1704906378443&download=true",
+"domain": "gov.cv"
+},
+{
+"url": "https://www.mf.gov.cv/documents/54571/0/BO_29-12-2023_132_AUTOFATURAC%CC%A7A%CC%83O.pdf/e4b719d4-10c0-310b-d835-c7ceaafb6ea2?version=1.0&t=1704449501117&download=true",
+"domain": "gov.cv"
+},
+{
+"url": "https://portaldocomercio.gov.cv/documents/68033/68109/Decreto+Legislativo+n%C2%BA+01-2013+de+12+Setembro.pdf/0c075f8a-611d-c89f-287e-a95c58629781?t=1679045903425",
+"domain": "gov.cv"
+},
+{
+"url": "https://fa.gov.cv/wp-content/uploads/2022/09/bo_12-01-2009_2-Estabelece-as-Competencias-da-ESCOLA-mILITAR-1.pdf",
+"domain": "gov.cv"
+},
+{
+"url": "https://portalconsular.mnec.gov.cv/documents/20126/0/paisesisentosvistos.pdf/88183686-6688-1679-87b4-26b04f18110e",
+"domain": "gov.cv"
+},
+{
+"url": "http://www.portaldoconhecimento.gov.cv/bitstream/10961/2694/1/Monografia%20Daniel%20Fernandes.pdf",
+"domain": "gov.cv"
+},
+{
+"url": "https://portaldocomercio.gov.cv/documents/68033/68109/Decreto%E2%80%AFRegulamentar%E2%80%AFn%C2%BA+21-2013+de+14+Novembro.pdf/28c15177-6387-df7b-0813-d25224df67ea?t=1679045910057",
+"domain": "gov.cv"
+},
+{
+"url": "https://fa.gov.cv/wp-content/uploads/2022/09/bo_31-01-2020_12-Estatuto-dos-Militares.pdf",
+"domain": "gov.cv"
+}
+],
+"gatekeeper_domains": [
+"governo.cv",
+"governo.cv",
+"mf.gov.cv",
+"gov.cv",
+"gov.cv",
+"reformadoestado.gov.cv",
+"enapor.cv",
+"imp.cv",
+"policianacional.cv"
+],
+"fetched": [
+{
+"url": "https://www.governo.cv/documentos/bo-no30-i-serie-conselho-de-ministros-decreto-regulamentar-no8-2022-procede-a-primeira-alteracao-ao-decreto-regulamentar-n-o-7-2013-de-9-de-maio-que-aprova-a-delimitacao-do-parque-natural-de-c/",
+"chars": 281016
+},
+{
+"url": "https://www.governo.cv/manualdocomercio/wp-content/uploads/2022/07/AF_Aberta_ManualComercio_VersaoPT.pdf",
+"chars": 242553
+},
+{
+"url": "https://www.mf.gov.cv/documents/89129/1869986/Decreto+Regulamentar++n%C2%BA+82015+-+Bolsa+de+Compet%C3%AAncias.pdf/a23e49e8-bbad-2d6e-8124-28b2b82627cf?version=1.0&t=1624466271067&download=true",
+"chars": 160866
+},
+{
+"url": "https://portaldocomercio.gov.cv/documents/68033/68109/Decreto+Legislativo+n%C2%BA+01-2013+de+12+Setembro.pdf/0c075f8a-611d-c89f-287e-a95c58629781?t=1679045903425",
+"chars": 119429
+},
+{
+"url": "https://www.mf.gov.cv/documents/54571/273413/Cabo%20Verde_Estudo%20de%20Tempo%20de%20Desalfandegamento_1.pdf",
+"chars": 58423
+},
+{
+"url": "https://www.reformadoestado.gov.cv/index.php/component/docman/doc_download/521-adesao-a-omc?Itemid=547",
+"chars": 365849
+},
+{
+"url": "https://enapor.cv/web/content/5154?unique=f2e4657aca10787ecd53fa6ff649b9cc1f072354&download=true",
+"chars": 64921
+},
+{
+"url": "https://www.imp.cv/legislacao/",
+"chars": 399
+},
+{
+"url": "http://def.policianacional.cv/dnn/VisaIS/VisaIS_Informacao",
+"chars": 624
+}
+]
+},
+"8416": {
+"zone": {
+"mrgid": 8416,
+"name": "Saint Lucia",
+"geoname": "Saint Lucian Exclusive Economic Zone",
+"iso2": "LC",
+"sovereign": "Saint Lucia"
+},
+"pinned": [],
+"official": [
+{
+"url": "https://customs.gov.lc/",
+"domain": "customs.gov.lc",
+"score_serp": 0.8597
+},
+{
+"url": "https://www.customs.gov.lc/uploads/customs_control_and_management_act_cap_15_05_f1ec58be23.pdf",
+"domain": "customs.gov.lc",
+"score_serp": 0.8341
+},
+{
+"url": "https://customs.govt.lc/legislation",
+"domain": "govt.lc",
+"score_serp": 0.7902
+},
+{
+"url": "https://www.govt.lc/media.govt.lc/www/resources/legislation/CustomsControlManagementAct.pdf",
+"domain": "govt.lc",
+"score_serp": 0.7893
+},
+{
+"url": "https://npc.govt.lc/files/documents/gazettes/2017/10/Gazette_October_16_2017.pdf",
+"domain": "govt.lc",
+"score_serp": 0.7614
+},
+{
+"url": "https://www.customs.gov.lc/imports-and-exports",
+"domain": "customs.gov.lc",
+"score_serp": 0.7529
+},
+{
+"url": "https://www.govt.lc/legislation/customs-control-and-management-act-cap-15-05",
+"domain": "govt.lc",
+"score_serp": 0.7372
+},
+{
+"url": "https://npc.govt.lc/gazettes",
+"domain": "govt.lc",
+"score_serp": 0.7224
+},
+{
+"url": "https://www.govt.lc/Gazette/saint_lucia_gazette.htm",
+"domain": "govt.lc",
+"score_serp": 0.6955
+},
+{
+"url": "http://www.stlucia.org/en/plan-your-saint-lucia-trip/navigation-clearance",
+"domain": "stlucia.org",
+"score_serp": 0.6517
+},
+{
+"url": "https://stlucia.org/en/plan-your-saint-lucia-trip/navigation-clearance/",
+"domain": "stlucia.org",
+"score_serp": 0.633
+},
+{
+"url": "https://stlucia.org/en/plan-your-saint-lucia-trip/visa-electronic-entry-form/",
+"domain": "stlucia.org",
+"score_serp": 0.628
+},
+{
+"url": "https://stlucia.org/en_uk/plan-your-saint-lucia-trip/navigation-clearance/",
+"domain": "stlucia.org",
+"score_serp": 0.6276
+},
+{
+"url": "https://travelslu.govt.lc/",
+"domain": "govt.lc",
+"score_serp": 0.5907
+},
+{
+"url": "https://storage.slaspa.com/contentPages/view/yachting",
+"domain": "slaspa.com",
+"score_serp": 0.5851
+}
+],
+"gatekeeper_domains": [
+"customs.gov.lc",
+"customs.gov.lc",
+"govt.lc",
+"govt.lc",
+"govt.lc",
+"stlucia.org",
+"slaspa.com"
+],
+"fetched": [
+{
+"url": "https://www.customs.gov.lc/imports-and-exports",
+"chars": 14110
+},
+{
+"url": "https://www.customs.gov.lc/uploads/customs_control_and_management_act_cap_15_05_f1ec58be23.pdf",
+"chars": 565541
+},
+{
+"url": "https://customs.govt.lc/legislation",
+"chars": 579274
+},
+{
+"url": "https://www.govt.lc/media.govt.lc/www/resources/legislation/CustomsControlManagementAct.pdf",
+"chars": 566286
+},
+{
+"url": "https://npc.govt.lc/files/documents/gazettes/2017/10/Gazette_October_16_2017.pdf",
+"chars": 101733
+},
+{
+"url": "http://www.stlucia.org/en/plan-your-saint-lucia-trip/navigation-clearance",
+"chars": 18876
+},
+{
+"url": "https://storage.slaspa.com/contentPages/view/yachting",
+"chars": 2511
+},
+{
+"url": "https://www.rslpf.com/",
+"chars": 0
+},
+{
+"url": "https://travelslu.govt.lc/en",
+"chars": 936
+}
+]
+},
+"33178": {
+"zone": {
+"mrgid": 33178,
+"name": "Martinique",
+"geoname": "French Exclusive Economic Zone (Martinique)",
+"iso2": "MQ",
+"sovereign": "France"
+},
+"pinned": [
+{
+"url": "https://www.douane.gouv.fr/sites/default/files/2026-01/30/liste-points-clearance-agrees-mise-a-jour.pdf",
+"domain": "douane.gouv.fr"
+},
+{
+"url": "https://www.martinique.gouv.fr/contenu/telechargement/22986/180253/file/Guide%20Boat%20-%20maj.%2010.09.24.pdf",
+"domain": "martinique.gouv.fr"
+}
+],
+"official": [
+{
+"url": "https://www.douane.gouv.fr/sites/default/files/2025-07/16/Circulaire-octroi-de-mer10072025.pdf",
+"domain": "douane.gouv.fr",
+"score_serp": 0.7541
+},
+{
+"url": "http://www.douane.gouv.fr/fiche/vous-voyagez-aux-antilles",
+"domain": "douane.gouv.fr",
+"score_serp": 0.7417
+},
+{
+"url": "https://www.martinique.gouv.fr/Services-de-l-Etat/Finances-publiques-impots-et-douanes/Direction-interregionale-des-Douanes-Antilles-Guyane",
+"domain": "martinique.gouv.fr",
+"score_serp": 0.7378
+},
+{
+"url": "https://www.douane.gouv.fr/particuliers/vous-etes-en-outre-mer/martinique-preparer-son-arrivee-ou-son-retour-sur-le-territoire",
+"domain": "douane.gouv.fr",
+"score_serp": 0.7278
+},
+{
+"url": "https://www.douane.gouv.fr/professionnels/outre-mer/martinique",
+"domain": "douane.gouv.fr",
+"score_serp": 0.7154
+},
+{
+"url": "https://www.mer.gouv.fr/sites/default/files/2024-04/25042024_ports_maritimes_annexe.pdf",
+"domain": "mer.gouv.fr",
+"score_serp": 0.7025
+},
+{
+"url": "https://www.douane.gouv.fr/professionnels/outre-mer/martinique/vous-exportez-depuis-ou-vous-importez-en-martinique",
+"domain": "douane.gouv.fr",
+"score_serp": 0.7014
+},
+{
+"url": "https://www.circulaires.gouv.fr/codes/section_lc/LEGITEXT000023086525/LEGISCTA000029815205/2019-07-12",
+"domain": "circulaires.gouv.fr",
+"score_serp": 0.6993
+},
+{
+"url": "https://www.legifrance.gouv.fr/codes/section_lc/LEGITEXT000006072665/LEGISCTA000026926217/",
+"domain": "legifrance.gouv.fr",
+"score_serp": 0.6949
+},
+{
+"url": "https://www.dm.martinique.developpement-durable.gouv.fr/formalites-de-clearance-a707.html",
+"domain": "developpement-durable.gouv.fr",
+"score_serp": 0.6942
+},
+{
+"url": "https://www.legifrance.gouv.fr/codes/section_lc/LEGITEXT000006074233/LEGISCTA000006108707/2015-01-01",
+"domain": "legifrance.gouv.fr",
+"score_serp": 0.6928
+},
+{
+"url": "https://www.legifrance.gouv.fr/jorf/id/JORFTEXT000047858148",
+"domain": "legifrance.gouv.fr",
+"score_serp": 0.6913
+},
+{
+"url": "https://www.legifrance.gouv.fr/jorf/id/JORFTEXT000049607901",
+"domain": "legifrance.gouv.fr",
+"score_serp": 0.6905
+},
+{
+"url": "https://lannuaire.service-public.gouv.fr/martinique/martinique/cbce4cda-59ee-425d-9ef3-163bd165efb9",
+"domain": "service-public.gouv.fr",
+"score_serp": 0.6897
+},
+{
+"url": "https://www.ecologie.gouv.fr/sites/default/files/publications/Annexes%20Ports%20maritimes.pdf",
+"domain": "ecologie.gouv.fr",
+"score_serp": 0.687
+},
+{
+"url": "https://www.martinique.port.fr/",
+"domain": "port.fr",
+"score_serp": 0.6006
+},
+{
+"url": "https://www.dm.martinique.developpement-durable.gouv.fr/IMG/pdf/clearance-guide_240805_094438.pdf",
+"domain": "developpement-durable.gouv.fr"
+},
+{
+"url": "https://www.douane.gouv.fr/sites/default/files/2026-01/30/liste-points-clearance-agrees-mise-a-jour.pdf",
+"domain": "douane.gouv.fr"
+},
+{
+"url": "https://www.dm.martinique.developpement-durable.gouv.fr/IMG/pdf/20231107_ap_securite_arrivee_tjv-1.pdf",
+"domain": "developpement-durable.gouv.fr"
+},
+{
+"url": "https://www.dm.martinique.developpement-durable.gouv.fr/IMG/pdf/20210409_ap_reglementpolice_zmelbaiemarin.pdf",
+"domain": "developpement-durable.gouv.fr"
+},
+{
+"url": "https://www.dm.martinique.developpement-durable.gouv.fr/IMG/pdf/dm_monographie_maritime_de_la_martinique_2021-2022_vf_compressed.pdf",
+"domain": "developpement-durable.gouv.fr"
+},
+{
+"url": "https://www.martinique.developpement-durable.gouv.fr/IMG/pdf/zmel_marin_ste_anne_reponse_mrae_10_12_2025_vf3-1.pdf",
+"domain": "developpement-durable.gouv.fr"
+},
+{
+"url": "https://www.dm.martinique.developpement-durable.gouv.fr/IMG/pdf/ap_importation_produits_de_la_peche_fdf.pdf",
+"domain": "developpement-durable.gouv.fr"
+},
+{
+"url": "https://www.martinique.developpement-durable.gouv.fr/IMG/pdf/diagnostic_vf.3.pdf",
+"domain": "developpement-durable.gouv.fr"
+},
+{
+"url": "https://www.dm.martinique.developpement-durable.gouv.fr/IMG/pdf/181122-arrete-mouillages-972_signe.pdf",
+"domain": "developpement-durable.gouv.fr"
+},
+{
+"url": "https://www.douane.gouv.fr/sites/default/files/2024-08/19/clearance-guide_2024.pdf",
+"domain": "douane.gouv.fr"
+},
+{
+"url": "https://www.douane.gouv.fr/sites/default/files/uploads/files/Services-en-ligne/ICS/ics-liste-points-d-entree-francais.pdf",
+"domain": "douane.gouv.fr"
+},
+{
+"url": "https://form.douane.gouv.fr/sites/default/files/dana/files/6328.pdf",
+"domain": "douane.gouv.fr"
+},
+{
+"url": "https://form.douane.gouv.fr/sites/default/files/dana/files/F2_18-052.pdf",
+"domain": "douane.gouv.fr"
+},
+{
+"url": "https://www.douane.gouv.fr/sites/default/files/uploads/files/2019-04/cahiers-administration-douane-martinique.pdf",
+"domain": "douane.gouv.fr"
+},
+{
+"url": "https://www.douane.gouv.fr/sites/default/files/dana/files/5730.pdf",
+"domain": "douane.gouv.fr"
+},
+{
+"url": "https://www.douane.gouv.fr/sites/default/files/dana/files/E3_15-010.pdf",
+"domain": "douane.gouv.fr"
+},
+{
+"url": "https://www.douane.gouv.fr/rita-encyclopedie/public/aides/document.action?page=REGLEMENTATION",
+"domain": "douane.gouv.fr"
+},
+{
+"url": "https://www.formulaires.service-public.fr/gf/getNotice.do?cerfaNotice=51754&cerfaFormulaire=15036",
+"domain": "service-public.fr"
+},
+{
+"url": "https://www.formulaires.service-public.fr/gf/getNotice.do?cerfaNotice=52334&cerfaFormulaire=15508",
+"domain": "service-public.fr"
+},
+{
+"url": "https://www.douane.gouv.fr/fiche/navigation-dans-les-departements-doutre-mer",
+"domain": "douane.gouv.fr"
+},
+{
+"url": "https://www.martinique.gouv.fr/",
+"domain": "martinique.gouv.fr"
+},
+{
+"url": "https://lannuaire.service-public.gouv.fr/martinique/martinique",
+"domain": "service-public.gouv.fr"
+},
+{
+"url": "https://demarche.numerique.gouv.fr/commencer/declaration-clearance-antilles",
+"domain": "numerique.gouv.fr"
+},
+{
+"url": "https://lannuaire.service-public.gouv.fr/martinique/martinique/services/list",
+"domain": "service-public.gouv.fr"
+},
+{
+"url": "https://www.douane.gouv.fr/",
+"domain": "douane.gouv.fr"
+},
+{
+"url": "https://www.douane.gouv.fr/fiche/vous-voyagez-aux-antilles",
+"domain": "douane.gouv.fr"
+},
+{
+"url": "http://www.douane.gouv.fr/particuliers/vous-naviguez/vous-naviguez-en-provenance-ou-destination-dun-pays-non-membre-de",
+"domain": "douane.gouv.fr"
+},
+{
+"url": "https://www.douane.gouv.fr/fiche/acheter-des-produits-hors-taxe-doctroi-de-mer-en-guadeloupe-et-martinique-touristes",
+"domain": "douane.gouv.fr"
+},
+{
+"url": "https://www.douane.gouv.fr/sites/default/files/2026-03/09/Tableau%202%20-%20Liste%20des%20d%C3%A9lib%C3%A9rations%20d%27octroi%20de%20mer%20en%20vigueur%20%28au%2025%20f%C3%A9vrier%202026%29.pdf",
+"domain": "douane.gouv.fr"
+},
+{
+"url": "https://lannuaire.service-public.fr/martinique/martinique/cbce4cda-59ee-425d-9ef3-163bd165efb9",
+"domain": "service-public.fr"
+},
+{
+"url": "https://lannuaire.service-public.fr/martinique/martinique/495b51c8-aaf4-48d4-a184-0fd274e24d70",
+"domain": "service-public.fr"
+},
+{
+"url": "https://www.service-public.fr/particuliers/vosdroits/F3161",
+"domain": "service-public.fr"
+},
+{
+"url": "https://lannuaire.service-public.fr/martinique/martinique/services/list",
+"domain": "service-public.fr"
+},
+{
+"url": "https://www.service-public.fr/particuliers/vosdroits/F794",
+"domain": "service-public.fr"
+},
+{
+"url": "https://entreprendre.service-public.fr/vosdroits/F33167",
+"domain": "service-public.fr"
+},
+{
+"url": "https://www.service-public.fr/particuliers/vosdroits/F50",
+"domain": "service-public.fr"
+},
+{
+"url": "https://entreprendre.service-public.fr/vosdroits/F20558",
+"domain": "service-public.fr"
+},
+{
+"url": "https://www.service-public.fr/particuliers/vosdroits/F1036",
+"domain": "service-public.fr"
+},
+{
+"url": "https://lannuaire.service-public.fr/guadeloupe/guadeloupe/services/list",
+"domain": "service-public.fr"
+}
+],
+"gatekeeper_domains": [
+"douane.gouv.fr",
+"martinique.gouv.fr",
+"douane.gouv.fr",
+"douane.gouv.fr",
+"douane.gouv.fr",
+"martinique.gouv.fr",
+"mer.gouv.fr",
+"circulaires.gouv.fr",
+"legifrance.gouv.fr",
+"developpement-durable.gouv.fr",
+"developpement-durable.gouv.fr",
+"service-public.gouv.fr",
+"ecologie.gouv.fr",
+"port.fr",
+"service-public.fr",
+"numerique.gouv.fr"
+],
+"fetched": [
+{
+"url": "https://www.douane.gouv.fr/sites/default/files/2026-01/30/liste-points-clearance-agrees-mise-a-jour.pdf",
+"chars": 4288
+},
+{
+"url": "https://www.martinique.gouv.fr/contenu/telechargement/22986/180253/file/Guide%20Boat%20-%20maj.%2010.09.24.pdf",
+"chars": 3686
+},
+{
+"url": "https://www.douane.gouv.fr/particuliers/vous-etes-en-outre-mer/martinique-preparer-son-arrivee-ou-son-retour-sur-le-territoire",
+"chars": 3553
+},
+{
+"url": "https://www.douane.gouv.fr/sites/default/files/uploads/files/Services-en-ligne/ICS/ics-liste-points-d-entree-francais.pdf",
+"chars": 14055
+},
+{
+"url": "https://www.douane.gouv.fr/sites/default/files/2026-03/09/Tableau%202%20-%20Liste%20des%20d%C3%A9lib%C3%A9rations%20d%27octroi%20de%20mer%20en%20vigueur%20%28au%2025%20f%C3%A9vrier%202026%29.pdf",
+"chars": 36203
+},
+{
+"url": "https://www.martinique.gouv.fr/Services-de-l-Etat/Finances-publiques-impots-et-douanes/Direction-interregionale-des-Douanes-Antilles-Guyane",
+"chars": 9714
+},
+{
+"url": "https://www.martinique.gouv.fr/contenu/telechargement/25823/199676/file/liste-points-clearance-agrees-mise-a-jour-v15.12.2025.pdf",
+"chars": 4288
+},
+{
+"url": "https://www.mer.gouv.fr/sites/default/files/2024-04/25042024_ports_maritimes_annexe.pdf",
+"chars": 756090
+},
+{
+"url": "https://www.circulaires.gouv.fr/codes/section_lc/LEGITEXT000023086525/LEGISCTA000029815205/2019-07-12",
+"chars": 0
+},
+{
+"url": "https://www.legifrance.gouv.fr/jorf/id/JORFTEXT000047858148",
+"chars": 13248
+},
+{
+"url": "https://www.dm.martinique.developpement-durable.gouv.fr/formalites-de-clearance-a707.html",
+"chars": 1423
+},
+{
+"url": "https://www.dm.martinique.developpement-durable.gouv.fr/IMG/pdf/181122-arrete-mouillages-972_signe.pdf",
+"chars": 0
+},
+{
+"url": "https://lannuaire.service-public.gouv.fr/martinique/martinique/cbce4cda-59ee-425d-9ef3-163bd165efb9",
+"chars": 3855
+},
+{
+"url": "https://www.martinique.port.fr/",
+"chars": 10667
+},
+{
+"url": "https://www.ecologie.gouv.fr/sites/default/files/publications/Annexes%20Ports%20maritimes.pdf",
+"chars": 965598
+}
+]
+}
+}
+}
