@@ -40,6 +40,7 @@ CAP_NOT_IN_ZONE = "evidence not attributable to zone"
 CAP_NO_ENTRY_CONTEXT = "no per-port port-of-entry context"
 CAP_NOT_DESIGNATING = "evidence from a study, not a designation"
 CAP_NOT_CLEARANCE_POINT = "row of a clearance list that is not a marina or harbour office"
+CAP_CARGO_LIST = "evidence from the cargo ICS list, not a designation"
 _RANK = {name: i for i, name in enumerate(LEVELS)}
 
 GEO_AGREE_KM = 0.5
@@ -310,19 +311,37 @@ STUDY_TERMS = (
     "studio di", "studie",
 )
 NOT_DESIGNATING_TERMS = TARIFF_TERMS + STUDY_TERMS
+# The douane ICS list, "Liste des bureaux points d'entrée français dans l'Union européenne":
+# cargo offices of the Import Control System, not yacht entry. Le Robert and Saint-Pierre are
+# rows of it and no PoE (Clément's gold, §10.1). Its title is far from its rows, so unlike
+# tariff and study wording this is read per document, from the head of the text or the URL.
+CARGO_LIST_TITLES = ("liste des bureaux points d'entrée",)
+CARGO_LIST_URLS = ("ics-liste-points-d-entree",)
+CARGO_TITLE_CHARS = 300
+
+
+def is_cargo_list(item: Mapping) -> bool:
+    """The document is the cargo ICS list: it can never give C2, judge verdict included."""
+    from app.agents import registry_check as rc
+
+    body = item.get("text")
+    return (any(u in (item.get("url") or "").lower() for u in CARGO_LIST_URLS)
+            or (isinstance(body, str)
+                and _has_term(rc._tokens(body[:CARGO_TITLE_CHARS]), CARGO_LIST_TITLES)))
+
+
+def _official_items(texts: Sequence[Mapping] | None,
+                    whitelist: Sequence[str] | None) -> list[Mapping]:
+    return [item for item in texts or [] if isinstance(item, Mapping)
+            and isinstance(item.get("text"), str) and item["text"].strip()
+            and is_official(item.get("url") or "", whitelist)]
 
 
 def _official_texts(texts: Sequence[Mapping] | None,
                     whitelist: Sequence[str] | None) -> list[str]:
-    """Bodies of the given [{url, text}] whose URL is on the zone's State whitelist."""
-    out = []
-    for item in texts or []:
-        if not isinstance(item, Mapping):
-            continue
-        body = item.get("text")
-        if isinstance(body, str) and body.strip() and is_official(item.get("url") or "", whitelist):
-            out.append(body)
-    return out
+    """Bodies of the given [{url, text}] whose URL is on the zone's State whitelist. The
+    cargo ICS list is left out: nothing it says is evidence of entry."""
+    return [i["text"] for i in _official_items(texts, whitelist) if not is_cargo_list(i)]
 
 
 def _places(port: Mapping, zone: Mapping | None) -> tuple[str, ...]:
@@ -402,6 +421,27 @@ def judge_excerpt_in_study(port: Mapping, texts: Sequence[Mapping] | None,
         if at >= 0:
             return _near_phrase(text, at, at + len(quote), STUDY_TERMS)
     return False
+
+
+def _cargo_list_only(port: Mapping, texts: Sequence[Mapping] | None,
+                     whitelist: Sequence[str] | None, zone: Mapping | None) -> bool:
+    """The cargo ICS list is what would lift this port: the judge's excerpt is found there and
+    in no other official text, or the name is. ``_official_texts`` already keeps the list out
+    of the two-hosts rule; the judge and the LLM∩NER agreement read the fetched texts."""
+    from app.agents.poe_judge import excerpt_verified
+
+    cargo = [i for i in _official_items(texts, whitelist) if is_cargo_list(i)]
+    if not cargo:
+        return False
+    official = _official_texts(texts, whitelist)
+    if judge_outcome(dict(port)) == JUDGE_SUPPORTED:
+        # Located the way the judge verified it: quotes, case and spacing aside.
+        excerpt = port["judge"]["quoted_excerpt"]
+        return (excerpt_verified(excerpt, cargo)
+                and not excerpt_verified(excerpt, [{"text": t} for t in official]))
+    cargo, places = [i["text"] for i in cargo], _places(port, zone)
+    return (bool(all_mentions(port.get("name"), cargo, places))
+            and not all_mentions(port.get("name"), official, places))
 
 
 def _study_only(port: Mapping, texts: Sequence[Mapping] | None,
@@ -841,6 +881,19 @@ def _cap_zone(result: dict, port: dict, whitelist: Sequence[str] | None,
     return out
 
 
+def _cap_cargo_list(result: dict, port: dict, whitelist: Sequence[str] | None,
+                    texts: Sequence[Mapping] | None, zone: Mapping | None) -> dict:
+    """C2+ that rests on the cargo ICS list goes down to C1, whatever the judge said."""
+    lvl = result["confidence_level"]
+    if _RANK[lvl] <= _RANK["C1"] or not _cargo_list_only(port, texts, whitelist, zone):
+        return result
+    out = dict(result)
+    out["confidence_level"] = "C1"
+    out.setdefault("downgraded_from", lvl)
+    out["confidence_cap_reason"] = CAP_CARGO_LIST
+    return out
+
+
 def _cap_clearance_row(result: dict, port: dict, whitelist: Sequence[str] | None,
                        texts: Sequence[Mapping] | None, zone: Mapping | None) -> dict:
     """C2+ on a row that is not a clearance point goes down to C1, whatever the judge said
@@ -931,8 +984,8 @@ def assess_port(port: dict, *, whitelist: Sequence[str] | None = None,
                 texts: Sequence[Mapping] | None = None,
                 zone: Mapping | None = None) -> dict:
     """Map a prototype entity or a V2 scored port, then apply the quote check and the
-    caps: judge "not_poe" -> C1, evidence not attributable to this zone -> C1, a row of a
-    clearance list that is not a clearance point -> C1.
+    caps: judge "not_poe" -> C1, evidence not attributable to this zone -> C1, evidence from
+    the cargo ICS list -> C1, a row of a clearance list that is not a clearance point -> C1.
 
     texts: the zone's fetched documents [{url, text}] (only whitelisted URLs are read),
     used for the per-port entry context and the row/section zone check. zone: the VLIZ
@@ -951,6 +1004,7 @@ def assess_port(port: dict, *, whitelist: Sequence[str] | None = None,
         checked = _with_verified_quotes(entity, pages)
         result = _cap(_pack(before, level(checked), checked), port)
     result = _cap_zone(result, port, whitelist, texts, zone)
+    result = _cap_cargo_list(result, port, whitelist, texts, zone)
     return _cap_clearance_row(result, port, whitelist, texts, zone)
 
 
@@ -964,8 +1018,8 @@ def level_from_v2(port: dict, *, whitelist: Sequence[str] | None = None,
     or two LLM readers) and a catalogue-only port never go above C1. A judge "poe"
     with excerpt_verified, an LLM extraction with LLM∩NER agreement, or two official
     hosts plus a per-port entry context can; a judge "not_poe" caps at C1, and so do
-    evidence not attributable to this zone and a clearance-list row that is not a clearance
-    point. A name fragment is C0.
+    evidence not attributable to this zone, evidence from the cargo ICS list and a
+    clearance-list row that is not a clearance point. A name fragment is C0.
     `human == "confirmed"` lifts only C3 to C4.
     """
     return assess_port(port, whitelist=whitelist, pages=pages, texts=texts,
