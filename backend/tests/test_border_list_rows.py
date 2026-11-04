@@ -55,6 +55,28 @@ def test_exactly_five_canary_posts_each_once(text, posts):
     assert sorted(r["name"] for r in _posts(text)) == sorted(posts)
 
 
+@pytest.mark.xfail(strict=True, reason="cap_source_text keeps a head cut, no entry-term windows: Annex V lost past the 120,000 cap")
+def test_source_cap_keeps_all_five_canary_posts_with_annex_v_past_the_cap():
+    """Extra prose before Annex V must not hide the maritime designating rows."""
+    annex = ORDEN.index("ANEXO V Puestos Fronterizos")
+    padding = ("General administrative provisions. " * 300)[:10000]
+    padded = ORDEN[:annex] + padding + ORDEN[annex:]
+    cap = poe.SOURCE_MAX_CHARS
+    assert len(padded) > cap
+    assert padded.index("ANEXO V Puestos Fronterizos") > cap
+    # The padding leaves the actual list intact and readable before capping.
+    assert sorted(r["name"] for r in _posts(padded)) == sorted(ORDEN_POSTS)
+
+    kept, windows = poe.cap_source_text(
+        padded, cap, poe.SOURCE_WINDOW_CHARS, places=poe.zone_place_names(CANARIES))
+
+    assert len(kept) <= cap
+    names = sorted(r["name"] for r in _posts(kept))
+    assert names == sorted(ORDEN_POSTS), (
+        f"cap_source_text kept {len(kept)} chars and {windows} windows; "
+        f"Canary posts after capping: {names}")
+
+
 def test_the_duplicates_are_folded_not_lost():
     annex = {r["name"]: r for r in _posts(ANNEX4)}
     orden = {r["name"]: r for r in _posts(ORDEN)}
