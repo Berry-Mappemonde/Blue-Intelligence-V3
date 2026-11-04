@@ -133,6 +133,13 @@ def test_zone_budget_stops_the_remaining_ports(monkeypatch):
 
 
 def test_zone_deadline_is_respected(monkeypatch):
+    # Warm every first-call cost (the ~18 s listing projection, pycountry, WPI, the zone
+    # geometry) with one run without a deadline: the 0.3 s window below must only cover the
+    # geocode loop. Run alone, the cold listing build used it all and no port was tried.
+    async def fast(port):
+        return None
+    _pipeline(monkeypatch, ["Porto Inglês"], llm=fast)
+
     # the deadline is read inside _extract_and_geocode: bind it around the call
     real = poe._extract_and_geocode
 
