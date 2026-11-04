@@ -857,6 +857,43 @@ def search_hint_queries(zone: dict, exceptions: dict | None = None) -> list[str]
     return out[:int(get_rule("formalities.search_hint_queries_max", SEARCH_HINT_QUERIES_MAX))]
 
 
+# The list of border crossing points (Schengen Handbook Annex 4, a State's own list such as
+# Spain's Orden INT/859/2023 Annex V "Puestos fronterizos") designates the sea ports where a
+# boat from outside Schengen must enter (Clément, 3 Nov: the Canaries' five PoEs). One query
+# per language of the zone and English; {country} is the Schengen State in that language.
+BORDER_CROSSING_QUERIES = {
+    "en": "list of border crossing points {country} sea borders Schengen Annex 4",
+    "es": "puestos fronterizos habilitados marítimos {country} anexo orden",
+    "fr": "liste des points de passage frontaliers maritimes {country} Schengen",
+    "pt": "pontos de passagem fronteiriços marítimos {country} lista Schengen",
+    "it": "elenco valichi di frontiera marittimi {country} Schengen",
+    "de": "Liste der Grenzübergangsstellen Seegrenzen {country} Schengen",
+    "nl": "lijst grensdoorlaatposten zeegrenzen {country} Schengen",
+    "el": "σημεία διέλευσης συνόρων θαλάσσια σύνορα {country} Σένγκεν",
+}
+
+
+def border_crossing_queries(zone: dict) -> list[tuple[str, str]]:
+    """(lang, query) for the border-crossing-point list of a Schengen zone; [] otherwise
+    (territory_ref.schengen_state: the Canaries yes, Martinique no)."""
+    from app.services.territory_ref import schengen_state, with_sovereign_iso2
+    zone = with_sovereign_iso2(zone or {})
+    state = schengen_state(zone.get("iso2"), zone.get("mrgid"))
+    if not state:
+        return []
+    pyc = registry_check._pycountry()
+    country = pyc.countries.get(alpha_2=state) if pyc is not None else None
+    english = (getattr(country, "common_name", None) or getattr(country, "name", "")) if country else state
+    out = []
+    for lang in zone_search_languages(zone):
+        tpl = BORDER_CROSSING_QUERIES.get(lang)
+        if not tpl:
+            continue
+        name = english if lang == "en" or country is None else (_country_name_in(country.name, lang) or english)
+        out.append((lang, tpl.format(country=name)))
+    return out
+
+
 def list_url_bonus(url: str) -> float:
     """Prefer decree / PDF / list page — not the customs homepage (CDC §18)."""
     raw = (url or "").strip()
@@ -1233,7 +1270,8 @@ def build_whitelist(iso2: str | None, sov_iso2: str | None, exceptions: dict | N
     countries are ignored, even if NP or SK is passed by mistake."""
     exc = exceptions or load_exceptions()
     maritime = eez_iso2_set()
-    from app.services.territory_ref import sovereign_runs_entry, territory_for_mrgid
+    from app.services.territory_ref import (schengen_publishers, schengen_state, sovereign_runs_entry,
+                                            territory_for_mrgid)
     terr = territory_for_mrgid(mrgid) if mrgid is not None else {}
     if terr:
         key = _mrgid_key(mrgid)
@@ -1243,8 +1281,14 @@ def build_whitelist(iso2: str | None, sov_iso2: str | None, exceptions: dict | N
                 out.add(dom.lower())
         if sovereign_runs_entry(terr):
             out |= _national_labels(terr.get("sovereign_iso2") or sov_iso2, exc, maritime)
-        return sorted(out)
-    return sorted(_national_labels(iso2 or sov_iso2, exc, maritime))
+        return sorted(out | set(schengen_publishers(schengen_state(iso2, mrgid))))
+    out = set(_national_labels(iso2 or sov_iso2, exc, maritime))
+    # Schengen zones: the publishers of the border-crossing-point lists (Schengen Handbook
+    # Annex 4 on home-affairs.ec.europa.eu, a State's gazette such as boe.es) are official
+    # (Clément, 3 Nov: the Canaries' PoE list is the Schengen list of sea border crossings).
+    if out:
+        out |= set(schengen_publishers(schengen_state(iso2, mrgid)))
+    return sorted(out)
 
 
 def zone_whitelist(zone: dict | None, exceptions: dict | None = None) -> list[str]:
@@ -3075,6 +3119,18 @@ async def _find_sources(zone: dict, whitelist: list[str], exceptions: dict, log,
                                **({"fallback_for": "searxng"} if engine == "tavily" else {}))
         candidates = _merge_candidates(candidates, *hint_res)
         log(f"requêtes épinglées: {len(hints)} → +{sum(len(r) for r in hint_res)} candidats")
+
+    # Schengen zones: discovery of the list of border crossing points (never a seed).
+    bcp = border_crossing_queries(zone)
+    if bcp:
+        bcp_out = await asyncio.gather(*[_search_with_fallback(q, log) for _l, q in bcp])
+        for (qlang, q), (res, engine) in zip(bcp, bcp_out):
+            await _emit_search(engine=engine, lang=f"border-crossing-{qlang}", query=q,
+                               n=len(res), results=res, round="classic",
+                               **({"fallback_for": "searxng"} if engine == "tavily" else {}))
+        candidates = _merge_candidates(candidates, *[res for res, _ in bcp_out])
+        log(f"points de passage frontaliers (Schengen): {len(bcp)} requête(s) → "
+            f"+{sum(len(r) for r, _ in bcp_out)} candidats")
 
     synthesis = None
     grounded_attempted = False

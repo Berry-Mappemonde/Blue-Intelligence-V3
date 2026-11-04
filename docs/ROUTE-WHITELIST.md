@@ -42,8 +42,8 @@ no customs post) is listed under "no authority" with the official text that says
 | 8325 | Fiji | Fiji | FJ | `baf.com.fj`, `frcs.org.fj`, `gov.fj` | not checked |  |
 | 8495 | Collectivity of Saint Martin | France | saint_martin | `demarche.numerique.gouv.fr`, `demarches-simplifiees.fr`, `douane.gouv.fr`, `guadeloupe.gouv.fr`, `outre-mer.gouv.fr`, `portdemarigot.com`, `saint-barth-saint-martin.gouv.fr`, `service-public.fr` | no | audited; was missing customs, immigration, maritime authority, port authority |
 | 8341 | Europa Island | France | taaf | `dm.sud-ocean-indien.developpement-durable.gouv.fr`, `douane.gouv.fr`, `outre-mer.gouv.fr`, `taaf.fr` | no | audited; no customs |
-| 5677 | France | France | france_metropolitaine | `developpement-durable.gouv.fr`, `diplomatie.gouv.fr`, `douane.gouv.fr`, `ecologie.gouv.fr`, `gouv.fr`, `immigration.interieur.gouv.fr`, `interieur.gouv.fr`, `legifrance.gouv.fr`, `prefectures-regions.gouv.fr`, `service-public.fr` | not checked |  |
-| 48966 | France | France | france_metropolitaine | `developpement-durable.gouv.fr`, `diplomatie.gouv.fr`, `douane.gouv.fr`, `ecologie.gouv.fr`, `gouv.fr`, `immigration.interieur.gouv.fr`, `interieur.gouv.fr`, `legifrance.gouv.fr`, `prefectures-regions.gouv.fr`, `service-public.fr` | not checked |  |
+| 5677 | France | France | france_metropolitaine | `developpement-durable.gouv.fr`, `diplomatie.gouv.fr`, `douane.gouv.fr`, `ecologie.gouv.fr`, `gouv.fr`, `home-affairs.ec.europa.eu`, `immigration.interieur.gouv.fr`, `interieur.gouv.fr`, `legifrance.gouv.fr`, `prefectures-regions.gouv.fr`, `service-public.fr` | not checked |  |
+| 48966 | France | France | france_metropolitaine | `developpement-durable.gouv.fr`, `diplomatie.gouv.fr`, `douane.gouv.fr`, `ecologie.gouv.fr`, `gouv.fr`, `home-affairs.ec.europa.eu`, `immigration.interieur.gouv.fr`, `interieur.gouv.fr`, `legifrance.gouv.fr`, `prefectures-regions.gouv.fr`, `service-public.fr` | not checked |  |
 | 8462 | French Guiana | France | guyane | `douane.gouv.fr`, `gouv.fr`, `guyane.developpement-durable.gouv.fr`, `guyane.gouv.fr`, `legifrance.gouv.fr`, `outre-mer.gouv.fr`, `portdeguyane.fr`, `service-public.fr` | no | audited; was missing customs, maritime authority, port authority |
 | 8440 | French Polynesia | France | polynesie_francaise | `biosecurite.gov.pf`, `demarche.numerique.gouv.fr`, `diplomatie.gouv.fr`, `douane.gouv.fr`, `gov.pf`, `outre-mer.gouv.fr`, `polynesie-francaise.gouv.fr`, `polynesie-francaise.pref.gouv.fr`, `portdepapeete.pf`, `service-public.pf` | no | audited; was missing immigration, port authority |
 | 33177 | Guadeloupe | France | guadeloupe | `demarche.numerique.gouv.fr`, `demarches-simplifiees.fr`, `dm.guadeloupe.developpement-durable.gouv.fr`, `douane.gouv.fr`, `gouv.fr`, `guadeloupe-portcaraibes.com`, `guadeloupe.gouv.fr`, `outre-mer.gouv.fr`, `service-public.fr` | no | audited; was missing customs, maritime authority, port authority |
@@ -60,7 +60,7 @@ no customs post) is listed under "no authority" with the official text that says
 | 8460 | Guyana | Guyana | GY | `gov.gy` | not checked |  |
 | 8333 | Andaman and Nicobar | India | IN | `gov.in`, `nic.in` | not checked |  |
 | 8492 | Indonesia | Indonesia | ID | `go.id` | not checked |  |
-| 5682 | Italy | Italy | IT | `adm.gov.it`, `go.it`, `gov.it`, `guardiacostiera.gov.it` | not checked |  |
+| 5682 | Italy | Italy | IT | `adm.gov.it`, `go.it`, `gov.it`, `guardiacostiera.gov.it`, `home-affairs.ec.europa.eu` | not checked |  |
 | 48945 | Glorioso Islands | Madagascar | taaf | `douane.gouv.fr`, `outre-mer.gouv.fr`, `taaf.fr` | not checked |  |
 | 8348 | Madagascar | Madagascar | MG | `gov.mg` | not checked |  |
 | 8345 | Maldives | Maldives | MV | `gov.mv` | not checked |  |
@@ -75,7 +75,7 @@ no customs post) is listed under "no authority" with the official text that says
 | 8423 | Panama | Panama | PA | `gob.pa` | not checked |  |
 | 8324 | Papua New Guinea | Papua New Guinea | PG | `gov.pg` | not checked |  |
 | 8363 | Madeira | Portugal | PT | `gov.pt`, `portaldasfinancas.gov.pt` | not checked |  |
-| 5688 | Portugal | Portugal | PT | `gov.pt`, `portaldasfinancas.gov.pt` | not checked |  |
+| 5688 | Portugal | Portugal | PT | `gov.pt`, `home-affairs.ec.europa.eu`, `portaldasfinancas.gov.pt` | not checked |  |
 | 8343 | Republic of Mauritius | Republic of Mauritius | MU | `gov.mu` | not checked |  |
 | 8413 | Saint Kitts and Nevis | Saint Kitts and Nevis | KN | `gov.kn` | not checked |  |
 | 8416 | Saint Lucia | Saint Lucia | LC | `gov.lc`, `govt.lc`, `rslpf.com`, `slaspa.com`, `stlucia.org` | no | audited; was missing immigration, port authority |
@@ -83,8 +83,8 @@ no customs post) is listed under "no authority" with the official text that says
 | 8445 | Samoa | Samoa | WS | `gov.ws` | not checked |  |
 | 8337 | Seychelles | Seychelles | SC | `gov.sc` | not checked |  |
 | 8396 | South Africa | South Africa | ZA | `gov.za`, `sars.gov.za` | not checked |  |
-| 8364 | Canary Islands | Spain | islas_canarias | `agenciatributaria.es`, `gob.es`, `gobiernodecanarias.org`, `palmasport.es`, `policia.es`, `puertos.es`, `puertoscanarios.es`, `puertosdetenerife.org`, `salvamentomaritimo.es` | no | audited; was missing immigration, maritime authority, port authority |
-| 5693 | Spain | Spain | ES | `agenciatributaria.es`, `gob.es`, `policia.es`, `puertos.es`, `salvamentomaritimo.es` | not checked |  |
+| 8364 | Canary Islands | Spain | islas_canarias | `agenciatributaria.es`, `boe.es`, `gob.es`, `gobiernodecanarias.org`, `home-affairs.ec.europa.eu`, `palmasport.es`, `policia.es`, `puertos.es`, `puertoscanarios.es`, `puertosdetenerife.org`, `salvamentomaritimo.es` | no | audited; was missing immigration, maritime authority, port authority |
+| 5693 | Spain | Spain | ES | `agenciatributaria.es`, `boe.es`, `gob.es`, `home-affairs.ec.europa.eu`, `policia.es`, `puertos.es`, `salvamentomaritimo.es` | not checked |  |
 | 8346 | Sri Lanka | Sri Lanka | LK | `gov.lk` | not checked |  |
 | 8461 | Suriname | Suriname | SR | `gov.sr` | not checked |  |
 | 8448 | Tonga | Tonga | TO | `gov.to` | not checked |  |
