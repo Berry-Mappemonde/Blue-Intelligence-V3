@@ -66,8 +66,8 @@ from app.adapters import evidence_store
 from app.adapters.zetaris import ZetarisClient
 from app.agents import registry_check
 from app.services.poe_confidence import apply_score, listing_role, score_port, zone_confidence_avg
-from app.services.v3_certify import (CAP_NOT_CLEARANCE_POINT, LEVEL_FIELDS,
-                                     attach_confidence_level, clearance_rows)
+from app.services.v3_certify import (CAP_NOT_CLEARANCE_POINT, LEVEL_FIELDS, _is_clearance_list,
+                                     attach_confidence_level, clearance_rows, is_official)
 from app.services.poe_zone_label import (
     keep_extracted_in_zone, search_polygon_name, serp_place_name,
     zone_qualifier, zone_search_location,
@@ -2185,6 +2185,16 @@ async def _extract_ports_core(context: str, zone: dict, log, rec=None,
                                              catalog_text=catalog_text, settings=settings)
 
 
+def clearance_list_in_sources(text: str | None, zone: dict) -> bool:
+    """An official clearance list is among the zone's sources (the "[SOURCE: url]" blocks of
+    ``text``). It reaches us as flat text that no catalogue parser reads, so only the LLM reads
+    its rows: a catalogue found next to it is not the zone's list (run 51697e: the arrêté du
+    18 juillet 2023 gave six names, and Martinique lost its four PoEs)."""
+    whitelist = registry_whitelist(zone)
+    return any(is_official(url, whitelist) and _is_clearance_list(registry_check._tokens(body))
+               for url, body in registry_check.source_texts_from_context(text).items())
+
+
 async def _extract_ports_compared(context: str, zone: dict, log, rec=None,
                                   catalog_text: str | None = None,
                                   settings: dict | None = None) -> list[dict]:
@@ -2194,8 +2204,9 @@ async def _extract_ports_compared(context: str, zone: dict, log, rec=None,
       - port seen by the LLM only → extraction_agreement=False (needs cross-check);
       - names seen by NER only → logged as candidates to verify;
       - LLM unavailable → the NER list becomes the fallback (behavior kept).
-    A real table (names + coords) short-circuits the LLM; "port de X"
-    fragments are no longer enough — JSON readers parse these pages.
+    A real table (names + coords) short-circuits the LLM, unless an official
+    clearance list is among the sources; "port de X" fragments are no longer
+    enough — JSON readers parse these pages.
     Second reader: gpt-oss (or Kimi if decree) if NVIDIA is on.
     Claude only steps in after both NIM/OR readers fail.
     """
@@ -2203,7 +2214,11 @@ async def _extract_ports_compared(context: str, zone: dict, log, rec=None,
     catalog, rows_miss_zone = await asyncio.to_thread(zone_catalog, raw_catalog, zone)
     if rows_miss_zone:
         log("catalogue par territoire sans ligne pour cette zone — LLM non sauté")
-    if not rows_miss_zone and catalog_is_sufficient(catalog, raw_catalog):
+    sufficient = not rows_miss_zone and catalog_is_sufficient(catalog, raw_catalog)
+    if sufficient and clearance_list_in_sources(raw_catalog, zone):
+        log("liste de clearance parmi les sources — LLM non sauté")
+        sufficient = False
+    if sufficient:
         kept = catalog_ports_to_keep(catalog)
         if kept:
             n_coord = len(catalog_ports_with_coords(catalog))
@@ -3804,9 +3819,12 @@ _AREA_PREFIX = re.compile(r"^(?:ilha|ilhas|isla|islas|ile|iles|isle|island|isola
 _AREA_SUFFIX = re.compile(r" (?:island|islands|isle|group)$")
 _SAINT_FORMS = ("sao", "san", "santa", "santo", "saint", "sainte", "st")
 _REGION_TYPES = ("region", "island", "autonomous community", "archipelago")
+# Islands and regions only. A commune is an administrative feature too (OSM
+# boundary=administrative, GeoNames ADM*: Le Marin, Soufrière, Arrecife), and the level says
+# nothing about its size, so neither counts; run 51697e lost Martinique's communes that way.
 _AREA_OSM_TYPES = frozenset({"island", "islet", "archipelago", "region", "state", "province",
-                             "county", "administrative"})
-_AREA_GN_CODES = frozenset({"ISL", "ISLS", "ISLET", "ADM1", "ADM2", "ADM3", "ADMD", "RGN"})
+                             "county"})
+_AREA_GN_CODES = frozenset({"ISL", "ISLS", "ISLET", "RGN"})
 
 
 def _area_key(name: str | None) -> str:
@@ -3882,7 +3900,8 @@ def is_area_name(name: str | None, area_keys: set[str]) -> bool:
 
 def only_area_hits(geo: dict, name: str | None) -> bool:
     """The geocoders found the name, and only as an island or a region (OSM place=island,
-    GeoNames ISL / ADM*): an area, not a port. A name with a facility word never is."""
+    GeoNames ISL / RGN): an area, not a port. A commune is not one, and a name with a
+    facility word never is."""
     if _port_name_parts(name or "")[2]:
         return False
     cands = geo.get("candidates") or []

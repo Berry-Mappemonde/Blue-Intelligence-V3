@@ -123,7 +123,7 @@ We start from the **VLIZ polygon**, not from the aggregated country, and not fro
 3. **Search** with the name of the **polygon** (`search_polygon_name`: `France hexagone` ≠ `Mayotte` ≠ `Saba`), not only the sovereign. Multilingual queries, SearXNG and/or TinyFish Search (`location` = polygon ISO2), official net, grounded search last.
 4. **Download** the pages (HTTP, Readability, Chromium render, out-of-process PDF). Discard anti-bot interstitials.
 5. **Extract** the names (table/decree parser first; otherwise LLM ∥ NER; Claude as second reader if the budget is open). A **national** decree may list several polygons: we read the entire list.
-6. **Geocode** (Nominatim ∥ GeoNames), check that the point is in **this** polygon (or land edge, framed river exception). A GPS in **another** polygon of the same sovereign (Dzaoudzi in Mayotte while we are treating the hexagone) is **not written** on this sheet.
+6. **Geocode** (Nominatim ∥ GeoNames), check that the point is in **this** polygon (or land edge, framed river exception). A GPS in **another** polygon of the same sovereign (Dzaoudzi in Mayotte while we are treating the hexagone) is **not written** on this sheet. A name the geocoders only see as an island or a region is not a port (OSM `place=island`, GeoNames `ISL` / `RGN`). A commune is not such an area, even though it is `boundary=administrative` for OSM and `ADM*` for GeoNames (`only_area_hits`).
 7. **Store** under the `mrgid` of this polygon, without destroying the existing, with the URLs used.
 
 Business question: *which ports does this VLIZ polygon designate for the entry of foreign recreational vessels?*
@@ -196,6 +196,8 @@ Bus rules:
 - decree / PDF / table that designates several ports of entry (catalogue parser, not a count of “port of X” turns of phrase).
 
 As soon as one arm has this list: we **stop** seeking other lists for this EEZ. We do not stop the work: we move to the **remainder**.
+
+**A clearance list among the sources keeps the LLM** (`clearance_list_in_sources`). Such a list reaches us as flat text that no catalogue parser reads, so a catalogue found next to it is not the zone's list. In run `20261104-021155-51697e`, the arrêté du 18 juillet 2023 gave six Martinique names, the LLM was skipped, and the four PoEs of the douane list were never read.
 
 **Judge only on the residue.** The residue = seeds of this EEZ whose name is **not** in the official list (normalised spelling / `dedup_key`). For those only: yes / no / insufficient. We do not relaunch a list crawl, we do not ask the judge again for ports already named by the decree.
 
