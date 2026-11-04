@@ -19,7 +19,10 @@ Names: every name a run port carries (its name, ``merged_names`` from #47, the n
 its ``clearance_points`` from #50) against every form of a gold name (the whole name,
 the part before a parenthesis, each side of an en dash) plus the hand-made aliases in
 backend/data/gold/aliases.json, through the pipeline's keys (registry_check.name_key and
-port_key). An exact full-name match wins over a key match.
+port_key). An exact full-name match wins over a key match. Two marinas named after the same
+place are one name (``_place_key``). A match on a gold PoE wins over a match on a rejected
+name, whichever name of the port gives it: a commune is rejected as a name, and is a PoE
+through its marina.
 """
 from __future__ import annotations
 
@@ -34,6 +37,9 @@ GOLD_DIR = Path(__file__).resolve().parents[2] / "data" / "gold"
 ALIASES_FILE = GOLD_DIR / "aliases.json"
 _LEVEL_RANK = {"C0": 0, "C1": 1, "C2": 2, "C3": 3, "C4": 4}
 _DASHES = re.compile(r"\s+[–—]\s+")
+# A marina's name, on name_key's output: its kind of facility, then the place it is at.
+_MARINA_LEAD = re.compile(r"^(?:la |le |l )?(?:marina|port de plaisance(?: \w+)?|puerto deportivo)"
+                          r" (?:de la |de |del |du |des |d )(?=\S)")
 
 
 # --- gold files ----------------------------------------------------------------------
@@ -88,11 +94,25 @@ def _forms(name: str | None) -> list[str]:
     return out
 
 
+def _place_key(name: str) -> str | None:
+    """The place of a marina's name, with its own marker, or None for any other name.
+
+    The same marina goes by different words: "La marina de l'Étang Z'Abricot" (gold) and
+    "Port de plaisance communautaire de l'Étang Z'abricots" (the clearance list) have no
+    other key in common. The marker keeps it apart from the other keys: a marina's place
+    never matches a bare place name. A final s is dropped, as in registry_check."""
+    key = name_key(name)
+    place = _MARINA_LEAD.sub("", key)
+    if place == key:
+        return None
+    return "marina at " + (place[:-1] if re.search(r"[a-z]{3}[^s]s$", place) else place)
+
+
 def _keys(name: str | None) -> set[str]:
     keys: set[str] = set()
     for form in _forms(name):
-        for k in (name_key(form), port_key(form)):
-            if len(k.replace(" ", "")) >= 3:
+        for k in (name_key(form), port_key(form), _place_key(form)):
+            if k and len(k.replace(" ", "")) >= 3:
                 keys.add(k)
     return keys
 
@@ -119,25 +139,39 @@ class _GoldIndex:
             hits = [g for g in self.entries if g["keys"] & keys]
         return list({id(g): g for g in hits}.values())
 
+    def _poe_hits(self, names: list[str]) -> list[dict]:
+        """Gold PoEs any of ``names`` matches, on its own: a rejected name that a name
+        matches exactly must not hide the PoE another name matches by key."""
+        hits = [g for n in names for g in self._hits([n])
+                if g["kind"] == "poe"]
+        keys = set().union(*(_keys(n) for n in names)) if names else set()
+        hits += [g for g in self.entries if g["kind"] == "poe" and g["keys"] & keys]
+        return list({id(g): g for g in hits}.values())
+
     def match(self, run_names: list[str]) -> tuple[dict | None, list[str]]:
         """(gold entry, []) on one match; (None, candidate names) on none or several.
 
-        The port's own name (``run_names[0]``) decides when it matches. Otherwise its other
-        names (merged records, clearance points) do: one gold PoE among them wins (a PoE
-        whose clearance point is listed); only rejected names make it that rejected name
-        (the first); several distinct PoEs are ambiguous."""
+        A gold PoE matched by any name of the port wins over a rejected name, its own name
+        included: "Fort-de-France" is rejected as a name, and is a PoE through the marina
+        among its clearance points. Several distinct PoEs: the port's own name
+        (``run_names[0]``) decides if it names one of them, otherwise it is ambiguous. With
+        no PoE, the port's own name decides, then its first other rejected name."""
         if not run_names:
             return None, []
         own = self._hits(run_names[:1])
+        poes = self._poe_hits(run_names)
+        names = list(dict.fromkeys(g["name"] for g in poes))
+        if len(names) > 1:
+            own_poes = [g for g in own if g["kind"] == "poe"]
+            if len({g["name"] for g in own_poes}) == 1:
+                return own_poes[0], []
+            return None, names
+        if poes:
+            return poes[0], []
         if own:
             names = list(dict.fromkeys(g["name"] for g in own))
             return (own[0], []) if len(names) == 1 else (None, names)
         hits = self._hits(run_names[1:])
-        poes = list(dict.fromkeys(g["name"] for g in hits if g["kind"] == "poe"))
-        if len(poes) == 1:
-            return next(g for g in hits if g["name"] == poes[0]), []
-        if poes:
-            return None, poes
         return (hits[0], []) if hits else (None, [])
 
 

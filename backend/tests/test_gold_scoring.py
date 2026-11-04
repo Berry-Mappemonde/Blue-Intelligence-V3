@@ -58,7 +58,8 @@ def test_59c1e5_counts(gold):
     assert (o["c2_recall"]["n"], o["c2_recall"]["of"]) == (8, 23)
     assert (o["any_level_recall"]["n"], o["any_level_recall"]["of"]) == (16, 23)
     assert o["wrong_c2"] == 0 and o["unmatched"] == 0
-    assert o["missed"] == 7 and o["c1_noise"] == 23
+    # 22, not 23: the record named after the Étang Z'abricots row is the gold marina.
+    assert o["missed"] == 7 and o["c1_noise"] == 22
     assert _zone(score, LC)["c2_recall"]["n"] == 5
     assert _zone(score, MQ)["c2_recall"]["n"] == 3 and _zone(score, MQ)["any_level_recall"]["n"] == 4
     assert _zone(score, CV)["any_level_recall"]["n"] == 7
@@ -121,8 +122,8 @@ def test_unmatched_names_are_listed_not_guessed(gold):
 
 
 def test_clearance_points_and_merged_names_after_50(gold):
-    """#50 groups a commune's rows into one PoE: its own name decides; otherwise one gold
-    PoE among its clearance points wins over a merged rejected name."""
+    """#50 groups a commune's rows into one PoE: one gold PoE among its names wins over a
+    merged rejected name."""
     le_marin = _p(MQ, "Le Marin", "C2", merged=["La marina du Marin"],
                   points=["Port de plaisance Capitainerie du port (nouvelle extension)",
                           "Station-service CAP Ponton N°3"])
@@ -130,6 +131,74 @@ def test_clearance_points_and_merged_names_after_50(gold):
                      points=["Régie Port de Plaisance Marina de la pointe du bout"])
     z = _zone(gs.score_ports([le_marin, trois_ilets], gold), MQ)
     assert z["c2_recall"]["n"] == 2 and z["c2_precision"]["n"] == 2 and not z["unmatched"]
+
+
+ETANG_ROW = "Port de plaisance communautaire de l'Étang Z'abricots"
+ETANG_GOLD = "La marina de l'Étang Z'Abricot"
+
+
+def test_fort_de_france_counts_for_its_marina(gold):
+    """Run ac33e9: the record's name is rejected in the gold, and so is its row's exact name
+    ("Duplicate of row 12"); the row is the same marina as the gold PoE."""
+    z = _zone(gs.score_ports([_p(MQ, "Fort-de-France", "C1", points=[ETANG_ROW])], gold), MQ)
+    assert ETANG_GOLD not in z["missed"]
+    assert z["any_level_recall"]["n"] == 1 and not z["c1_noise"] and not z["unmatched"]
+
+
+def test_a_poe_through_a_clearance_point_is_a_right_c2_not_a_wrong_one(gold):
+    z = _zone(gs.score_ports([_p(MQ, "Fort-de-France", "C2", points=[ETANG_ROW])], gold), MQ)
+    assert z["c2_recall"]["n"] == 1 and z["c2_precision"]["n"] == 1 and not z["wrong_c2"]
+
+
+def test_a_rejected_name_with_no_poe_among_its_points_stays_rejected(gold):
+    z = _zone(gs.score_ports([_p(MQ, "Fort-de-France", "C1", points=["Sea Services"]),
+                              _p(MQ, "Fort-de-France", "C2")], gold), MQ)
+    assert [c["gold"] for c in z["c1_noise"]] == ["Fort de France"]
+    assert [w["gold"] for w in z["wrong_c2"]] == ["Fort de France"]
+
+
+def test_a_rejected_clearance_point_never_takes_a_gold_poe_away(gold):
+    p = _p(MQ, "Le Marin", "C2", merged=["La marina du Marin"],
+           points=["Station CAP DCML Centre de carénage - Baie des Tourelles"])
+    z = _zone(gs.score_ports([p], gold), MQ)
+    assert z["c2_recall"]["n"] == 1 and not z["wrong_c2"]
+
+
+def test_aliases_apply_to_clearance_point_names(gold):
+    z = _zone(gs.score_ports([_p(CV, "São Vicente", "C2", points=["Porto Grande"])], gold), CV)
+    assert z["c2_recall"]["n"] == 1 and "Mindelo – Porto Grande de São Vicente" not in z["missed"]
+
+
+def test_the_port_own_name_decides_between_two_gold_poes(gold):
+    p = _p(LC, "Castries", "C2", points=["Vieux-Fort"])
+    z = _zone(gs.score_ports([p], gold), LC)
+    assert not z["unmatched"] and z["c2_recall"]["n"] == 1 and "Castries" not in z["missed"]
+
+
+@pytest.mark.parametrize("name, place", [
+    (ETANG_ROW, "marina at letang zabricot"),
+    (ETANG_GOLD, "marina at letang zabricot"),
+    ("Marina du Marin", "marina at marin"),
+    ("Puerto deportivo de Radazul", "marina at radazul"),
+])
+def test_two_marinas_at_one_place_have_one_key(name, place):
+    assert gs._place_key(name) == place
+
+
+@pytest.mark.parametrize("name", ["Fort-de-France", "Étang Z'abricots", "Marina",
+                                  "Capitainerie Marina - Pointe Bateau"])
+def test_a_name_that_is_no_marina_at_a_place_has_none(name):
+    assert gs._place_key(name) is None
+
+
+def test_a_bare_place_never_matches_a_marina(gold):
+    z = _zone(gs.score_ports([_p(MQ, "Étang Z'Abricot", "C1"), _p(MQ, "Marin", "C1")], gold), MQ)
+    assert z["any_level_recall"]["n"] == 0 and not z["c1_noise"] and len(z["unmatched"]) == 2
+
+
+def test_a_marina_at_another_place_is_another_marina(gold):
+    z = _zone(gs.score_ports([_p(MQ, "Marina de la Baie de Fort", "C1")], gold), MQ)
+    assert z["any_level_recall"]["n"] == 0 and len(z["unmatched"]) == 1
 
 
 def test_a_port_naming_two_gold_poes_is_ambiguous(gold):

@@ -189,7 +189,10 @@ does not match. Each attempt is recorded under `poe_runs.uploads`.
 `app/services/gold_score.py` scores a run per zone and overall: C2 precision and recall,
 any-level recall, wrong C2s (with their quote), missed gold PoEs, C1 noise (ports below C2
 that match a rejected name) and unmatched run names (listed, never guessed). A run port is
-matched by its name, its `merged_names` and its `clearance_points` names.
+matched by its name, its `merged_names` and its `clearance_points` names, aliases included.
+A gold PoE matched by any of them wins over a rejected name, the port's own name included:
+Fort-de-France is rejected as a name, and is a PoE through its marina. Two marinas named
+after the same place are one name ("La marina de X", "Port de plaisance communautaire de X").
 
     python backend/scripts/score_gold.py --run-id <run_id>
     python backend/scripts/score_gold.py --csv <export.csv> --gold backend/data/gold/pilot_4zones.json
