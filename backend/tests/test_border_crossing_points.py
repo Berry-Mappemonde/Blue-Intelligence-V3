@@ -243,3 +243,50 @@ def test_not_a_border_crossing_list_reads_nothing():
     text = "Puerto de Arrecife. Horario de atención al público. Comisaría Local de Arrecife."
     assert not bc.is_border_crossing_list(text)
     assert bc.zone_rows(text, CANARIES, "Spain") == ([], [])
+
+
+# --- the judge route to C2 after #56 (commune rule, LLM∩NER entry context) ---------------
+
+from app.services import v3_certify  # noqa: E402
+
+TENERIFE_XY = {"lat": 28.4682, "lon": -16.2546}
+
+
+def _bcp_port(url, verdict=None, excerpt=""):
+    port = {"name": "Santa Cruz de Tenerife", "mrgid": 8364, "zone_name": "Canary Islands",
+            **TENERIFE_XY, "validated": True, "spatial_kind": "in_eez",
+            "extraction_engine": "border_list", "source_urls": [url], "confidence": 60}
+    if verdict:
+        port["judge"] = {"verdict": verdict, "reason": "", "quoted_excerpt": excerpt,
+                         "excerpt_verified": True}
+    return port
+
+
+@pytest.mark.parametrize("url, text, excerpt", [
+    (ORDEN, ORDEN_TXT, "Puerto de Santa Cruz de Tenerife."),
+    (ANNEX4, ANNEX4_TXT, "(28)   Santa Cruz de Tenerife"),
+])
+def test_a_bcp_row_reaches_c2_through_the_judge_only(url, text, excerpt):
+    wl = poe.zone_whitelist(CANARIES)
+    texts = [{"url": url, "text": text}]
+
+    def level(port):
+        v3_certify.attach_confidence_level(port, whitelist=wl, zone=CANARIES, texts=texts)
+        return port
+
+    alone = level(_bcp_port(url))
+    assert alone["confidence_level"] == "C1"  # a row alone lifts nothing
+    poe_port = level(_bcp_port(url, "poe", excerpt))
+    assert poe_port["confidence_level"] == "C2"
+    # #56's commune rule needs a clearance list of the zone: the Canaries have none
+    assert poe_port.get("confidence_cap_reason") != v3_certify.CAP_NO_CLEARANCE_POINT
+    assert level(_bcp_port(url, "not_poe", excerpt))["confidence_level"] == "C1"
+
+
+def test_the_judge_reads_the_bcp_row_as_evidence():
+    """The judge's texts for the zone hold the row (evidence_store, after #52's rows)."""
+    texts = poe.judge_texts(CANARIES, [{"name": "Santa Cruz de Tenerife"}, {"name": "Arrecife"}],
+                            f"[SOURCE: {ORDEN}]\n{ORDEN_TXT}", [{"url": ORDEN, "official": True}],
+                            poe.zone_whitelist(CANARIES))
+    joined = " ".join(t["text"] for t in texts)
+    assert "Puerto de Santa Cruz de Tenerife." in joined and "Puerto de Arrecife." in joined
