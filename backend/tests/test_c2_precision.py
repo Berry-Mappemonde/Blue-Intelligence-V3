@@ -156,11 +156,14 @@ def test_a_judge_poe_on_the_study_excerpt_is_not_c2():
     "Port de plaisance Capitainerie du port (nouvelle extension)",
     "Régie Port de Plaisance Marina de la pointe du bout",
 ])
-def test_rows_of_the_douane_clearance_list_stay_c2(name):
-    assert v3_certify.entry_mentions(name, [CLEARANCE_LIST])
-    port = _port(name, 33178, [CLEARANCE_URL, "https://www.martinique.gouv.fr/x.pdf"])
-    assert v3_certify.level_from_v2(port, whitelist=WL_MQ, zone=MARTINIQUE,
-                                    texts=[{"url": CLEARANCE_URL, "text": CLEARANCE_LIST}]) == "C2"
+def test_rows_of_the_douane_clearance_list_stay_c2_through_the_judge(name):
+    texts = [{"url": CLEARANCE_URL, "text": CLEARANCE_LIST}]
+    urls = [CLEARANCE_URL, "https://www.martinique.gouv.fr/x.pdf"]
+    assert v3_certify.level_from_v2(_port(name, 33178, urls), whitelist=WL_MQ, zone=MARTINIQUE,
+                                    texts=texts) == "C1"
+    judge = {"verdict": "poe", "quoted_excerpt": name, "excerpt_verified": True}
+    assert v3_certify.level_from_v2(_port(name, 33178, urls, judge), whitelist=WL_MQ,
+                                    zone=MARTINIQUE, texts=texts) == "C2"
 
 
 def test_the_soufriere_bay_order_stays_c2():
