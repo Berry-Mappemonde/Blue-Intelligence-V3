@@ -138,7 +138,7 @@ def test_discovery_counts_only_on_a_publisher_of_the_list():
     assert [c["url"] for c in found] == [PUBLISHER]
 
 
-def test_a_zone_outside_schengen_has_no_publisher():
+def test_the_schengen_publishers_are_not_those_of_a_zone_outside_schengen():
     assert not poe.designating_list_candidates(
         [_candidate(PUBLISHER, 1)], {"mrgid": 8416, "name": "Saint Lucia", "iso2": "LC"})
 

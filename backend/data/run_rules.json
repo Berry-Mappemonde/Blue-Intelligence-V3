@@ -549,6 +549,34 @@
       "group": "budget"
     },
     {
+      "id": "tavily.list_discovery_per_zone",
+      "mode": "shared",
+      "kind": "budget",
+      "value": 1,
+      "numeric": "int",
+      "unit": "calls",
+      "interval": [
+        0,
+        4
+      ],
+      "vary": false,
+      "principle": "Appels Tavily permis par zone pour les requêtes de découverte de liste (points de passage frontaliers, liste nationale des postes d'entrée) quand SearXNG revient vide. La langue de la zone passe d'abord. 0 = jamais de Tavily pour ces requêtes.",
+      "cdc": "PLAN-V3.md §4 P0-1",
+      "code": [
+        "app/services/poe_pipeline.py:LIST_DISCOVERY_TAVILY_PER_ZONE",
+        "app/services/poe_pipeline.py:_list_discovery_search"
+      ],
+      "title": {
+        "fr": "Tavily par zone pour la découverte de liste",
+        "en": "Tavily calls per zone for list discovery"
+      },
+      "help": {
+        "fr": "Plafond d'appels Tavily par zone pour les requêtes de découverte de liste, quand SearXNG revient vide.",
+        "en": "Cap on Tavily calls per zone for list-discovery queries, when SearXNG comes back empty."
+      },
+      "group": "budget"
+    },
+    {
       "id": "projects.no_hq_as_site",
       "mode": "projects",
       "kind": "loi",
@@ -2163,6 +2191,35 @@
       "help": {
         "fr": "Pages garanties aux listes désignantes dans le plafond de fetch. Plus haut laisse moins de place aux pages génériques.",
         "en": "Pages guaranteed to designating lists within the fetch cap. Higher leaves less room for generic pages."
+      },
+      "group": "budget"
+    },
+    {
+      "id": "formalities.gazette_stub_chars",
+      "mode": "formalities",
+      "kind": "budget",
+      "value": 3000,
+      "numeric": "int",
+      "unit": "chars",
+      "interval": [
+        0,
+        20000
+      ],
+      "vary": false,
+      "principle": "Une page de journal officiel plus courte que ce seuil est une notice : le créneau lit aussi son unique lien vers le texte intégral de l'acte, sans compter dans formalities.max_fetch. Seuls les journaux officiels de whitelist_sources.json (gazettes) sont concernés. 0 désactive.",
+      "cdc": "CAHIER_DES_CHARGES_POE.md §5 (Official source)",
+      "code": [
+        "app/services/poe_pipeline.py:GAZETTE_STUB_CHARS",
+        "app/services/poe_pipeline.py:_collect_texts",
+        "app/core/extract.py:full_text_link"
+      ],
+      "title": {
+        "fr": "Notice de journal officiel",
+        "en": "Gazette stub threshold"
+      },
+      "help": {
+        "fr": "Longueur en dessous de laquelle une page de journal officiel est une notice dont on lit le texte intégral.",
+        "en": "Length below which a gazette page is a stub whose full act is read in the same slot."
       },
       "group": "budget"
     },

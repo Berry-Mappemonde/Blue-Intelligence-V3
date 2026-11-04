@@ -1,5 +1,5 @@
 {
-  "about": "Provenance of official domains for the route whitelist (docs/ROUTE-WHITELIST.md). Each zone lists the authorities a foreign yacht deals with on arrival (customs, immigration, maritime authority, port authority), one official URL each, and the source used to identify it. A domain marked added=true was added by this audit; it now lives where the zone's whitelist is built from: for a polygon curated in territories.json (whitelist_key = its territory code) the record's official_domains or poe_exceptions.json whitelist_mrgid[mrgid], else poe_exceptions.json manual[whitelist_key] (an ISO2). was_missing = the roles the whitelist did not cover before the audit (frozen at audit time; docs/TERRITORY-WHITELIST.md). Government and port-authority bodies only: no NGO, blog or commercial site. A zone may also give no_authority (role: the official reason no such authority exists there, e.g. no port or customs post) and notes (arrival procedure, exclusions).",
+  "about": "Provenance of official domains for the route whitelist (docs/ROUTE-WHITELIST.md). Each zone lists the authorities a foreign yacht deals with on arrival (customs, immigration, maritime authority, port authority), one official URL each, and the source used to identify it. A domain marked added=true was added by this audit; it now lives where the zone's whitelist is built from: for a polygon curated in territories.json (whitelist_key = its territory code) the record's official_domains or poe_exceptions.json whitelist_mrgid[mrgid], else poe_exceptions.json manual[whitelist_key] (an ISO2). was_missing = the roles the whitelist did not cover before the audit (frozen at audit time; docs/TERRITORY-WHITELIST.md). Government and port-authority bodies only: no NGO, blog or commercial site. A zone may also give no_authority (role: the official reason no such authority exists there, e.g. no port or customs post), notes (arrival procedure, exclusions) and gazettes (the official gazettes that publish its designating texts: no authority role, no reserved fetch slot, read by authority_roles.list_publishers).",
   "checked": "2026-11-01",
   "zones": {
     "8416": {
@@ -52,6 +52,15 @@
         "immigration",
         "maritime_authority",
         "port_authority"
+      ],
+      "gazettes": [
+        {
+          "name": "Boletim Oficial, Imprensa Nacional de Cabo Verde",
+          "url": "https://boe.incv.cv/",
+          "domain": "incv.cv",
+          "added": true,
+          "source": "https://boe.incv.cv/Bulletins/View/85465"
+        }
       ],
       "authorities": [
         {

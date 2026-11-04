@@ -102,7 +102,8 @@ def _border_row_mention(doc: dict, name: str, zone: dict, cache: dict) -> dict |
         cache[key] = border_crossing.zone_rows(text, zone, border_crossing.zone_state_name(zone))[0]
     want = {border_crossing._fold(n) for n in border_crossing._row_forms(name)}
     for r in cache[key]:
-        if want & {border_crossing._fold(r["name"]), border_crossing._fold(r["matched"])}:
+        names = [x for row in (r, *r.get("folded", ())) for x in (row["name"], row["matched"])]
+        if want & {border_crossing._fold(n) for n in names}:
             at = text.find(r["row"]) if r["row"] in text else text.find(r["name"])
             if at < 0:
                 continue

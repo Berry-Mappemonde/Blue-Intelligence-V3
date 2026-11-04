@@ -51,7 +51,7 @@ from app.core.extract import (
     audit_serp_filter, catalog_is_sufficient, catalog_ports_to_keep,
     catalog_ports_with_coords, extract_cascade, extract_structured_ports,
     _PORT_OF_RE, fold_place_name, split_territory_rows,
-    internal_followups, is_geocodeable_name, looks_like_port_catalog,
+    full_text_link, internal_followups, is_geocodeable_name, looks_like_port_catalog,
     official_attachments, serp_filter, should_follow_attachments,
 )
 from app.core.geo import (
@@ -873,12 +873,43 @@ BORDER_CROSSING_QUERIES = {
 }
 
 
+# Outside Schengen the same list is a national text: the posts or ports a State opens to
+# foreign arrivals, usually a decree in its gazette (Cape Verde: DL 13/2025, which no search
+# of run 20261104-125841-ac33e9 returned). One query per language of the zone and English;
+# {place} is the zone's name in that language (local_place_name).
+ENTRY_LIST_QUERIES = {
+    "en": "designated ports of entry {place} border posts customs regulations",
+    "pt": "postos de fronteira habilitados {place} decreto-lei",
+    "es": "puestos fronterizos habilitados {place} decreto",
+    "fr": "postes frontaliers habilités ports d'entrée {place} arrêté",
+    "it": "valichi di frontiera marittimi autorizzati {place} decreto",
+    "de": "zugelassene Grenzübergangsstellen Seehäfen {place} Verordnung",
+    "nl": "aangewezen havens van binnenkomst {place} besluit",
+    "el": "εγκεκριμένα σημεία εισόδου λιμάνια {place} διάταγμα",
+    "ar": "منافذ الدخول البحرية المعتمدة {place} قرار",
+    "ru": "перечень морских пунктов пропуска через границу {place} постановление",
+    "tr": "deniz hudut kapıları listesi {place} yönetmelik",
+    "zh": "{place} 对外开放 海港 口岸 名单 法规",
+    "ja": "{place} 開港 指定 港 出入国 政令",
+    "ko": "{place} 지정 항만 출입국 법령",
+    "id": "daftar tempat pemeriksaan imigrasi pelabuhan {place} peraturan",
+    "th": "ด่านตรวจคนเข้าเมืองทางทะเล {place} ประกาศ",
+    "vi": "danh sách cửa khẩu cảng biển {place} nghị định",
+}
+
+
 # A candidate that is a designating list has its own fetch slot, ahead of generic pages
 # (run 20261104-125841-ac33e9: search returned Annex 4 and the Orden INT, and
 # ``_best_per_domain`` dropped both, one page per domain, before the fetch queue).
 # formalities.designating_fetch_slots; at most DESIGNATING_PER_PUBLISHER from one publisher.
 DESIGNATING_FETCH_SLOTS = 6
 DESIGNATING_PER_PUBLISHER = 3
+# A gazette's page for an act can be a stub, the title and a link to the text (Cape Verde's
+# Boletim Oficial: 1,332 chars, the act's 151,226 one link away, with no ".pdf" for the
+# attachment rules to see). Below this many chars, the slot also reads that link.
+GAZETTE_STUB_CHARS = 3000
+# Tavily calls a zone's list-discovery queries may take when SearXNG comes back empty.
+LIST_DISCOVERY_TAVILY_PER_ZONE = 1
 # What a URL says of a designating list, once its separators are spaces and accents gone.
 _DESIGNATING_URL = re.compile(
     r"\b(?:points? (?:de )?clearance|clearance points?"
@@ -905,18 +936,21 @@ def designating_list_candidates(official: list[dict], zone: dict | None,
     whitelisted candidates). A rule, not a seed: no URL or port name here.
 
     - found by a list-discovery query (``list_discovery``, the rank in its results) on an
-      official publisher of that list: nothing else tells, because search gives a URL only
-      and "act.php?id=BOE-A-2023-17072" says nothing of Annex V;
+      official publisher of that list (data: territory_ref.schengen_publishers, outside
+      Schengen authority_roles.list_publishers): nothing else tells, because search gives
+      a URL only and "act.php?id=BOE-A-2023-17072" says nothing of Annex V;
     - or its own URL says it is a designating list ("liste-points-clearance-agrees",
       "postos-habilitados-de-fronteiras").
     The fetch text decides the rest: a candidate is only read, never taken for a list."""
     from app.core.run_rules import get_rule
+    from app.services.authority_roles import list_publishers
     from app.services.territory_ref import schengen_publishers, schengen_state, with_sovereign_iso2
 
     if max_slots is None:
         max_slots = int(get_rule("formalities.designating_fetch_slots", DESIGNATING_FETCH_SLOTS))
     zone = with_sovereign_iso2(zone or {})
-    publishers = schengen_publishers(schengen_state(zone.get("iso2"), zone.get("mrgid")))
+    state = schengen_state(zone.get("iso2"), zone.get("mrgid"))
+    publishers = schengen_publishers(state) if state else list_publishers(zone)
     found = [c for c in official or []
              if (c.get("list_discovery") and _on_publisher(c.get("url"), publishers))
              or _DESIGNATING_URL.search(_url_words(c.get("url")))]
@@ -949,6 +983,26 @@ def border_crossing_queries(zone: dict) -> list[tuple[str, str]]:
             continue
         name = english if lang == "en" or country is None else (_country_name_in(country.name, lang) or english)
         out.append((lang, tpl.format(country=name)))
+    return out
+
+
+def entry_list_queries(zone: dict, exceptions: dict | None = None) -> list[tuple[str, str]]:
+    """(lang, query) for the national list of entry posts of a zone outside Schengen; []
+    for a Schengen zone (border_crossing_queries), for a zone with no place name, and for a
+    zone that already has its list pinned: discovery looks for a list the zone does not
+    have, and on Martinique it only took fetch slots from other pages."""
+    from app.services.territory_ref import schengen_state, with_sovereign_iso2
+    zone = with_sovereign_iso2(zone or {})
+    if schengen_state(zone.get("iso2"), zone.get("mrgid")):
+        return []
+    if any(_DESIGNATING_URL.search(_url_words(c["url"]))
+           for c in seed_url_candidates(zone, exceptions)):
+        return []
+    out = []
+    for lang in zone_search_languages(zone):
+        tpl, place = ENTRY_LIST_QUERIES.get(lang), local_place_name(zone, lang)
+        if tpl and place:
+            out.append((lang, tpl.format(place=place)))
     return out
 
 
@@ -2856,11 +2910,33 @@ async def _search_with_fallback(query: str, log) -> tuple[list[dict], str]:
     res = await search_searxng(query, log)
     if res or not _tavily_key():
         return res, "searxng"
+    return await _tavily_for(query, log), "tavily"
+
+
+async def _tavily_for(query: str, log) -> list[dict]:
+    """The Tavily stand-in for an empty SearXNG answer (``site:`` -> ``include_domains``)."""
     domains = _SITE_OP_RE.findall(query)
     plain = " ".join(_FILETYPE_OP_RE.sub(" ", _SITE_OP_RE.sub(" ", query)).split())
     tv = await _tavily_search_safe(plain or query, log, include_domains=domains or None)
     log(f"SearXNG vide → Tavily: {len(tv)} résultat(s) pour « {query[:70]} »")
-    return tv, "tavily"
+    return tv
+
+
+async def _list_discovery_search(queries: list[str], log) -> list[tuple[list[dict], str]]:
+    """``_search_with_fallback`` for the list-discovery queries, with Tavily capped per zone
+    (``tavily.list_discovery_per_zone``): SearXNG answers all of them, then Tavily stands in
+    for the first empty ones only, the zone's language first. Same order as ``queries``."""
+    from app.core.run_rules import get_rule
+    left = int(get_rule("tavily.list_discovery_per_zone", LIST_DISCOVERY_TAVILY_PER_ZONE))
+    answers = await asyncio.gather(*[search_searxng(q, log) for q in queries])
+    out: list[tuple[list[dict], str]] = []
+    for query, res in zip(queries, answers):
+        if not res and left > 0 and _tavily_key():
+            left -= 1
+            out.append((await _tavily_for(query, log), "tavily"))
+        else:
+            out.append((res, "searxng"))
+    return out
 
 
 def _served_by(results: list[dict]) -> str:
@@ -3190,18 +3266,22 @@ async def _find_sources(zone: dict, whitelist: list[str], exceptions: dict, log,
         candidates = _merge_candidates(candidates, *hint_res)
         log(f"requêtes épinglées: {len(hints)} → +{sum(len(r) for r in hint_res)} candidats")
 
-    # Schengen zones: discovery of the list of border crossing points (never a seed).
+    # Discovery of the designating list (never a seed): the list of border crossing points
+    # of a Schengen zone, the national list of entry posts of any other zone.
     bcp = border_crossing_queries(zone)
+    kind, label = "border-crossing", "points de passage frontaliers (Schengen)"
+    if not bcp:
+        bcp = entry_list_queries(zone, exceptions)
+        kind, label = "entry-list", "liste nationale des postes d'entrée"
     if bcp:
-        bcp_out = await asyncio.gather(*[_search_with_fallback(q, log) for _l, q in bcp])
+        bcp_out = await _list_discovery_search([q for _l, q in bcp], log)
         for (qlang, q), (res, engine) in zip(bcp, bcp_out):
-            await _emit_search(engine=engine, lang=f"border-crossing-{qlang}", query=q,
+            await _emit_search(engine=engine, lang=f"{kind}-{qlang}", query=q,
                                n=len(res), results=res, round="classic",
                                **({"fallback_for": "searxng"} if engine == "tavily" else {}))
         candidates = _merge_candidates(candidates, *[
             [dict(c, list_discovery=rank) for rank, c in enumerate(res, 1)] for res, _ in bcp_out])
-        log(f"points de passage frontaliers (Schengen): {len(bcp)} requête(s) → "
-            f"+{sum(len(r) for r, _ in bcp_out)} candidats")
+        log(f"{label}: {len(bcp)} requête(s) → +{sum(len(r) for r, _ in bcp_out)} candidats")
 
     synthesis = None
     grounded_attempted = False
@@ -3509,8 +3589,11 @@ async def _collect_texts(official: list[dict], log, rec=None, max_fetch: int | N
     8 fetches on transport and tax pages, no port authority read). A role counts as
     served only once one of its sources is kept in ``texts``."""
     from app.core.run_rules import get_rule
-    from app.services.authority_roles import ROLE_PRIORITY, role_quotas, roles_of, zone_authorities
+    from app.services.authority_roles import (ROLE_PRIORITY, role_quotas, roles_of, zone_authorities,
+                                              zone_gazettes)
     source_max = int(get_rule("formalities.source_max_chars", SOURCE_MAX_CHARS))
+    gazette_stub = int(get_rule("formalities.gazette_stub_chars", GAZETTE_STUB_CHARS))
+    gazettes = zone_gazettes(zone)
     if max_fetch is None:
         max_fetch = int(get_rule("formalities.max_fetch", MAX_FETCH))
     texts, hashes, used_sources, excerpts = [], {}, [], {}
@@ -3674,6 +3757,22 @@ async def _collect_texts(official: list[dict], log, rec=None, max_fetch: int | N
                     await emit(rec, "depth2", parent=url, url=fu,
                                chars=len(sub["text"]), level=sub["level"])
                     text = (text + "\n" + sub["text"]).strip()
+        # A gazette stub: its act is read in this same slot (not counted in the cap).
+        if res.get("html") and len(res["text"] or "") < gazette_stub and _on_publisher(url, gazettes):
+            act = full_text_link(res["html"], url)
+            if act and act not in seen_urls:
+                seen_urls.add(act)
+                try:
+                    sub = await extract_cascade(act, min_chars=200, log=log)
+                except Exception:
+                    sub = {}
+                if sub.get("text") and not sub.get("blocked"):
+                    log(f"journal officiel: {act[:80]} → {len(sub['text'])} chars")
+                    await emit(rec, "depth2", parent=url, url=act, chars=len(sub["text"]),
+                               level=sub.get("level"), gazette_act=True)
+                    text = (text + "\n" + sub["text"]).strip()
+                else:
+                    log(f"journal officiel: texte non lu, reste la page: {act[:80]}")
         keep_short_pdf = (
             (url or "").lower().endswith(".pdf")
             and list_url_bonus(url) >= 0.45

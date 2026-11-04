@@ -96,10 +96,74 @@ def test_searxng_empty_tavily_runs_the_full_query_set(providers):
     # Grounded search stays the last resort and was not needed.
     assert calls["grounded"] == 0
     searches = [p for s, p in rec.events if s == "search"]
-    assert {p["query"] for p in searches if p.get("fallback_for") == "searxng"} == set(HINTS)
+    # So did the list-discovery query, within tavily.list_discovery_per_zone (1 by default).
+    fallback = set(HINTS) | {q for _lang, q in poe.entry_list_queries(SAINT_LUCIA)}
+    assert len(fallback) == len(HINTS) + 1
+    assert {p["query"] for p in searches if p.get("fallback_for") == "searxng"} == fallback
     summary = [p["engines"] for s, p in rec.events if s == "search_providers"]
-    assert summary and summary[0]["tavily"]["fallback"] == len(HINTS)
+    assert summary and summary[0]["tavily"]["fallback"] == len(fallback)
     assert summary[0]["searxng"]["results"] == 0
+
+
+def _discovery_calls(providers, zone, rules=None):
+    """The Tavily queries of ``zone``'s list discovery, with SearXNG empty for all of them."""
+    calls, answers = providers
+    answers["tavily"] = lambda q, inc: [_hit("https://www.customs.gov.lc/about", "tavily")]
+    queries = [q for _l, q in (poe.border_crossing_queries(zone) or poe.entry_list_queries(zone))]
+    token = bind_rules({"chosen": rules}) if rules else None
+    try:
+        out = asyncio.run(poe._list_discovery_search(queries, lambda m: None))
+    finally:
+        if token is not None:
+            reset_rules(token)
+    assert len(out) == len(queries)
+    return queries, [c["query"] for c in calls["tavily"]], out
+
+
+CV = {"mrgid": 8362, "name": "Cape Verde", "iso2": "CV", "sov_iso2": "CV", "sovereign": "Cape Verde"}
+CANARIES = {"mrgid": 8364, "name": "Canary Islands", "geoname": "Canary Islands",
+            "sov_iso2": "ES", "sovereign": "Spain"}
+
+
+@pytest.mark.parametrize("zone", [CV, CANARIES])
+def test_list_discovery_takes_one_tavily_call_per_zone(providers, zone):
+    queries, tavily, out = _discovery_calls(providers, zone)
+    assert len(queries) == 2
+    assert tavily == queries[:1], "the zone's language goes first"
+    assert [engine for _r, engine in out] == ["tavily", "searxng"]
+    assert out[0][0] and not out[1][0]
+
+
+def test_the_cap_is_a_run_rule(providers):
+    queries, tavily, _ = _discovery_calls(
+        providers, CV, {"tavily.list_discovery_per_zone": {"value": 2}})
+    assert tavily == queries
+
+
+def test_the_cap_can_be_zero(providers):
+    _q, tavily, out = _discovery_calls(providers, CV, {"tavily.list_discovery_per_zone": {"value": 0}})
+    assert tavily == [] and [engine for _r, engine in out] == ["searxng", "searxng"]
+
+
+def test_a_query_searxng_answers_uses_no_tavily_call(providers):
+    calls, answers = providers
+    first = poe.entry_list_queries(CV)[0][1]
+    answers["searxng"] = lambda q: [_hit("https://www.imp.cv/a", "searxng")] if q == first else []
+    answers["tavily"] = lambda q, inc: [_hit("https://www.imp.cv/b", "tavily")]
+    out = asyncio.run(poe._list_discovery_search([q for _l, q in poe.entry_list_queries(CV)],
+                                                 lambda m: None))
+    assert [engine for _r, engine in out] == ["searxng", "tavily"]
+    assert len(calls["tavily"]) == 1
+
+
+def test_the_cap_holds_through_the_search_step(providers):
+    """The whole search step on Cape Verde, SearXNG empty: its two discovery queries take one
+    Tavily call between them."""
+    calls, answers = providers
+    answers["tavily"] = lambda q, inc: [_hit("https://www.imp.cv/about", "tavily")]
+    _find(CV)
+    discovery = {q for _l, q in poe.entry_list_queries(CV)}
+    assert sum(c["query"] in discovery for c in calls["tavily"]) == 1
 
 
 def test_searxng_answering_keeps_tavily_out_of_the_searxng_only_steps(providers):

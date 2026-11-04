@@ -16,6 +16,11 @@ Both lists are country-wide, so a row belongs to a zone only when a port of that
 with known coordinates (WPI, OSM port priors) lies in the zone: "(27) San Sebastián" is the
 Basque port, not San Sebastián de La Gomera, and is never a Canaries row. A row no gazetteer
 confirms is dropped (and listed by ``zone_rows``), never guessed.
+
+One post can be read twice from the same list, as it comes out of the fetch: the two
+parsers both see a line of Annex 4, and the Orden's police-station index repeats a place
+name as if it were a post. A row whose name sits inside one other post of the same list is
+that post, not a new candidate (``fold_contained_rows``).
 """
 from __future__ import annotations
 
@@ -198,11 +203,37 @@ def in_zone(name: str, zone: dict | None) -> tuple[bool, str]:
     return False, "no zone geometry"
 
 
+def _contains(words: list[str], part: list[str]) -> bool:
+    """``part`` is a run of whole words of ``words``, never a piece of a word."""
+    n = len(part)
+    return bool(n) and any(words[i:i + n] == part for i in range(len(words) - n + 1))
+
+
+def fold_contained_rows(rows: list[dict]) -> list[dict]:
+    """The posts of ``rows`` (rows of one list, in one zone), each once, in reading order.
+
+    A row whose name (``_match_key``) is contained in exactly one other post is folded into
+    it: it makes no candidate of its own and is kept in the post's ``folded``. Longer names
+    go first, so the post is found whichever row was read first. A row contained in several
+    posts could be any of them, so it stays a row of its own: never guessed."""
+    words = [_match_key(r["name"]).split() for r in rows]
+    posts: list[int] = []
+    folded: dict[int, list[dict]] = {}
+    for i in sorted(range(len(rows)), key=lambda k: (-len(words[k]), k)):
+        hosts = [p for p in posts if _contains(words[p], words[i])]
+        if len(hosts) == 1:
+            folded.setdefault(hosts[0], []).append(rows[i])
+        else:
+            posts.append(i)
+    return [{**rows[i], "folded": folded[i]} if i in folded else rows[i] for i in sorted(posts)]
+
+
 def zone_rows(text: str, zone: dict | None, state_name: str | None = None
               ) -> tuple[list[dict], list[dict]]:
     """Rows of a border-crossing-point list that belong to ``zone``, and the rows dropped
-    (with why). Annex 4 items of ``state_name``'s sea borders and Orden INT posts.
-    -> (kept [{name, row, matched, how}], dropped [{name, row, reason}])."""
+    (with why). Annex 4 items of ``state_name``'s sea borders and Orden INT posts, one row
+    per post (``fold_contained_rows``).
+    -> (kept [{name, row, matched, how, folded?}], dropped [{name, row, reason}])."""
     if not is_border_crossing_list(text):
         return [], []
     rows = (annex4_rows(text, state_name) if state_name else []) + orden_int_rows(text)
@@ -222,7 +253,7 @@ def zone_rows(text: str, zone: dict | None, state_name: str | None = None
         else:
             dropped.append({"name": r["name"], "row": r["row"],
                             "reason": "; ".join(f"{n}: {how}" for n, (_g, how) in verdicts)})
-    return kept, dropped
+    return fold_contained_rows(kept), dropped
 
 
 def zone_state_name(zone: dict | None) -> str | None:
