@@ -139,7 +139,9 @@ def test_clements_gold_for_martinique_on_d7963f():
         "Station-service CAP Ponton N°3": "fuel station",
         "Station CAP DCML Centre de carénage - Baie des Tourelles": "careening station",
         "Brigade de surveillance des douanes Cité des douanes Quartier Raisinier":
-            "customs brigade"}
+            "customs brigade",
+        "Le Robert (Martinique)": v3_certify.NO_POINT_ON_THE_LIST,
+        "Saint-Pierre (Martinique)": v3_certify.NO_POINT_ON_THE_LIST}
     assert all(d["confidence_level"] == "C1" for n, d in names.items() if n not in GOLD_POES
                or n == "Fort-de-France")
     assert names["Le Marin"]["merged_names"] == ["La marina du Marin"]
@@ -391,7 +393,7 @@ def test_the_step_never_certifies_the_commune_name(monkeypatch):
     assert len(docs) == 12
     steps = [s for s, _ in events]
     assert steps.count("clearance_points") == 4 and steps.count("port_merge") == 1
-    assert steps.count("clearance_excluded") == 3
+    assert steps.count("clearance_excluded") == 5
     marin = next(p for s, p in events if s == "clearance_points" and p["poe"] == "Le Marin")
     assert marin["confidence_level"] == "C2" and marin["source"] == URL
     assert [p["judge"] for p in marin["points"]] == ["poe"]

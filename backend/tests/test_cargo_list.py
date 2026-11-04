@@ -68,7 +68,7 @@ def test_the_same_excerpt_off_the_ics_list_is_c2(name, city, row):
 def test_the_llm_ner_agreement_on_the_ics_list_alone_is_not_c2(name, city, row):
     port = _certified(_port(name, city, extraction_agreement=True))
     assert port["confidence_level"] == "C1"
-    assert port["confidence_cap_reason"] == v3_certify.CAP_CARGO_LIST
+    assert port["confidence_cap_reason"] == v3_certify.CAP_NO_ENTRY_CONTEXT
 
 
 def test_two_official_hosts_never_count_the_ics_list_as_entry_context():
@@ -106,5 +106,5 @@ def test_another_document_still_counts_for_a_port_on_the_ics_list():
 
 
 def test_a_judge_poe_with_no_ics_list_among_the_texts_is_untouched():
-    assert not v3_certify._cargo_list_only(_port("Le Robert", "Le Robert"), [], WHITELIST,
-                                           MARTINIQUE)
+    assert not v3_certify._cargo_list_only(_port("Le Robert", "Le Robert", LE_ROBERT), [],
+                                           WHITELIST)

@@ -66,8 +66,11 @@ from app.adapters import evidence_store
 from app.adapters.zetaris import ZetarisClient
 from app.agents import registry_check
 from app.services.poe_confidence import apply_score, listing_role, score_port, zone_confidence_avg
-from app.services.v3_certify import (CAP_NOT_CLEARANCE_POINT, LEVEL_FIELDS, _is_clearance_list,
-                                     attach_confidence_level, clearance_rows, is_official)
+from app.services.v3_certify import (CAP_NO_CLEARANCE_POINT, CAP_NOT_CLEARANCE_POINT,
+                                     LEVEL_FIELDS, NOT_A_MARINA_OR_OFFICE,
+                                     attach_confidence_level, clearance_point_exclusion,
+                                     clearance_rows, commune_key, communes_without_points,
+                                     is_clearance_list, is_official)
 from app.services.poe_zone_label import (
     keep_extracted_in_zone, search_polygon_name, serp_place_name,
     zone_qualifier, zone_search_location,
@@ -2191,7 +2194,7 @@ def clearance_list_in_sources(text: str | None, zone: dict) -> bool:
     its rows: a catalogue found next to it is not the zone's list (run 51697e: the arrêté du
     18 juillet 2023 gave six names, and Martinique lost its four PoEs)."""
     whitelist = registry_whitelist(zone)
-    return any(is_official(url, whitelist) and _is_clearance_list(registry_check._tokens(body))
+    return any(is_official(url, whitelist) and is_clearance_list(registry_check._tokens(body))
                for url, body in registry_check.source_texts_from_context(text).items())
 
 
@@ -3911,16 +3914,25 @@ def only_area_hits(geo: dict, name: str | None) -> bool:
                or (c.get("geonames_fcode") or "").upper() in _AREA_GN_CODES for c in cands)
 
 
-def _excluded_row(doc: dict, row: dict) -> dict:
-    """A row of the list that is not a clearance point: kept under its own name, at C1 at
-    most, with what the list says of it."""
+def _excluded_row(doc: dict, row: dict, cap: str = CAP_NOT_CLEARANCE_POINT) -> dict:
+    """A row of the list that is not a clearance point, or a record named after a commune
+    with none: kept under its own name, at C1 at most, with what the list says of it."""
     out = dict(doc, clearance_excluded={"reason": row["exclusion"], "commune": row["commune"],
                                         "quote": row["quote"], "source": row["url"]})
     level = doc.get("confidence_level")
     if _LEVEL_RANK.get(level or "", -1) > _LEVEL_RANK["C1"]:
         out.update(confidence_level="C1", confidence_downgraded_from=level,
-                   confidence_cap_reason=CAP_NOT_CLEARANCE_POINT)
+                   confidence_cap_reason=cap)
     return out
+
+
+def _is_bare_place(doc: dict) -> bool:
+    """The record's name is a place and nothing else: no facility word, no kind of row, and
+    no other commune in ``city`` (a catalogue's name has none)."""
+    name = re.sub(r"\(.*?\)", " ", doc.get("name") or "")
+    return (not _port_name_parts(name)[2]
+            and clearance_point_exclusion(name) == NOT_A_MARINA_OR_OFFICE
+            and (not doc.get("city") or commune_key(doc["city"]) == commune_key(name)))
 
 
 def group_clearance_points(docs: list[dict], texts: list[dict] | None, zone: dict | None = None,
@@ -3936,8 +3948,12 @@ def group_clearance_points(docs: list[dict], texts: list[dict] | None, zone: dic
 
     Only marinas and capitaineries are points. Any other row of the list stays a record of
     its own at C1 at most, with ``clearance_excluded``, and adds nothing to its commune: a
-    commune with no point is no PoE. Returns (docs, [(PoE, its points)])."""
-    rows = clearance_rows(docs, texts, zone, whitelist)
+    commune with no point is no PoE, and neither is a record named after it, whatever its
+    other sources (``v3_certify.communes_without_points``).
+    Returns (docs, [(PoE, its points)])."""
+    places = [i for i, doc in enumerate(docs or []) if _is_bare_place(doc)]
+    rows = clearance_rows(docs, texts, zone, whitelist, places)
+    no_point = communes_without_points(docs or [], rows, texts, zone, places)
     groups: dict[tuple, list[int]] = {}
     for i, row in sorted(rows.items(), key=lambda kv: kv[1]["position"]):
         if not row["exclusion"]:
@@ -3945,7 +3961,9 @@ def group_clearance_points(docs: list[dict], texts: list[dict] | None, zone: dic
     first = {members[0]: members for members in groups.values()}
     out, grouped = [], []
     for i, doc in enumerate(docs or []):
-        if i not in rows:
+        if i in no_point:
+            out.append(_excluded_row(doc, no_point[i], CAP_NO_CLEARANCE_POINT))
+        elif i not in rows:
             out.append(doc)
         elif rows[i]["exclusion"]:
             out.append(_excluded_row(doc, rows[i]))
