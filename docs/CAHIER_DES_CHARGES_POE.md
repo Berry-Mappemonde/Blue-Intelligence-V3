@@ -415,6 +415,7 @@ The certification ladder C0–C4 is separate from the score above (`PLAN-V3.md`,
 - **A customs office's name, or a study describing its scope.** Examples are "ALFÂNDEGA DA PRAIA" in the title of the WCO clearance-time study, and "… até a saída efetiva da mercadoria no Porto da Praia" in its scope.
 - **A study as source.** Studies are excluded the way tariff and port-dues schedules are (`STUDY_TERMS`, `TARIFF_TERMS`). If such a word is within 200 characters of the mention, or on its line, the mention is not entry context. The judge's excerpt is treated the same way: a "poe" verdict on an excerpt that sits in a study does not lift the port. The port stays C1 with the reason "evidence from a study, not a designation".
 - **"Report" does not count as a study.** In a customs act it is a verb ("report to the proper officer").
+- **The douane ICS list.** The *Liste des bureaux points d'entrée français dans l'Union européenne* lists the cargo offices of the Import Control System. It is a cargo-only document, so like tariff schedules and studies it can never give a port C2, judge verdict included (`v3_certify.is_cargo_list`, cap `CAP_CARGO_LIST`). Its title is far from its rows, so the document is recognised as a whole, from the head of its text or its URL, not by a word near the mention. Le Robert and Saint-Pierre are rows of it ("Le Robert (Martinique) Fort-de-France port FR006340 Maritime (P) Routier (R)"), and they stay C1 through this rule. Evidence from another document is read as usual.
 
 **A zone, territory or sovereign name is never a port-name variant.** "Martinique" in "Fort-de-France (Martinique)" names the zone, so a sentence about the region of Martinique is not evidence for Fort-de-France. The names covered are:
 
@@ -423,6 +424,38 @@ The certification ladder C0–C4 is separate from the score above (`PLAN-V3.md`,
 - the zone's own names, such as the VLIZ name "Cape Verde".
 
 A port whose whole name is the zone's name keeps it ("Gibraltar", "Monaco").
+
+### 10.2 One port, several clearance points
+
+**Several clearance points in one port are one PoE with a list of clearance points, not separate PoEs** (Clément, 3 Nov 2026). A skipper enters one port, so the map shows one PoE.
+
+**Only marinas and capitaineries / harbour offices on the douane *liste des points de clearance agréés* count as clearance points** (Clément's ground truth, 3 Nov 2026). The following are on the list and are not clearance points: cybercafés, snack bars, shops, the tourist office, the customs brigade, fuel stations and careening stations.
+
+- **A commune is a PoE only if it has at least one clearance point.** A row that is not one never makes its commune a PoE.
+- **A row that is not a clearance point never reaches C2**, whatever the judge says (`v3_certify.clearance_point_exclusion`, cap `CAP_NOT_CLEARANCE_POINT`). It stays a record under its own name, at C1 at most, with `clearance_excluded`: `{reason, commune, quote, source}`. It adds nothing to its commune's PoE and stays out of the same-port merge.
+- **The row's name decides.** A kind that is excluded wins over a marina in the name ("Restaurant Barracuda Marina Rivière Sens"), and a row that names neither is not a clearance point ("L'alsace en Kay").
+
+Clément's gold for Martinique:
+
+| | Place | Why |
+|---|---|---|
+| PoE | Le François | Pointe Bateau |
+| PoE | Le Marin | capitainerie. Station-service CAP Ponton N°3 is a fuel station, so it is not one of its points |
+| PoE | Trois-Îlets | Pointe du Bout |
+| PoE | Fort-de-France | Étang Z'Abricots marina |
+| Not a PoE | Trinité | customs brigade |
+| Not a PoE | Saint-Pierre | tourist office and shop |
+| Not a PoE | Le Robert | cargo, ICS only |
+| Not a PoE | Baie des Tourelles | careening station |
+
+The rule, in run mode, after the judge and the evidence (`poe_pipeline.group_clearance_points`, `v3_certify.clearance_rows`):
+
+- **Clearance points of one designating list under one commune become one PoE named after the commune**, also when the commune has a single point (Le François, Trois-Îlets).
+- **The PoE lists its points** in `clearance_points`: `[{name, quote, source}]`, with the row as the list writes it and the list's URL.
+- **The PoE takes the best level and evidence of its points**: level, judge verdict and GPS of the best point. It is not certified again, because the rows were judged and the commune's name was not.
+- **The commune is the one the list gives, not a distance and not the record's `city`.** Points are commune-level, and a reader can get the `city` wrong: Étang Z'abricots came back as "Le Lamentin", and the list has it under Fort-de-France. A table reaches us as flat text with the commune once before its rows, so a row belongs to the nearest commune above it, in the zone's own section.
+- **A designating list here** is an official source of the zone that says "point(s) de clearance" or "clearance point(s)".
+- **Rows of different communes or different documents stay apart**, unless the same-port merge joins them (`formalities.port_merge_km`): "Le Marin" and "La marina du Marin" do merge, "Fort-de-France" and "Fort-de-France (Martinique)" do not.
 
 Listing control (outside extraction):
 
@@ -705,7 +738,7 @@ Compare = listing-control (`coverage`, `noise`, `confident`, `listing_only`, `ru
 |------------|------------|
 | `poe_runs` | one run (label, variant, code fingerprint, progress) |
 | `poe_run_zones` | result of **one** EEZ in **one** run |
-| `poe_run_ports` | one extracted port or one enriched seed, tied to `run_id` |
+| `poe_run_ports` | one extracted port or one enriched seed, tied to `run_id`. A port with several clearance points carries them in `clearance_points`; a row of the list that is not one carries `clearance_excluded` (§10.2) |
 | `poe_seed_ports` | one persisted seed of the workshop (union + judgments). `wrote_poe_ports: false` |
 | `poe_run_events` | journal of a micro-step (search, fetch, judge, BU catalogue…) |
 | `poe_listing_review` | review queue (contradiction, run only, listing only, ambiguous) |

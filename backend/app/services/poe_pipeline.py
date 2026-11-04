@@ -66,7 +66,8 @@ from app.adapters import evidence_store
 from app.adapters.zetaris import ZetarisClient
 from app.agents import registry_check
 from app.services.poe_confidence import apply_score, listing_role, score_port, zone_confidence_avg
-from app.services.v3_certify import LEVEL_FIELDS, attach_confidence_level
+from app.services.v3_certify import (CAP_NOT_CLEARANCE_POINT, LEVEL_FIELDS,
+                                     attach_confidence_level, clearance_rows)
 from app.services.poe_zone_label import (
     keep_extracted_in_zone, search_polygon_name, serp_place_name,
     zone_qualifier, zone_search_location,
@@ -3727,7 +3728,10 @@ def same_port(a: dict, b: dict, max_km: float) -> bool:
     and, when both are placed, no farther apart than ``max_km``. Two different facilities
     of one commune never merge, even on the same commune point: their cores differ
     (Baie des Tourelles careening station / Étang Z'Abricot marina), or both name a
-    facility and not the same one ("Port du Marin" / "Marina du Marin")."""
+    facility and not the same one ("Port du Marin" / "Marina du Marin"). A row that is not
+    a clearance point stays on its own (§10.2): it never joins, or stands for, a port."""
+    if a.get("clearance_excluded") or b.get("clearance_excluded"):
+        return False
     fa, ca, wa = _port_name_parts(a.get("name") or "")
     fb, cb, wb = _port_name_parts(b.get("name") or "")
     if not fa or not fb:
@@ -3752,10 +3756,11 @@ def _coords_of(doc: dict) -> tuple[float, float] | None:
 
 
 def _evidence_rank(doc: dict) -> tuple:
-    """Best record of a merged port: certification level, judge "poe", official
-    sources, a placed GPS, then the V2 score."""
+    """Best record of a merged port: certification level, judge "poe", a port named by
+    its clearance list, official sources, a placed GPS, then the V2 score."""
     judge = (doc.get("judge") or {}).get("verdict")
     return (_LEVEL_RANK.get(doc.get("confidence_level") or "", -1), judge == "poe",
+            bool(doc.get("clearance_points")),
             len(doc.get("source_urls") or []), _coords_of(doc) is not None,
             float(doc.get("confidence") or 0))
 
@@ -3885,6 +3890,99 @@ def only_area_hits(geo: dict, name: str | None) -> bool:
         return False
     return all((c.get("osm_type") or "").lower() in _AREA_OSM_TYPES
                or (c.get("geonames_fcode") or "").upper() in _AREA_GN_CODES for c in cands)
+
+
+def _excluded_row(doc: dict, row: dict) -> dict:
+    """A row of the list that is not a clearance point: kept under its own name, at C1 at
+    most, with what the list says of it."""
+    out = dict(doc, clearance_excluded={"reason": row["exclusion"], "commune": row["commune"],
+                                        "quote": row["quote"], "source": row["url"]})
+    level = doc.get("confidence_level")
+    if _LEVEL_RANK.get(level or "", -1) > _LEVEL_RANK["C1"]:
+        out.update(confidence_level="C1", confidence_downgraded_from=level,
+                   confidence_cap_reason=CAP_NOT_CLEARANCE_POINT)
+    return out
+
+
+def group_clearance_points(docs: list[dict], texts: list[dict] | None, zone: dict | None = None,
+                           whitelist: list[str] | None = None
+                           ) -> tuple[list[dict], list[tuple[dict, list[dict]]]]:
+    """Several clearance points in one port are one PoE (Clément, 3 Nov 2026).
+
+    The clearance points of one list under one commune (``v3_certify.clearance_rows``) become
+    one record named after the commune, with ``clearance_points`` = [{name, quote, source}]
+    in the list's order. It takes the best point's level, judge, evidence and GPS
+    (``_evidence_rank``), with no new certification: the row is what was judged, and the
+    commune's name is not. Points of different documents or communes stay apart.
+
+    Only marinas and capitaineries are points. Any other row of the list stays a record of
+    its own at C1 at most, with ``clearance_excluded``, and adds nothing to its commune: a
+    commune with no point is no PoE. Returns (docs, [(PoE, its points)])."""
+    rows = clearance_rows(docs, texts, zone, whitelist)
+    groups: dict[tuple, list[int]] = {}
+    for i, row in sorted(rows.items(), key=lambda kv: kv[1]["position"]):
+        if not row["exclusion"]:
+            groups.setdefault((row["url"], row["commune_key"]), []).append(i)
+    first = {members[0]: members for members in groups.values()}
+    out, grouped = [], []
+    for i, doc in enumerate(docs or []):
+        if i not in rows:
+            out.append(doc)
+        elif rows[i]["exclusion"]:
+            out.append(_excluded_row(doc, rows[i]))
+        elif i in first:
+            points = [docs[m] for m in first[i]]
+            poe = dict(max(points, key=_evidence_rank))
+            commune = rows[i]["commune"]
+            poe.update(
+                name=commune, city=commune,
+                dedup_key=f"{doc.get('mrgid')}:{normalize_name(commune)}",
+                clearance_points=[{"name": docs[m].get("name"), "quote": rows[m]["quote"],
+                                   "source": rows[m]["url"]} for m in first[i]],
+                source_urls=list(dict.fromkeys(
+                    u for p in points for u in p.get("source_urls") or [])))
+            names = [n for p in points for n in p.get("merged_names") or []]
+            if names:
+                poe["merged_names"] = list(dict.fromkeys(names))
+            out.append(poe)
+            grouped.append((poe, points))
+    return out, grouped
+
+
+async def _group_clearance_points(zone: dict, docs: list[dict], raw: str,
+                                  used_sources: list[dict], whitelist: list[str], log,
+                                  rec=None) -> list[dict]:
+    """Run mode, after the judge and the evidence, which read each row by its name: one PoE
+    per commune of a clearance list, then #47's merge on the commune's name ("Le Marin" /
+    "La marina du Marin"). The kept record has the best level, so none is certified again."""
+    from app.core.run_rules import get_rule
+    docs, grouped = group_clearance_points(docs, certify_texts(raw, used_sources), zone, whitelist)
+    for poe, points in grouped:
+        log(f"  ⚓ points de clearance: {poe['name']} ({poe.get('confidence_level')}) ← "
+            f"{', '.join(p.get('name') or '?' for p in points)}")
+        await emit(rec, "clearance_points", poe=poe.get("name"),
+                   confidence_level=poe.get("confidence_level"),
+                   source=poe["clearance_points"][0]["source"],
+                   points=[{"name": p.get("name"), "confidence_level": p.get("confidence_level"),
+                            "judge": (p.get("judge") or {}).get("verdict")} for p in points])
+    for doc in docs:
+        if doc.get("clearance_excluded"):
+            log(f"  ⚓ pas un point de clearance: {doc.get('name')} "
+                f"({doc['clearance_excluded']['reason']})")
+            await emit(rec, "clearance_excluded", name=doc.get("name"),
+                       confidence_level=doc.get("confidence_level"),
+                       **doc["clearance_excluded"])
+    if not grouped:
+        return docs
+    docs, merges = merge_same_ports(docs, float(get_rule("formalities.port_merge_km",
+                                                         PORT_MERGE_KM)))
+    for keep, rest in merges:
+        log(f"  ⚓ fusion: {keep['name']} ← {', '.join(o.get('name') or '?' for o in rest)} "
+            f"(même port, meilleure preuve gardée)")
+        await emit(rec, "port_merge", kept=keep.get("name"),
+                   merged=[o.get("name") for o in rest],
+                   confidence_level=keep.get("confidence_level"))
+    return docs
 
 
 async def _extract_and_geocode(zone: dict, context: str, used_sources: list[dict], log,
@@ -4732,6 +4830,10 @@ async def generate_zone_poe(db, mrgid: int, logger=None, force: bool = False,
         # the run pipeline and /api/poe/verify, which read ports from Zetaris.
         await _store_evidence(db, zone, docs, raw, used_sources, log, rec, run=run,
                               whitelist=whitelist)
+
+        if run is not None:
+            docs = await _group_clearance_points(zone, docs, raw, used_sources, whitelist,
+                                                 log, rec)
 
         # 5. Write: confidence lives on each port, no longer a zone buffer.
         status = "ia" if docs else "erreur"

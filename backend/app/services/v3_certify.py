@@ -39,6 +39,8 @@ LEVEL_FIELDS = ("confidence_level", "confidence_downgraded_from", "quote_verifie
 CAP_NOT_IN_ZONE = "evidence not attributable to zone"
 CAP_NO_ENTRY_CONTEXT = "no per-port port-of-entry context"
 CAP_NOT_DESIGNATING = "evidence from a study, not a designation"
+CAP_NOT_CLEARANCE_POINT = "row of a clearance list that is not a marina or harbour office"
+CAP_CARGO_LIST = "evidence from the cargo ICS list, not a designation"
 _RANK = {name: i for i, name in enumerate(LEVELS)}
 
 GEO_AGREE_KM = 0.5
@@ -309,19 +311,37 @@ STUDY_TERMS = (
     "studio di", "studie",
 )
 NOT_DESIGNATING_TERMS = TARIFF_TERMS + STUDY_TERMS
+# The douane ICS list, "Liste des bureaux points d'entrée français dans l'Union européenne":
+# cargo offices of the Import Control System, not yacht entry. Le Robert and Saint-Pierre are
+# rows of it and no PoE (Clément's gold, §10.1). Its title is far from its rows, so unlike
+# tariff and study wording this is read per document, from the head of the text or the URL.
+CARGO_LIST_TITLES = ("liste des bureaux points d'entrée",)
+CARGO_LIST_URLS = ("ics-liste-points-d-entree",)
+CARGO_TITLE_CHARS = 300
+
+
+def is_cargo_list(item: Mapping) -> bool:
+    """The document is the cargo ICS list: it can never give C2, judge verdict included."""
+    from app.agents import registry_check as rc
+
+    body = item.get("text")
+    return (any(u in (item.get("url") or "").lower() for u in CARGO_LIST_URLS)
+            or (isinstance(body, str)
+                and _has_term(rc._tokens(body[:CARGO_TITLE_CHARS]), CARGO_LIST_TITLES)))
+
+
+def _official_items(texts: Sequence[Mapping] | None,
+                    whitelist: Sequence[str] | None) -> list[Mapping]:
+    return [item for item in texts or [] if isinstance(item, Mapping)
+            and isinstance(item.get("text"), str) and item["text"].strip()
+            and is_official(item.get("url") or "", whitelist)]
 
 
 def _official_texts(texts: Sequence[Mapping] | None,
                     whitelist: Sequence[str] | None) -> list[str]:
-    """Bodies of the given [{url, text}] whose URL is on the zone's State whitelist."""
-    out = []
-    for item in texts or []:
-        if not isinstance(item, Mapping):
-            continue
-        body = item.get("text")
-        if isinstance(body, str) and body.strip() and is_official(item.get("url") or "", whitelist):
-            out.append(body)
-    return out
+    """Bodies of the given [{url, text}] whose URL is on the zone's State whitelist. The
+    cargo ICS list is left out: nothing it says is evidence of entry."""
+    return [i["text"] for i in _official_items(texts, whitelist) if not is_cargo_list(i)]
 
 
 def _places(port: Mapping, zone: Mapping | None) -> tuple[str, ...]:
@@ -401,6 +421,27 @@ def judge_excerpt_in_study(port: Mapping, texts: Sequence[Mapping] | None,
         if at >= 0:
             return _near_phrase(text, at, at + len(quote), STUDY_TERMS)
     return False
+
+
+def _cargo_list_only(port: Mapping, texts: Sequence[Mapping] | None,
+                     whitelist: Sequence[str] | None, zone: Mapping | None) -> bool:
+    """The cargo ICS list is what would lift this port: the judge's excerpt is found there and
+    in no other official text, or the name is. ``_official_texts`` already keeps the list out
+    of the two-hosts rule; the judge and the LLM∩NER agreement read the fetched texts."""
+    from app.agents.poe_judge import excerpt_verified
+
+    cargo = [i for i in _official_items(texts, whitelist) if is_cargo_list(i)]
+    if not cargo:
+        return False
+    official = _official_texts(texts, whitelist)
+    if judge_outcome(dict(port)) == JUDGE_SUPPORTED:
+        # Located the way the judge verified it: quotes, case and spacing aside.
+        excerpt = port["judge"]["quoted_excerpt"]
+        return (excerpt_verified(excerpt, cargo)
+                and not excerpt_verified(excerpt, [{"text": t} for t in official]))
+    cargo, places = [i["text"] for i in cargo], _places(port, zone)
+    return (bool(all_mentions(port.get("name"), cargo, places))
+            and not all_mentions(port.get("name"), official, places))
 
 
 def _study_only(port: Mapping, texts: Sequence[Mapping] | None,
@@ -515,6 +556,179 @@ def _mention_in_zone(text: str, ns: int, ne: int, own: set[str], other: set[str]
         return chosen[2]
     before = [h for h in hits if h[1] <= ns]
     return bool(before) and before[-1][2]
+
+
+CLEARANCE_LIST_TERMS = ("points de clearance", "point de clearance",
+                        "clearance points", "clearance point")
+CLEARANCE_QUOTE_CHARS = 200
+_COMMUNE_ARTICLE = re.compile(r"^(?:l[ae]s?\s+|l['’])", re.I)
+_PRIVATE_USE = re.compile("[\ue000-\uf8ff]")  # PDF icon glyphs (phone, mail) in the list
+_HOURS = re.compile(r"\d{1,2}h(?:\d{2})?")
+# Clément's ground truth, 3 Nov 2026 (§10.2): only marinas and capitaineries / harbour offices
+# of a clearance list are clearance points. The kinds below are on the list and are not,
+# even when the name has a marina in it ("Restaurant Barracuda Marina Rivière Sens").
+CLEARANCE_POINT_TERMS = ("marina", "capitainerie", "port de plaisance", "bureau du port",
+                         "service portuaire", "harbour office", "harbor office",
+                         "harbour master", "harbor master", "harbourmaster", "harbormaster")
+NOT_CLEARANCE_POINTS = {
+    "cybercafé": ("cyberbase", "cyber base", "cybercafe", "cyber cafe", "cyber"),
+    "snack bar": ("snack", "restaurant"),
+    "shop": ("shipchandler", "ship chandler", "chandler", "boutique", "magasin", "shop",
+             "multiservices"),
+    "tourist office": ("tourisme", "tourist office", "tourist information"),
+    "customs brigade": ("brigade",),
+    "fuel station": ("station service", "station essence", "fuel station", "petrol station"),
+    "careening station": ("carenage", "careening"),
+}
+NOT_A_MARINA_OR_OFFICE = "not a marina or harbour office"
+
+
+def _has_term(tokens, terms: Sequence[str]) -> bool:
+    from app.agents import registry_check as rc
+
+    return any(next(rc._spans(tokens, tuple(t for t, _, _ in rc._tokens(term))), None)
+               for term in terms)
+
+
+def _is_clearance_list(tokens) -> bool:
+    return _has_term(tokens, CLEARANCE_LIST_TERMS)
+
+
+def _zone_sections(text: str, own: set[str], other: set[str]) -> list[tuple[int, int, bool]]:
+    """Territory heads of a list. "Antilles-Guyane" in an office's name opens no section:
+    the head of a section is the territory's own word."""
+    return [h for h in _territory_hits(text, own, other) if text[h[0] - 1:h[0]] != "-"]
+
+
+def _in_zone_section(sections: Sequence[tuple[int, int, bool]], start: int) -> bool:
+    section = [h for h in sections if h[1] <= start]
+    return not section or section[-1][2]
+
+
+def excluded_kind(name) -> str | None:
+    """The kind of row Clément excludes, read from the row's name: "fuel station"."""
+    from app.agents import registry_check as rc
+
+    tokens = rc._tokens(name or "")
+    return next((kind for kind, terms in NOT_CLEARANCE_POINTS.items()
+                 if _has_term(tokens, terms)), None)
+
+
+def clearance_point_exclusion(name) -> str | None:
+    """Why this row of a clearance list is not a clearance point; None when it is one."""
+    from app.agents import registry_check as rc
+
+    kind = excluded_kind(name)
+    if kind or _has_term(rc._tokens(name or ""), CLEARANCE_POINT_TERMS):
+        return kind
+    return NOT_A_MARINA_OR_OFFICE
+
+
+def _row_quote(text: str, start: int, stop: int) -> str:
+    """The row as the list writes it: from its name to the next known row or commune, or
+    to its opening hours when an unread row follows them."""
+    window = text[start:min(stop, start + CLEARANCE_QUOTE_CHARS)]
+    hours = list(_HOURS.finditer(window))
+    if hours and stop > start + CLEARANCE_QUOTE_CHARS:
+        window = window[:hours[-1].end()]
+    return " ".join(_PRIVATE_USE.sub(" ", window).split())
+
+
+def _commune_headings(text: str, tokens, cities: Sequence[str]) -> list[tuple[int, int, tuple, str]]:
+    """(start, end, commune key, commune name) where the list heads a commune. The key
+    leaves out the article, which lists drop ("Trois-ilets" for "Les Trois-Îlets"); the
+    name is the records' spelling, without an article the list does not write."""
+    from app.agents import registry_check as rc
+
+    out = []
+    for city in cities:
+        bare = _COMMUNE_ARTICLE.sub("", city)
+        key = tuple(t for t, _, _ in rc._tokens(bare))
+        spans = list(rc.name_spans(text, tokens, tuple(t for t, _, _ in rc._tokens(city))))
+        name = city
+        if not spans:
+            spans, name = list(rc.name_spans(text, tokens, key)), bare
+        out += [(s, e, key, name) for s, e in spans]
+    return sorted(out)
+
+
+def clearance_rows(ports: Sequence[Mapping], texts: Sequence[Mapping] | None,
+                   zone: Mapping | None = None,
+                   whitelist: Sequence[str] | None = None) -> dict[int, dict]:
+    """{index in ``ports``: {commune, commune_key, url, quote, position, exclusion}} for the
+    ports that are rows of an official clearance list, under a commune that the list heads.
+    ``exclusion``: why the row is not a clearance point (``clearance_point_exclusion``).
+
+    The list gives the commune, not the records: a table reaches us as flat text, with the
+    commune once before its rows, so a row's commune is the nearest heading above it, in
+    the zone's own section. Headings are looked up from the records' ``city`` values. A
+    record's own ``city`` can be wrong (Étang Z'abricots: "Le Lamentin", under
+    Fort-de-France on the list), and only the position counts. A port is read on the first
+    list that has it."""
+    from app.agents import registry_check as rc
+
+    if not ports:
+        return {}
+    cities = list(dict.fromkeys(p.get("city") for p in ports if (p.get("city") or "").strip()))
+    own = zone_terms(ports[0], zone)
+    other = _other_territory_terms(own)
+    found: dict[int, dict] = {}
+    for item in texts or []:
+        url, text = item.get("url") or "", item.get("text")
+        if not isinstance(text, str) or not is_official(url, whitelist):
+            continue
+        tokens = rc._tokens(text)
+        if not _is_clearance_list(tokens):
+            continue
+        heads = _commune_headings(text, tokens, cities)
+        rows = []
+        for i, port in enumerate(ports):
+            name = port.get("name") or ""
+            words = tuple(t for t, _, _ in rc._tokens(name))
+            bare = tuple(t for t, _, _ in rc._tokens(_COMMUNE_ARTICLE.sub("", name)))
+            if i in found or not words or is_name_fragment(name) or any(h[2] == bare for h in heads):
+                continue
+            span = next(rc.name_spans(text, tokens, words), None)
+            if span:
+                rows.append((span[0], span[1], i))
+        sections = _zone_sections(text, own, other)
+        for start, end, i in sorted(rows):
+            if not _in_zone_section(sections, start):
+                continue
+            floor = max([h[1] for h in sections if h[1] <= start], default=0)
+            above = [h for h in heads if floor <= h[0] and h[1] <= start
+                     and not any(r[0] <= h[0] and h[1] <= r[1] for r in rows)]
+            if not above:
+                continue
+            _, _, key, name = above[-1]
+            stop = min([s for s in [r[0] for r in rows] + [h[0] for h in heads + sections]
+                        if s >= end] or [len(text)])
+            found[i] = {"commune": name, "commune_key": key, "url": url, "position": start,
+                        "quote": _row_quote(text, start, stop),
+                        "exclusion": clearance_point_exclusion(ports[i].get("name"))}
+    return found
+
+
+def _is_excluded_row(port: Mapping, texts: Sequence[Mapping] | None,
+                     whitelist: Sequence[str] | None, zone: Mapping | None) -> bool:
+    """A kind Clément excludes, on a clearance list, in the zone's section. Read from the
+    name alone: a row needs no commune for this, so a record without one is capped too."""
+    from app.agents import registry_check as rc
+
+    name = port.get("name")
+    if not excluded_kind(name):
+        return False
+    own = zone_terms(port, zone)
+    other = _other_territory_terms(own)
+    words = tuple(t for t, _, _ in rc._tokens(name))
+    for text in _official_texts(texts, whitelist):
+        tokens = rc._tokens(text)
+        if _is_clearance_list(tokens):
+            sections = _zone_sections(text, own, other)
+            if any(_in_zone_section(sections, start)
+                   for start, _ in rc.name_spans(text, tokens, words)):
+                return True
+    return False
 
 
 def geo_in_zone(port: Mapping) -> bool:
@@ -667,6 +881,33 @@ def _cap_zone(result: dict, port: dict, whitelist: Sequence[str] | None,
     return out
 
 
+def _cap_cargo_list(result: dict, port: dict, whitelist: Sequence[str] | None,
+                    texts: Sequence[Mapping] | None, zone: Mapping | None) -> dict:
+    """C2+ that rests on the cargo ICS list goes down to C1, whatever the judge said."""
+    lvl = result["confidence_level"]
+    if _RANK[lvl] <= _RANK["C1"] or not _cargo_list_only(port, texts, whitelist, zone):
+        return result
+    out = dict(result)
+    out["confidence_level"] = "C1"
+    out.setdefault("downgraded_from", lvl)
+    out["confidence_cap_reason"] = CAP_CARGO_LIST
+    return out
+
+
+def _cap_clearance_row(result: dict, port: dict, whitelist: Sequence[str] | None,
+                       texts: Sequence[Mapping] | None, zone: Mapping | None) -> dict:
+    """C2+ on a row that is not a clearance point goes down to C1, whatever the judge said
+    (Clément, 3 Nov 2026, §10.2)."""
+    lvl = result["confidence_level"]
+    if _RANK[lvl] <= _RANK["C1"] or not _is_excluded_row(port, texts, whitelist, zone):
+        return result
+    out = dict(result)
+    out["confidence_level"] = "C1"
+    out.setdefault("downgraded_from", lvl)
+    out["confidence_cap_reason"] = CAP_NOT_CLEARANCE_POINT
+    return out
+
+
 def _cap(result: dict, port: dict) -> dict:
     """A "not_poe" verdict contradicts the evidence: the level goes down to C1."""
     if judge_outcome(port) != JUDGE_CONTRADICTED:
@@ -743,7 +984,8 @@ def assess_port(port: dict, *, whitelist: Sequence[str] | None = None,
                 texts: Sequence[Mapping] | None = None,
                 zone: Mapping | None = None) -> dict:
     """Map a prototype entity or a V2 scored port, then apply the quote check and the
-    caps: judge "not_poe" -> C1, evidence not attributable to this zone -> C1.
+    caps: judge "not_poe" -> C1, evidence not attributable to this zone -> C1, evidence from
+    the cargo ICS list -> C1, a row of a clearance list that is not a clearance point -> C1.
 
     texts: the zone's fetched documents [{url, text}] (only whitelisted URLs are read),
     used for the per-port entry context and the row/section zone check. zone: the VLIZ
@@ -761,7 +1003,9 @@ def assess_port(port: dict, *, whitelist: Sequence[str] | None = None,
         before = level(entity)
         checked = _with_verified_quotes(entity, pages)
         result = _cap(_pack(before, level(checked), checked), port)
-    return _cap_zone(result, port, whitelist, texts, zone)
+    result = _cap_zone(result, port, whitelist, texts, zone)
+    result = _cap_cargo_list(result, port, whitelist, texts, zone)
+    return _cap_clearance_row(result, port, whitelist, texts, zone)
 
 
 def level_from_v2(port: dict, *, whitelist: Sequence[str] | None = None,
@@ -773,8 +1017,9 @@ def level_from_v2(port: dict, *, whitelist: Sequence[str] | None = None,
     A whitelisted (State) host is required for C1+. An LLM-only reading (single extractor,
     or two LLM readers) and a catalogue-only port never go above C1. A judge "poe"
     with excerpt_verified, an LLM extraction with LLM∩NER agreement, or two official
-    hosts plus a per-port entry context can; a judge "not_poe" caps at C1, and so does
-    evidence not attributable to this zone. A name fragment is C0.
+    hosts plus a per-port entry context can; a judge "not_poe" caps at C1, and so do
+    evidence not attributable to this zone, evidence from the cargo ICS list and a
+    clearance-list row that is not a clearance point. A name fragment is C0.
     `human == "confirmed"` lifts only C3 to C4.
     """
     return assess_port(port, whitelist=whitelist, pages=pages, texts=texts,
