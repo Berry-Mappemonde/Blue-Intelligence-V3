@@ -11,6 +11,9 @@ Per zone and overall:
   - C2 recall: gold PoEs matched by a C2+ run port / gold PoEs;
   - any-level recall: gold PoEs matched by a run port at any level / gold PoEs;
   - wrong C2s: C2+ run ports that match a rejected name, with their quote;
+  - C2 via a point, unproven (``c2_via_point_unproven``, also counted as wrong C2s): a C2+
+    record that matches a gold PoE only through one of its clearance-point names (#60),
+    when the evidence that gave the C2 is not that point's row (``_point_proof``);
   - missed: gold PoEs no run port matches;
   - C1 noise: run ports below C2 that match a rejected name;
   - unmatched: run ports that match no gold entry, or more than one (never guessed).
@@ -184,8 +187,13 @@ def run_port(doc: dict) -> dict:
     judge = doc.get("judge") or {}
     quote = (judge.get("quoted_excerpt") or next((c.get("quote") for c in cps if c.get("quote")), None)
              or doc.get("best_evidence_quote") or "")
+    own = [doc.get("name")] + list(doc.get("merged_names") or [])
     return {"mrgid": int(doc.get("mrgid")), "name": doc.get("name"),
             "names": [n for n in dict.fromkeys(names) if n],
+            "own_names": [n for n in dict.fromkeys(own) if n],
+            "points": [{"name": c.get("name"), "quote": c.get("quote") or ""}
+                       for c in cps if c.get("name")],
+            "excerpt": judge.get("quoted_excerpt") or "",
             "level": doc.get("confidence_level") or doc.get("level"),
             "quote": quote, "url": doc.get("best_evidence_url"),
             "judge": judge.get("verdict") or doc.get("judge_verdict")}
@@ -205,6 +213,32 @@ def ports_from_csv(path: str | Path) -> list[dict]:
                 "best_evidence_quote": row.get("best_evidence_quote") or "",
                 "judge_verdict": row.get("judge_verdict") or None}))
     return out
+
+
+def _point_proof(p: dict, g: dict, index: "_GoldIndex") -> tuple[bool, list[str], str]:
+    """For a C2 record that matches the gold PoE ``g`` only through clearance points:
+    (proven, the ✅ points, why). Proven when the evidence that gave the C2 is a ✅ point's
+    row. A row lifts nothing alone (#52), so that evidence is the judge's verified "poe"
+    excerpt, which #50's grouping copies from the best point. It is that ✅ point's row when
+    it names the point, or, naming no point of the record, when it lies in that point's quote
+    only."""
+    points = p.get("points") or []
+    ok = [pt for pt in points if g in index._poe_hits([pt["name"]])]
+    names = [pt["name"] for pt in ok]
+    if (p.get("judge") or "") != "poe" or not p.get("excerpt"):
+        return False, names, "no judge \"poe\" on a row"
+    ex = name_key(p["excerpt"])
+    if any(name_key(pt["name"]) and name_key(pt["name"]) in ex for pt in ok):
+        return True, names, "judge excerpt names the point"
+    other = [pt for pt in points if pt not in ok]
+    named = [pt["name"] for pt in other if name_key(pt["name"]) and name_key(pt["name"]) in ex]
+    if named:
+        return False, names, f"judge excerpt is the row of {', '.join(named)}"
+    in_ok = any(ex and ex in name_key(pt["quote"]) for pt in ok)
+    in_other = any(ex and ex in name_key(pt["quote"]) for pt in other)
+    if in_ok and not in_other:
+        return True, names, "judge excerpt lies in the point's row"
+    return False, names, "judge excerpt is not the point's row"
 
 
 def _is_c2(level: str | None) -> bool:
@@ -231,7 +265,7 @@ def score_ports(ports: list[dict], gold: dict, aliases: dict | None = None) -> d
         found_any: set[str] = set()
         found_c2: set[str] = set()
         c2_right = c2_judged = 0
-        wrong_c2, c1_noise, unmatched = [], [], []
+        wrong_c2, c1_noise, unmatched, unproven = [], [], [], []
         for p in by_zone.get(mrgid, []):
             g, candidates = index.match(p["names"])
             if g is None:
@@ -240,7 +274,20 @@ def score_ports(ports: list[dict], gold: dict, aliases: dict | None = None) -> d
                 continue
             if g["kind"] == "poe":
                 found_any.add(g["name"])
-                if _is_c2(p["level"]):
+                via_point = g not in index._poe_hits(p.get("own_names") or p["names"][:1])
+                if _is_c2(p["level"]) and via_point:
+                    # #60: a ✅ clearance point beats the record's own rejected name. The C2
+                    # counts only if it rests on that point's row (_point_proof).
+                    proven, points, why = _point_proof(p, g, index)
+                    c2_judged += 1
+                    if proven:
+                        found_c2.add(g["name"])
+                        c2_right += 1
+                    else:
+                        unproven.append({"name": p["name"], "level": p["level"], "gold": g["name"],
+                                         "points": points, "quote": p.get("excerpt") or p["quote"],
+                                         "url": p["url"], "reason": why})
+                elif _is_c2(p["level"]):
                     found_c2.add(g["name"])
                     c2_right += 1
                     c2_judged += 1
@@ -260,6 +307,7 @@ def score_ports(ports: list[dict], gold: dict, aliases: dict | None = None) -> d
             "c2_recall": _ratio(len(found_c2), n_poe),
             "any_level_recall": _ratio(len(found_any), n_poe),
             "wrong_c2": wrong_c2,
+            "c2_via_point_unproven": unproven,
             "missed": [n for n in poe_names if n not in found_any],
             "c1_noise": c1_noise,
             "unmatched": unmatched,
@@ -277,7 +325,9 @@ def score_ports(ports: list[dict], gold: dict, aliases: dict | None = None) -> d
             "c2_precision": _ratio(totals["c2_right"], totals["c2_judged"]),
             "c2_recall": _ratio(totals["c2_found"], totals["poe"]),
             "any_level_recall": _ratio(totals["any_found"], totals["poe"]),
-            "wrong_c2": sum(len(z["wrong_c2"]) for z in zones_out),
+            # a C2 via a ✅ clearance point that doesn't rest on its row is a wrong C2 too
+            "wrong_c2": sum(len(z["wrong_c2"]) + len(z["c2_via_point_unproven"]) for z in zones_out),
+            "c2_via_point_unproven": sum(len(z["c2_via_point_unproven"]) for z in zones_out),
             "missed": sum(len(z["missed"]) for z in zones_out),
             "c1_noise": sum(len(z["c1_noise"]) for z in zones_out),
             "unmatched": sum(len(z["unmatched"]) for z in zones_out),
@@ -322,6 +372,9 @@ def format_report(score: dict) -> str:
                      f"C2 recall {r(z['c2_recall'])}, any-level recall {r(z['any_level_recall'])}")
         for w in z["wrong_c2"]:
             lines.append(f"  WRONG C2  {w['name']} = gold not_poe {w['gold']!r}  quote: {w['quote'][:160]!r}")
+        for u in z.get("c2_via_point_unproven") or []:
+            lines.append(f"  C2 UNPROVEN {u['name']} = gold {u['gold']!r} via {', '.join(u['points'])}: "
+                         f"{u['reason']}  quote: {(u['quote'] or '')[:160]!r}")
         for m in z["missed"]:
             lines.append(f"  MISSED    {m}")
         for c in z["c1_noise"]:
@@ -345,6 +398,9 @@ def summary_view(score: dict) -> dict:
             "any_level_recall": z["any_level_recall"],
             "wrong_c2": [{"name": w["name"], "gold": w["gold"], "level": w["level"],
                           "quote": (w["quote"] or "")[:200], "url": w["url"]} for w in z["wrong_c2"]],
+            "c2_via_point_unproven": [{"name": u["name"], "gold": u["gold"], "points": u["points"],
+                                       "reason": u["reason"], "quote": (u["quote"] or "")[:200]}
+                                      for u in z.get("c2_via_point_unproven") or []],
             "missed": z["missed"],
             "c1_noise": [c["name"] for c in z["c1_noise"]],
             "unmatched": [u["name"] for u in z["unmatched"]],

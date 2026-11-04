@@ -127,8 +127,10 @@ def test_clearance_points_and_merged_names_after_50(gold):
     le_marin = _p(MQ, "Le Marin", "C2", merged=["La marina du Marin"],
                   points=["Port de plaisance Capitainerie du port (nouvelle extension)",
                           "Station-service CAP Ponton N°3"])
+    # Trois-Îlets matches only through its point: its C2 must rest on that row
     trois_ilets = _p(MQ, "Trois-Îlets", "C2",
-                     points=["Régie Port de Plaisance Marina de la pointe du bout"])
+                     points=["Régie Port de Plaisance Marina de la pointe du bout"], judge="poe",
+                     quote="Trois-ilets Régie Port de Plaisance Marina de la pointe du bout")
     z = _zone(gs.score_ports([le_marin, trois_ilets], gold), MQ)
     assert z["c2_recall"]["n"] == 2 and z["c2_precision"]["n"] == 2 and not z["unmatched"]
 
@@ -146,8 +148,11 @@ def test_fort_de_france_counts_for_its_marina(gold):
 
 
 def test_a_poe_through_a_clearance_point_is_a_right_c2_not_a_wrong_one(gold):
-    z = _zone(gs.score_ports([_p(MQ, "Fort-de-France", "C2", points=[ETANG_ROW])], gold), MQ)
+    p = _p(MQ, "Fort-de-France", "C2", points=[ETANG_ROW], judge="poe",
+           quote=f"Fort-de-France {ETANG_ROW} Bureau du Port")
+    z = _zone(gs.score_ports([p], gold), MQ)
     assert z["c2_recall"]["n"] == 1 and z["c2_precision"]["n"] == 1 and not z["wrong_c2"]
+    assert not z["c2_via_point_unproven"]
 
 
 def test_a_rejected_name_with_no_poe_among_its_points_stays_rejected(gold):
@@ -165,8 +170,8 @@ def test_a_rejected_clearance_point_never_takes_a_gold_poe_away(gold):
 
 
 def test_aliases_apply_to_clearance_point_names(gold):
-    z = _zone(gs.score_ports([_p(CV, "São Vicente", "C2", points=["Porto Grande"])], gold), CV)
-    assert z["c2_recall"]["n"] == 1 and "Mindelo – Porto Grande de São Vicente" not in z["missed"]
+    z = _zone(gs.score_ports([_p(CV, "São Vicente", "C1", points=["Porto Grande"])], gold), CV)
+    assert z["any_level_recall"]["n"] == 1 and "Mindelo – Porto Grande de São Vicente" not in z["missed"]
 
 
 def test_the_port_own_name_decides_between_two_gold_poes(gold):
@@ -260,3 +265,60 @@ def test_run_outside_the_gold_gets_no_score():
 def test_run_summary_writes_the_score():
     src = (BACKEND / "app" / "services" / "poe_runs.py").read_text(encoding="utf-8")
     assert 'summary["gold_score"] = gold_score.summary_view(score) if score else None' in src
+
+
+# --- a C2 through a ✅ clearance point must rest on that point's row ------------------------
+
+STATION = "Station CAP DCML Centre de carénage - Baie des Tourelles"
+
+
+def _fdf(excerpt="", judge="poe", level="C2"):
+    """Fort-de-France grouped by #50: the ✅ Étang Z'abricots row and the rejected station."""
+    return gs.run_port({"mrgid": MQ, "name": "Fort-de-France", "confidence_level": level,
+                        "clearance_points": [
+                            {"name": STATION, "quote": f"Fort-de-France {STATION} tous les jours"},
+                            {"name": ETANG_ROW, "quote": f"{ETANG_ROW} Bureau du Port ZAC de l'Etang Z'Abricots"}],
+                        "judge": {"verdict": judge, "quoted_excerpt": excerpt} if judge else {}})
+
+
+def test_fort_de_france_at_c1_is_unchanged(gold):
+    z = _zone(gs.score_ports([_fdf(level="C1", judge=None)], gold), MQ)
+    assert z["any_level_recall"]["n"] == 1 and ETANG_GOLD not in z["missed"]
+    assert not z["c2_via_point_unproven"] and not z["wrong_c2"] and z["c2_precision"]["of"] == 0
+
+
+def test_a_c2_resting_on_the_ok_row_is_right(gold):
+    z = _zone(gs.score_ports([_fdf(f"{ETANG_ROW} Bureau du Port")], gold), MQ)
+    assert z["c2_recall"]["n"] == 1 and (z["c2_precision"]["n"], z["c2_precision"]["of"]) == (1, 1)
+    assert not z["c2_via_point_unproven"]
+
+
+def test_an_excerpt_inside_the_ok_row_only_is_right(gold):
+    """The excerpt names no point, but it lies in the ✅ row's quote and no other row's."""
+    z = _zone(gs.score_ports([_fdf("Bureau du Port ZAC de l'Etang Z'Abricots")], gold), MQ)
+    assert z["c2_recall"]["n"] == 1 and not z["c2_via_point_unproven"]
+
+
+@pytest.mark.parametrize("excerpt, judge, reason", [
+    (f"Fort-de-France {STATION} tous les jours", "poe", "judge excerpt is the row of " + STATION),
+    ("Le port de Fort-de-France est ouvert au trafic international.", "poe",
+     "judge excerpt is not the point's row"),
+    ("", None, 'no judge "poe" on a row'),
+])
+def test_a_c2_resting_on_other_evidence_is_a_wrong_c2(gold, excerpt, judge, reason):
+    score = gs.score_ports([_fdf(excerpt, judge=judge)], gold)
+    z = _zone(score, MQ)
+    assert z["c2_recall"]["n"] == 0 and (z["c2_precision"]["n"], z["c2_precision"]["of"]) == (0, 1)
+    (u,) = z["c2_via_point_unproven"]
+    assert u["gold"] == ETANG_GOLD and u["points"] == [ETANG_ROW] and u["reason"] == reason
+    assert ETANG_GOLD not in z["missed"]  # still found at some level
+    o = score["overall"]
+    assert o["c2_via_point_unproven"] == 1 and o["wrong_c2"] == 1
+    assert "C2 UNPROVEN Fort-de-France" in gs.format_report(score)
+    assert gs.summary_view(score)["zones"][1]["c2_via_point_unproven"][0]["reason"] == reason
+
+
+def test_a_c2_matched_by_its_own_name_needs_no_point_proof(gold):
+    """Le Marin is the gold PoE by its own name (alias): its C2 is judged as before."""
+    z = _zone(gs.score_ports([_p(MQ, "Le Marin", "C2", points=[STATION])], gold), MQ)
+    assert z["c2_recall"]["n"] == 1 and not z["c2_via_point_unproven"]
