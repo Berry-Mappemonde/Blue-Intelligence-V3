@@ -908,6 +908,8 @@ DESIGNATING_PER_PUBLISHER = 3
 # Boletim Oficial: 1,332 chars, the act's 151,226 one link away, with no ".pdf" for the
 # attachment rules to see). Below this many chars, the slot also reads that link.
 GAZETTE_STUB_CHARS = 3000
+# Tavily calls a zone's list-discovery queries may take when SearXNG comes back empty.
+LIST_DISCOVERY_TAVILY_PER_ZONE = 1
 # What a URL says of a designating list, once its separators are spaces and accents gone.
 _DESIGNATING_URL = re.compile(
     r"\b(?:points? (?:de )?clearance|clearance points?"
@@ -2908,11 +2910,33 @@ async def _search_with_fallback(query: str, log) -> tuple[list[dict], str]:
     res = await search_searxng(query, log)
     if res or not _tavily_key():
         return res, "searxng"
+    return await _tavily_for(query, log), "tavily"
+
+
+async def _tavily_for(query: str, log) -> list[dict]:
+    """The Tavily stand-in for an empty SearXNG answer (``site:`` -> ``include_domains``)."""
     domains = _SITE_OP_RE.findall(query)
     plain = " ".join(_FILETYPE_OP_RE.sub(" ", _SITE_OP_RE.sub(" ", query)).split())
     tv = await _tavily_search_safe(plain or query, log, include_domains=domains or None)
     log(f"SearXNG vide → Tavily: {len(tv)} résultat(s) pour « {query[:70]} »")
-    return tv, "tavily"
+    return tv
+
+
+async def _list_discovery_search(queries: list[str], log) -> list[tuple[list[dict], str]]:
+    """``_search_with_fallback`` for the list-discovery queries, with Tavily capped per zone
+    (``tavily.list_discovery_per_zone``): SearXNG answers all of them, then Tavily stands in
+    for the first empty ones only, the zone's language first. Same order as ``queries``."""
+    from app.core.run_rules import get_rule
+    left = int(get_rule("tavily.list_discovery_per_zone", LIST_DISCOVERY_TAVILY_PER_ZONE))
+    answers = await asyncio.gather(*[search_searxng(q, log) for q in queries])
+    out: list[tuple[list[dict], str]] = []
+    for query, res in zip(queries, answers):
+        if not res and left > 0 and _tavily_key():
+            left -= 1
+            out.append((await _tavily_for(query, log), "tavily"))
+        else:
+            out.append((res, "searxng"))
+    return out
 
 
 def _served_by(results: list[dict]) -> str:
@@ -3250,7 +3274,7 @@ async def _find_sources(zone: dict, whitelist: list[str], exceptions: dict, log,
         bcp = entry_list_queries(zone, exceptions)
         kind, label = "entry-list", "liste nationale des postes d'entrée"
     if bcp:
-        bcp_out = await asyncio.gather(*[_search_with_fallback(q, log) for _l, q in bcp])
+        bcp_out = await _list_discovery_search([q for _l, q in bcp], log)
         for (qlang, q), (res, engine) in zip(bcp, bcp_out):
             await _emit_search(engine=engine, lang=f"{kind}-{qlang}", query=q,
                                n=len(res), results=res, round="classic",

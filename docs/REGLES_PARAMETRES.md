@@ -194,6 +194,7 @@ A marinas / anchorages build now writes a `marina_runs` document with the same `
 | `tavily.cache_ttl_days` | 7 d | budget (0 = no cache; empty answers and failed URLs are never cached) |
 | `tavily.max_credits` | 1000 | budget per run (same run key as the Token Factory ledger; 0 = no paid call) |
 | `tavily.scoped_min_official_hosts` | 2 | budget (scoped Tavily, `include_domains` = whitelist, runs below this many distinct official hosts; 1 = only when none, as for TinyFish) |
+| `tavily.list_discovery_per_zone` | 1 | budget (Tavily calls per zone for the list-discovery queries when SearXNG comes back empty, the zone's language first; 0 = none) |
 
 ### 3.5 Science — catalogues + Argo + CSR
 
