@@ -139,8 +139,10 @@ def test_martinique_sends_no_border_crossing_query(search):
 
 
 # --- reading the lists (§10.1: a row of a designating list) -------------------------------
-# Fixtures are CONSTRUCTED from the row formats (Clément's notes; the user's description of
-# Orden INT Annex V), not verbatim: the documents could not be fetched here.
+# Verbatim extracts (pdftotext -layout) of the real documents, from data/v3-bcp-sources:
+# Schengen Handbook Annex 4, Spain, sea borders (PDF pp.26-27), and Orden INT/859/2023
+# Annex V "Puestos Fronterizos" (BOE-A-2023-17072, PDF pp.34-36). Source URL, fetch date
+# and the PDF's sha256 are in each file's header.
 
 from pathlib import Path  # noqa: E402
 
@@ -148,55 +150,80 @@ from app.adapters import evidence_store  # noqa: E402
 from app.services import border_crossing as bc  # noqa: E402
 
 FIX = Path(__file__).resolve().parent / "fixtures"
-ANNEX4_TXT = (FIX / "annex4_spain_sea_borders_constructed.txt").read_text(encoding="utf-8")
-ORDEN_TXT = (FIX / "orden_int_859_2023_annex_v_constructed.txt").read_text(encoding="utf-8")
-CANARY_POSTS = {"Arrecife", "Puerto del Rosario", "Santa Cruz de La Palma", "Santa Cruz de Tenerife"}
+ANNEX4_TXT = (FIX / "annex4_spain_sea_borders.txt").read_text(encoding="utf-8")
+ORDEN_TXT = (FIX / "orden_int_859_2023_annex_v.txt").read_text(encoding="utf-8")
+# The Canaries' five posts, as each list writes them.
+ANNEX4_CANARIES = {"Arrecife (Lanzarote)", "La Luz (Las Palmas)", "Puerto del Rosario (Fuerteventura)",
+                   "Puerto de Santa Cruz de La Palma (La Palma)", "Santa Cruz de Tenerife"}
+ORDEN_CANARIES = {"Arrecife", "Las Palmas", "Puerto Rosario", "Santa Cruz de la Palma",
+                  "Santa Cruz de Tenerife"}
+# Place names that appear only in the Orden's police-station column ("Comisaría Local de
+# Telde.") or in its airport rows: never a post.
+COMISARIA_ONLY = {"Telde", "Irún", "San Cristóbal de La Laguna", "Quart de Poblet-Manises",
+                  "Elche", "Jerez de la Frontera", "San Andrés de Rabanedo", "Reus", "Lleida",
+                  "San Sebastián-Donostia", "Santiago de Compostela"}
 
 
-def test_annex4_reads_the_sea_border_items_of_its_state_only():
+def test_fixtures_are_verbatim_extracts_with_provenance():
+    for text, host in ((ANNEX4_TXT, "home-affairs.ec.europa.eu"), (ORDEN_TXT, "www.boe.es")):
+        head = [line for line in text.splitlines() if line.startswith("# FIXTURE")]
+        assert any(host in line for line in head)
+        assert any(line.startswith("# FIXTURE sha256 of the PDF: ") for line in head)
+        assert any(line.startswith("# FIXTURE Fetched: 2026-11-04") for line in head)
+
+
+def test_annex4_real_pages_are_a_list_and_read_all_34_sea_items():
+    """The real State pages carry no list title: Annex 4's own structure (a sea-border
+    heading, numbered items) identifies it."""
+    assert "border crossing point" not in ANNEX4_TXT.lower()
+    assert bc.is_border_crossing_list(ANNEX4_TXT)
     rows = bc.annex4_rows(ANNEX4_TXT, "Spain")
-    assert [r["number"] for r in rows] == [1, 2, 3, 4, 5, 18, 24, 25, 27, 28, 29]
-    assert rows[-2]["row"] == "(28) Santa Cruz de Tenerife"
-    assert any(r["name"] == "La Luz (Las Palmas)" for r in rows)
-    names = {r["name"] for r in rows}
-    assert "Arrecife (Lanzarote)" not in names  # an air-border item
-    assert "Le Havre" not in names and "La Línea de la Concepción" not in names
+    assert [r["number"] for r in rows] == list(range(1, 35))  # across the page break
+    by = {r["number"]: r["name"] for r in rows}
+    assert by[4] == "Arrecife (Lanzarote)" and by[18] == "La Luz (Las Palmas)"
+    assert by[24] == "Puerto del Rosario (Fuerteventura)"
+    assert by[25] == "Puerto de Santa Cruz de La Palma (La Palma)"
+    assert by[27] == "San Sebastian" and by[28] == "Santa Cruz de Tenerife"
 
 
 def test_orden_int_reads_the_post_column_only():
     rows = bc.orden_int_rows(ORDEN_TXT)
     names = [r["name"] for r in rows]
-    assert names == ["Arrecife", "Las Palmas", "Puerto del Rosario", "Santa Cruz de La Palma",
-                     "Santa Cruz de Tenerife", "San Sebastián", "Algeciras"]
-    # the police-station column is full of place names and is never a post
-    assert not any(r["row"].startswith("Comisaría") for r in rows)
-    # airports sit in the same table and are skipped
-    assert not any("Aeropuerto" in r["row"] for r in rows)
+    assert len(rows) == 34 and names[0] == "A Coruña" and names[-1] == "Vigo"
+    assert "Puerto Rosario" in names and "Pasaia" in names
+    # every post is a "Puerto de …" cell: never the police-station column, never an airport
+    assert all(r["row"].startswith("Puerto de ") for r in rows)
+    assert not any(n in COMISARIA_ONLY for n in names)
+    assert not any("Aeropuerto" in r["row"] or "Comisaría" in r["row"] or "Jefatura" in r["row"]
+                   for r in rows)
 
 
-@pytest.mark.parametrize("text", [ANNEX4_TXT, ORDEN_TXT])
-def test_country_wide_list_keeps_the_zone_posts_and_drops_homonyms(text):
+@pytest.mark.parametrize("text, posts", [(ANNEX4_TXT, ANNEX4_CANARIES), (ORDEN_TXT, ORDEN_CANARIES)])
+def test_canaries_give_exactly_their_five_posts(text, posts):
     kept, dropped = bc.zone_rows(text, CANARIES, bc.zone_state_name(CANARIES))
-    assert CANARY_POSTS <= {r["name"] for r in kept}
+    assert {r["name"] for r in kept} == posts
     assert any(r["matched"] == "Las Palmas" for r in kept)
-    # (27) San Sebastián is the Basque port (Clément), never La Gomera's
-    sansebastian = [d for d in dropped if d["name"] == "San Sebastián"]
-    assert sansebastian and "San Sebastián" not in {r["name"] for r in kept}
-    assert "Algeciras" in {d["name"] for d in dropped}
+    gone = {d["name"] for d in dropped}
+    # (27) San Sebastian is the Basque port (Clément), never La Gomera's
+    assert ("San Sebastian" in gone) if text is ANNEX4_TXT else ("Pasaia" in gone)
+    assert gone & {"Algeciras (Cádiz)", "Bahía de Algeciras"} and "Barcelona" in gone
+    # no place of the police-station column became a post
+    assert not {r["name"] for r in kept} & COMISARIA_ONLY
 
 
 def test_mainland_spain_keeps_its_own_posts_not_the_canaries():
     mainland = {"mrgid": 5693, "name": "Spain", "iso2": "ES", "sov_iso2": "ES"}
-    kept, _dropped = bc.zone_rows(ANNEX4_TXT, mainland, bc.zone_state_name(mainland))
-    names = {r["name"] for r in kept}
-    assert {"Algeciras", "Barcelona", "Tarragona"} <= names
-    assert not names & CANARY_POSTS
+    for text, canaries in ((ANNEX4_TXT, ANNEX4_CANARIES), (ORDEN_TXT, ORDEN_CANARIES)):
+        kept, _dropped = bc.zone_rows(text, mainland, bc.zone_state_name(mainland))
+        names = {r["matched"] for r in kept}
+        assert {"Barcelona", "Tarragona", "Vigo"} <= names
+        assert not {r["name"] for r in kept} & canaries
 
 
 def test_rows_enter_the_zone_catalogue():
     ports, _missed = poe.zone_catalog(ORDEN_TXT, CANARIES)
     border = {p["name"] for p in ports if p.get("extraction_engine") == "border_list"}
-    assert CANARY_POSTS <= border and "San Sebastián" not in border and "Algeciras" not in border
+    assert border == ORDEN_CANARIES
 
 
 def test_a_row_is_evidence_for_the_judge_on_an_official_list_only():

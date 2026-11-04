@@ -44,8 +44,27 @@ def _fold(name: str | None) -> str:
     return " ".join(re.sub(r"[^a-z0-9]+", " ", s).split())
 
 
+_PARTICLES = frozenset({"de", "del", "la", "las", "los", "el", "da", "do", "di"})
+
+
+def _match_key(name: str | None) -> str:
+    """The folded name without its short particles: "Puerto Rosario" (Orden INT) and
+    "Puerto Del Rosario" (WPI) are the same port. Every other word must be equal."""
+    return " ".join(t for t in _fold(name).split() if t not in _PARTICLES)
+
+
+_ANNEX4_ITEM_LINE = re.compile(r"(?m)^\s*\(\d{1,3}\)\s+\S")
+
+
 def is_border_crossing_list(text: str | None) -> bool:
-    return bool(LIST_MARKERS.search(text or ""))
+    """A list of border crossing points: its title wording, or Annex 4's own structure,
+    a sea-border heading followed by numbered items (the Annex's State pages carry no
+    title: the real Spain pages start at "Sea borders")."""
+    t = text or ""
+    if LIST_MARKERS.search(t):
+        return True
+    sea = _SEA_HEADING.search(t)
+    return bool(sea) and len(_ANNEX4_ITEM_LINE.findall(t[sea.end():sea.end() + 4000])) >= 3
 
 
 # --- the two row formats -----------------------------------------------------------------
@@ -88,11 +107,17 @@ def orden_int_rows(text: str) -> list[dict]:
     return out
 
 
+_LEADING_PUERTO = re.compile(r"^Puerto\s+(?:de|del)\s+(?=\S)", re.I)
+
+
 def _row_forms(name: str) -> list[str]:
-    """"La Luz (Las Palmas)" -> ["La Luz (Las Palmas)", "La Luz", "Las Palmas"]."""
+    """"La Luz (Las Palmas)" -> ["La Luz (Las Palmas)", "La Luz", "Las Palmas"]; a leading
+    "Puerto de" also gives the name without it (Annex 4: "(25) Puerto de Santa Cruz de La
+    Palma (La Palma)"). The full form always comes first ("Puerto del Rosario" stays)."""
     forms = [name]
     base = re.sub(r"\(.*?\)", " ", name).strip()
-    forms += [base] + [q.strip() for q in re.findall(r"\(([^)]*)\)", name)]
+    forms += [base, _LEADING_PUERTO.sub("", base)]
+    forms += [q.strip() for q in re.findall(r"\(([^)]*)\)", name)]
     return [f for f in dict.fromkeys(forms) if f]
 
 
@@ -100,12 +125,12 @@ def _row_forms(name: str) -> list[str]:
 
 @lru_cache(maxsize=1)
 def _gazetteer() -> list[tuple[str, float, float, frozenset]]:
-    """(folded name, lat, lon, mrgids it is recorded in) of WPI ports and OSM port priors."""
+    """(match key, lat, lon, mrgids it is recorded in) of WPI ports and OSM port priors."""
     out = []
     try:
         for p in json.loads((DATA / "wpi_ports.json").read_text(encoding="utf-8")).get("ports") or []:
             if p.get("lat") is not None and p.get("lon") is not None:
-                out.append((_fold(p.get("name")), float(p["lat"]), float(p["lon"]), frozenset()))
+                out.append((_match_key(p.get("name")), float(p["lat"]), float(p["lon"]), frozenset()))
     except (OSError, ValueError):
         pass
     try:
@@ -113,7 +138,7 @@ def _gazetteer() -> list[tuple[str, float, float, frozenset]]:
             mrgids = frozenset(int(e["mrgid"]) for e in p.get("eez") or []
                                if e.get("mrgid") is not None and e.get("relation") in ("in_eez", "coastal_15km"))
             if p.get("lat") is not None and p.get("lon") is not None:
-                out.append((_fold(p.get("name")), float(p["lat"]), float(p["lon"]), mrgids))
+                out.append((_match_key(p.get("name")), float(p["lat"]), float(p["lon"]), mrgids))
     except (OSError, ValueError):
         pass
     return out
@@ -150,7 +175,7 @@ def in_zone(name: str, zone: dict | None) -> tuple[bool, str]:
     """(True, how) when a port of exactly this name is recorded in the zone: an OSM prior
     tagged with its mrgid, or a WPI / OSM point in its polygon (within ~15 km of the shore).
     (False, reason) otherwise, with a homonym elsewhere named in the reason."""
-    key = _fold(name)
+    key = _match_key(name)
     if not key:
         return False, "empty name"
     hits = [g for g in _gazetteer() if g[0] == key]
