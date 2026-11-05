@@ -202,23 +202,41 @@ def test_one_failed_call_loses_no_batch(batches):
     assert not gaps.get("failed_batches")
 
 
-def test_a_real_back_off_is_waited_out_before_the_retry(batches, monkeypatch):
-    replies, _, _ = batches
-    replies.extend([502] * 6)
+def test_a_real_back_off_is_waited_out_before_the_retry(monkeypatch):
+    """No HTTP and no timing: the reader fails while the back-off lasts, and the only thing
+    that ends it is the wait. Every batch fails its first read whatever the concurrency, so
+    the result can't depend on how the calls interleave, on the environment or on the clock."""
+    down = [30.0]
     slept: list[float] = []
     sleep = asyncio.sleep
 
+    async def reader(text, zone, settings=None, log=None):
+        if down[0]:
+            raise RuntimeError("extract_ports: no backend")
+        return [{"name": n, "city": None, "note": None, "lat": None, "lon": None,
+                 "geocodeable": True, "extraction_engine": "nightshift"}
+                for n in NAME_RE.findall(text) if n in NAMES]
+
     async def fake_sleep(seconds, *a):
-        if seconds > 1:
+        if seconds == down[0] and seconds:
             slept.append(seconds)
-            generator._probe_cache.clear()  # the back-off ends
-            return None
+            down[0] = 0.0
+            seconds = 0
         return await sleep(seconds, *a)
 
+    import app.core.ml as ml
+    monkeypatch.setattr(ml, "extract_entities", lambda text: [])
+    monkeypatch.setattr(poe, "extract_structured_ports", lambda raw: [])
+    monkeypatch.setattr(poe, "extract_ports", reader)
+    monkeypatch.setattr(generator, "nightshift_down_for", lambda: down[0])
     monkeypatch.setattr(poe.asyncio, "sleep", fake_sleep)
+    tokenfactory.reset_ledger()
     logs: list[str] = []
-    ports, gaps = _zone(logs)
-    assert slept and slept[0] <= generator.PROBE_TTL_S
+    try:
+        ports, gaps = _zone(logs)
+    finally:
+        tokenfactory.reset_ledger()
+    assert slept == [30.0]
     assert {p["name"] for p in ports} == set(NAMES)
     assert not gaps.get("failed_batches")
     assert any("Nightshift en pause" in m for m in logs)
