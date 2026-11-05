@@ -402,6 +402,28 @@ def _without_list_rows(text: str) -> str:
     return out
 
 
+def own_row(text: str, start: int, end: int) -> tuple[str, str] | None:
+    """(the row's own text, what it is a row of) for a mention at [start, end) that heads a row
+    of a border crossing list or of a table of posts; None otherwise. A clearance list's rows
+    go through ``clearance_row_mention``, which keeps the commune above them.
+
+    In a table the row runs from the name to the next post's code, past its own code, so
+    nothing of the post above it comes along."""
+    from app.services import border_crossing
+
+    span = next(((lo, hi) for lo, hi in border_crossing.row_spans(text) if lo <= start < hi), None)
+    if span:
+        return " ".join(text[span[0]:span[1]].split()), LIST_ROW_BORDER
+    codes = list(_POST_CODE.finditer(text))
+    if len(codes) < ROW_LIST_MIN_CODES:
+        return None
+    after = [m for m in codes if m.start() >= end]
+    if not after or after[0].start() - end > ROW_CODE_GAP_CHARS:
+        return None
+    stop = after[1].start() if len(after) > 1 else len(text)
+    return " ".join(text[start:min(stop, start + ROW_MAX_CHARS)].split()), LIST_ROW_POSTS
+
+
 def entry_mentions(name, texts: Sequence[str], places: tuple = (),
                    exclude: tuple = NOT_DESIGNATING_TERMS, rows: bool = True
                    ) -> list[tuple[str, int, int]]:
@@ -631,6 +653,9 @@ ROW_LIST_MIN_ROWS = 3
 ROW_LIST_MIN_CODES = 5
 ROW_MIN_CHARS = 12  # less is the comma between two contacts of one row
 ROW_MAX_CHARS = 300
+ROW_CODE_GAP_CHARS = 40  # a post's name and its code stand side by side
+LIST_ROW_BORDER = "row of an official list of border crossing points"
+LIST_ROW_POSTS = "row of an official table of border control posts"
 _COMMUNE_ARTICLE = re.compile(r"^(?:l[ae]s?\s+|l['’])", re.I)
 _PRIVATE_USE = re.compile("[\ue000-\uf8ff]")  # PDF icon glyphs (phone, mail) in the list
 _HOURS = re.compile(r"\d{1,2}h(?:\d{2})?")

@@ -112,6 +112,7 @@ def orden_int_rows(text: str) -> list[dict]:
     return out
 
 
+_ENTRY_NUMBER = re.compile(r"^\d{1,3}\.$")
 ROW_MAX_CHARS = 80  # a numbered item or a post's cell; a longer one is a sentence
 
 
@@ -123,11 +124,13 @@ def row_spans(text: str | None) -> list[tuple[int, int]]:
     if not is_border_crossing_list(t):
         return []
     spans = [m.span() for m in _ITEM.finditer(t)]
-    start = 0
+    start, before = 0, ""
     for end_mark in [*_SEGMENT_END.finditer(t), None]:
         end = end_mark.start() if end_mark else len(t)
-        if t[start:end].startswith(("Puerto ", "Puerto\u00a0")):
+        # "87. Puerto del Rosario." is an entry of a numbered list of towns, not a post.
+        if t[start:end].startswith(("Puerto ", "Puerto\u00a0")) and not _ENTRY_NUMBER.match(before):
             spans.append((start, end))
+        before = t[start:end]
         start = end_mark.end() if end_mark else end
     return [(a, b) for a, b in spans if b - a <= ROW_MAX_CHARS]
 

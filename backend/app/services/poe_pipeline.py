@@ -4738,7 +4738,7 @@ def judge_texts(zone: dict, docs: list[dict], raw: str, used_sources: list[dict]
         key = (r.get("url"), r.get("snippet"))
         if r.get("snippet") and key not in seen:
             seen.add(key)
-            out.append({"url": r.get("url"), "text": r["snippet"]})
+            out.append({"url": r.get("url"), "text": r["snippet"], "list_row": r.get("list_row")})
     return out[:poe_judge.MAX_TEXTS]
 
 
