@@ -119,8 +119,10 @@ In a run, each zone gets NemotronJudge calls (`agents/poe_judge.py`) after extra
 after the other, on the official snippets the zone already fetched
 (`evidence_store.build_records`): at most `formalities.judge_ports_per_call` ports per call
 (default 8), each call with its own ports' texts (`poe_pipeline.judge_batches`). Every call is
-in `poe_run_zones.judge.calls`, with its `finish_reason`. A failed call leaves its ports
-without a verdict, and the other verdicts stand. Its verdicts (`parse_judgments` shape) go on
+in `poe_run_zones.judge.calls`, with its `finish_reason`. A call that gives no verdict
+(a timeout, or a valid `{"ports": []}`) is asked once more in two halves, each with its own
+texts, and the start of every answer is stored in `raw_answer`. What still fails leaves its
+ports without a verdict, and the other verdicts stand. Its verdicts (`parse_judgments` shape) go on
 `port.judge` and feed the C-level (`v3_certify`, PLAN-V3 §5): `poe` with a
 verified excerpt lifts to C2, `not_poe` caps at C1. Ports and levels are written
 to `poe_run_ports` only; live `poe_ports` never gets them.

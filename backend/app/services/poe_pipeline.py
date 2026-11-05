@@ -4817,8 +4817,21 @@ def judge_batches(zone: dict, docs: list[dict], raw: str, used_sources: list[dic
                 if (r.get("url"), r["snippet"]) not in seen:
                     seen.add((r.get("url"), r["snippet"]))
                     texts.append({"url": r.get("url"), "text": r["snippet"],
-                                  "list_row": r.get("list_row")})
+                                  "list_row": r.get("list_row"), "port_key": r.get("port_key")})
         out.append((ports, texts[:poe_judge.MAX_TEXTS]))
+    return out
+
+
+def _judge_retry(ports: list[dict], texts: list[dict]) -> list[tuple[list[dict], list[dict]]]:
+    """A failed call asked again, in two halves, each with its own texts: a smaller question is
+    what got an answer from a call that gave nothing. One port is asked as it was. A text two
+    ports share goes with the port it was first found for."""
+    if len(ports) < 2:
+        return [(ports, texts)]
+    out = []
+    for half in (ports[:len(ports) // 2], ports[len(ports) // 2:]):
+        keys = {registry_check.port_key(d.get("name")) for d in half}
+        out.append((half, [t for t in texts if t.get("port_key") in keys] or texts))
     return out
 
 
@@ -4914,8 +4927,9 @@ async def _judge_zone_run(zone: dict, docs: list[dict], raw: str, used_sources: 
     were reserved from the zone's share of ``formalities.extract_max_llm_calls`` before
     extraction (``_reserve_judge_call``), else taken from what is left, and, through the
     generator, land on the run's Token Factory USD ledger. Each call is recorded in
-    ``summary["calls"]``, with its ``finish_reason``. A batch that fails leaves its ports
-    without a verdict and the other batches stand. Skipped, with the reason recorded (log,
+    ``summary["calls"]``, with its ``finish_reason`` and the start of its answer. A call that
+    gives no verdict (a timeout, or ``{"ports": []}``) is asked once more, in two halves; what
+    still fails leaves its ports without a verdict and the other batches stand. Skipped, with the reason recorded (log,
     ``judge`` run event, ``poe_run_zones.judge``), when ``formalities.judge_in_runs`` is
     false, the cap is reached, there is no official text, no time is left, or no call gives a
     verdict. ``port.judge`` and the levels are written to the run collections only.
@@ -4967,7 +4981,9 @@ async def _judge_zone_run(zone: dict, docs: list[dict], raw: str, used_sources: 
     cert_texts = certify_texts(raw, used_sources)
     judged, calls, reasons = {}, [], []
     loop = asyncio.get_running_loop()
-    for ports, texts in batches or [(docs, [])]:
+    queue = [(ports, texts, False) for ports, texts in batches or [(docs, [])]]
+    while queue:
+        ports, texts, retry = queue.pop(0)
         timeout_s = _judge_timeout_s()
         if timeout_s < JUDGE_MIN_TIME_S:
             reasons.append("no time left before the zone deadline")
@@ -4985,8 +5001,12 @@ async def _judge_zone_run(zone: dict, docs: list[dict], raw: str, used_sources: 
             calls.append({"ports": len(ports), "texts": len(texts), "judged": len(got),
                           "provider": llm.get("provider"), "served_model": llm.get("served_model"),
                           "finish_reason": llm.get("finish_reason"),
+                          "raw_answer": llm.get("raw_answer"), "retry": retry,
                           "seconds": round(loop.time() - started, 1), "reason": why,
                           "attempts": llm.get("attempts")})
+            if why and not retry and why not in poe_judge.DELIBERATE_SKIPS:
+                log(f"juge Nemotron: appel sans verdict ({why}), reposé en deux")
+                queue += [(*half, True) for half in _judge_retry(ports, texts)]
         summary["provider"] = summary["provider"] or llm.get("provider")
         summary["served_model"] = summary["served_model"] or llm.get("served_model")
         summary["json_repaired"] = summary.get("json_repaired") or bool(llm.get("json_repaired"))
