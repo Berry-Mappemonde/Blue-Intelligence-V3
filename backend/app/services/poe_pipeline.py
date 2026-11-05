@@ -1229,9 +1229,13 @@ def legal_phrase_scope(zone: dict | None) -> dict | None:
     words = {t.replace(" ", "") for t in own} | {
         t.split()[-1] for t in own
         if len(t.split()[-1]) >= 6 and t.split()[-1] not in v3_certify.GENERIC_NAME_WORDS}
+    # The publishers of the State's border-crossing lists (its gazette, the Handbook) are
+    # national too: a list of the State's posts names every province's.
+    from app.services.territory_ref import schengen_publishers, schengen_state
     return {"own": own, "other": v3_certify._other_territory_terms(own), "words": words,
             "iso2": str(terr.get("iso2") or "").lower(),
-            "national": sorted(_national_labels(sov, load_exceptions(), eez_iso2_set()))}
+            "national": sorted(_national_labels(sov, load_exceptions(), eez_iso2_set())
+                               | set(schengen_publishers(schengen_state(sov, zone.get("mrgid")))))}
 
 
 def _national_document(url: str | None, scope: dict) -> bool:
@@ -3950,12 +3954,41 @@ async def deferred_outside_zone(port: dict, port_ev: dict, zone: dict, geom, pre
     cands = await cached_nominatim_candidates(port, zone)
     if not cands:
         return None
+    if all(_is_street(c) for c in cands):
+        return "seule une rue porte ce nom"
     inland = inland_exception_flags(port_ev, zone, official_list=True)
     checked = [_spatial_cand(c["lat"], c["lon"], "nominatim", geom, prepared, inland)
-               for c in cands if c.get("lat") is not None]
+               for c in cands if c.get("lat") is not None and not _is_street(c)]
     if not checked or any(c.get("validated") for c in checked):
         return None
     return "géocode en cache hors du polygone"
+
+
+def _is_street(meta: dict | None) -> bool:
+    """A street named after a port is not that port: Calle Bilbao in Telde (run b60354)."""
+    return (meta or {}).get("osm_class") == "highway"
+
+
+async def name_outside_zone(port: dict, port_ev: dict, zone: dict, geom, prepared) -> str | None:
+    """Why a name the geocoders placed nowhere in this territory is not the territory's, or
+    None to keep it: looked up alone, it is a place of the sovereign's outside the polygon. A
+    name on record in the zone (``border_crossing.in_zone``), or found nowhere, is kept: that
+    says nothing against it. Only a territory with a sovereign elsewhere has a mainland."""
+    if (geom is None and prepared is None) or not legal_phrase_scope(zone):
+        return None
+    from app.core import geo
+    from app.services import border_crossing
+    if border_crossing.in_zone(port.get("name") or "", zone)[0]:
+        return None
+    rows = await geo._nominatim_rows(port.get("name"), geo.nominatim_countrycodes(zone), limit=5)
+    places = [r for r in rows or [] if r.get("lat") is not None
+              and not _is_street({"osm_class": r.get("class")})]
+    if not places:
+        return None
+    inland = inland_exception_flags(port_ev, zone, official_list=True)
+    checked = [_spatial_cand(float(r["lat"]), float(r["lon"]), "nominatim", geom, prepared, inland)
+               for r in places]
+    return None if any(c.get("validated") for c in checked) else "lieu du même nom hors du polygone"
 
 
 LLM_GEOCODE_PORT_TIMEOUT_S = 30.0  # one port's LLM geocode (formalities.llm_geocode_port_timeout_s)
@@ -4362,16 +4395,28 @@ async def _extract_and_geocode(zone: dict, context: str, used_sources: list[dict
                 f"écarté (pas de géocode LLM)")
             await emit(rec, "geocode", port=p["name"], arbitration="area_hit", kept=False)
             continue
-        cands = []
+        cands, street = [], False
         for source in ("nominatim", "geonames"):
             coords = geo.get(source)
             if not coords:
                 continue
             meta = geo.get(f"{source}_meta") or {}
+            if _is_street(meta):
+                street = True
+                geo = {**geo, source: None}
+                continue
             inland = inland_exception_flags(port_ev, zone, meta)
             cands.append(_spatial_cand(
                 coords[0], coords[1], source, geom, prepared, inland))
-        rows.append({"port": p, "norm": norm, "geo": geo, "hint": None,
+        if not cands:
+            outside = await name_outside_zone(p, port_ev, zone, geom, prepared)
+            if outside:
+                log(f"  ⚓ {p['name']} → hors de ce polygone VLIZ (mrgid {mrgid}) — écarté "
+                    f"({outside})")
+                await emit(rec, "geocode", port=p["name"], arbitration="outside_zone",
+                           reason=outside, street=street, kept=False)
+                continue
+        rows.append({"port": p, "norm": norm, "geo": geo, "hint": "street_only" if street else None,
                      "cands": cands, "port_ev": port_ev})
 
     # LLM geocode budget (run d7963f: Cape Verde took 3,960 s for an 1,800 s zone, ~44 min

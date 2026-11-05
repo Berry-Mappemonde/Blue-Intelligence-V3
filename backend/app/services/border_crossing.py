@@ -98,13 +98,14 @@ def annex4_rows(text: str, state: str) -> list[dict]:
 
 
 def orden_int_rows(text: str) -> list[dict]:
-    """Posts of a "Puestos fronterizos" table: each cell ends with a full stop; a cell that
-    starts with "Puerto" is a post, one that starts with "Comisaría" (the police-station
-    column) or "Aeropuerto" (an airport) is not. -> [{name, row}], name without "Puerto de"."""
+    """Posts of a "Puestos fronterizos" table: each cell ends with a full stop, after a "|"
+    when the table reaches us as text; a cell that starts with "Puerto" is a post, one that
+    starts with "Comisaría" (the police-station column) or "Aeropuerto" (an airport) is not.
+    -> [{name, row}], name without "Puerto de"."""
     out = []
     for cell in _SEGMENT_END.split(text or ""):
-        cell = " ".join(cell.split())
-        if not cell.startswith("Puerto ") and not cell.startswith("Puerto "):
+        cell = " ".join(cell.split()).lstrip("| ")
+        if not cell.startswith(("Puerto ", "Puerto\u00a0")):
             continue
         m = _POST.match(cell)
         if m and m.group(1).strip():
@@ -128,8 +129,10 @@ def row_spans(text: str | None) -> list[tuple[int, int]]:
     for end_mark in [*_SEGMENT_END.finditer(t), None]:
         end = end_mark.start() if end_mark else len(t)
         # "87. Puerto del Rosario." is an entry of a numbered list of towns, not a post.
-        if t[start:end].startswith(("Puerto ", "Puerto\u00a0")) and not _ENTRY_NUMBER.match(before):
-            spans.append((start, end))
+        lead = len(t[start:end]) - len(t[start:end].lstrip("| "))
+        if (t[start + lead:end].startswith(("Puerto ", "Puerto\u00a0"))
+                and not _ENTRY_NUMBER.match(before)):
+            spans.append((start + lead, end))
         before = t[start:end]
         start = end_mark.end() if end_mark else end
     return [(a, b) for a, b in spans if b - a <= ROW_MAX_CHARS]
