@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Collection, Mapping, Sequence
+from functools import lru_cache
 
 LEVELS = ("C0", "C1", "C2", "C3", "C4")
 # Fields attach_confidence_level writes. Run collections only, never poe_ports.
@@ -248,7 +249,8 @@ def _corroborated_llm_extraction(port: dict, whitelist: Sequence[str] | None,
     hosts. Either way, one official text must put this port's name next to entry wording
     (`entry_context`): LLM∩NER says a name is in a text, not that the text designates it
     (Palmeira, a locality in a list of a Decreto Regulamentar), and two hosts alone are
-    zone-level, not per-port: every port of the zone gets the same source_urls. The
+    zone-level, not per-port: every port of the zone gets the same source_urls. A mention in
+    a row of a list is no such context (``list_row_spans``): a row reaches C2 by the judge. The
     catalogue parser alone (or NER alone) is a single non-LLM reader: it never counts as
     corroboration. Two LLM readers do not count either. The V2 score's reasons are never read.
     """
@@ -258,7 +260,7 @@ def _corroborated_llm_extraction(port: dict, whitelist: Sequence[str] | None,
     if port.get("extraction_agreement") is not True and len(_official_hosts(port, whitelist)) < 2:
         return False
     return bool(entry_mentions(port.get("name"), _official_texts(texts, whitelist),
-                               places=_places(port, zone)))
+                               places=_places(port, zone), rows=False))
 
 
 def _corroborated_without_context(port: dict, whitelist: Sequence[str] | None,
@@ -271,7 +273,7 @@ def _corroborated_without_context(port: dict, whitelist: Sequence[str] | None,
             and (port.get("extraction_agreement") is True
                  or len(_official_hosts(port, whitelist)) >= 2)
             and not entry_mentions(port.get("name"), _official_texts(texts, whitelist),
-                                   places=_places(port, zone)))
+                                   places=_places(port, zone), rows=False))
 
 
 # --- per-port evidence: entry context and zone attribution ---------------------------
@@ -361,13 +363,55 @@ def _name_spans(text: str, tokens, name, places: tuple = ()) -> list[tuple[int, 
     return out
 
 
+def _contact_rows(text: str) -> list[tuple[int, int]]:
+    """A clearance list reaches us as flat text: each row is what stands between two contact
+    blocks, its name, address and hours. Prose has no such run of short stretches."""
+    rows, start = [], 0
+    for mark in _CONTACT.finditer(text):
+        if ROW_MIN_CHARS <= mark.start() - start <= ROW_MAX_CHARS:
+            rows.append((start, mark.start()))
+        start = mark.end()
+    return rows if len(rows) >= ROW_LIST_MIN_ROWS else []
+
+
+@lru_cache(maxsize=64)
+def list_row_spans(text: str) -> tuple[tuple[int, int], ...]:
+    """(start, end) of the rows of a list in ``text``; none in prose, whatever it says.
+
+    Rows are read from the structure, because a word doesn't make a list: a page may say
+    "point de clearance" in a sentence. A clearance list's rows sit between contact blocks,
+    a border crossing list's are its items and cells (``border_crossing.row_spans``), and a
+    table of border control posts is rows throughout (its post codes, ``_POST_CODE``)."""
+    from app.agents import registry_check as rc
+    from app.services import border_crossing
+
+    spans = list(border_crossing.row_spans(text))
+    if is_clearance_list(rc._tokens(text)):
+        spans += _contact_rows(text)
+    if len(_POST_CODE.findall(text)) >= ROW_LIST_MIN_CODES:
+        spans.append((0, len(text)))
+    return tuple(spans)
+
+
+@lru_cache(maxsize=64)
+def _without_list_rows(text: str) -> str:
+    """``text`` with its list rows blanked: same length, so offsets still hold."""
+    out = text
+    for start, end in list_row_spans(text):
+        out = out[:start] + " " * (end - start) + out[end:]
+    return out
+
+
 def entry_mentions(name, texts: Sequence[str], places: tuple = (),
-                   exclude: tuple = NOT_DESIGNATING_TERMS) -> list[tuple[str, int, int]]:
+                   exclude: tuple = NOT_DESIGNATING_TERMS, rows: bool = True
+                   ) -> list[tuple[str, int, int]]:
     """(text, name_start, name_end) per text where registry_check.entry_mention finds the
     port name next to entry wording (port of entry, clearance, customs / alfândega /
     douane / aduana with a port word, "ouvert au trafic international", designated /
     approved port). A mention inside a tariff or port-dues schedule, or a study, never
-    counts. ``places``: the zone's names, never a variant of the port's name."""
+    counts. ``places``: the zone's names, never a variant of the port's name. ``rows=False``:
+    the rows of a list are left out, for the routes that lift a port without the judge. A row
+    is a name and a phone number, and the entry word nearest to it is its neighbour's."""
     if is_name_fragment(name):
         return []
     from app.agents import registry_check as rc
@@ -375,6 +419,7 @@ def entry_mentions(name, texts: Sequence[str], places: tuple = (),
     variants = rc.grounding_variants(name, places=places)
     out = []
     for text in texts or []:
+        text = text if rows else _without_list_rows(text)
         m = rc.entry_mention(text, variants, extra_strong=ENTRY_TERMS_STRONG,
                              extra_weak=ENTRY_TERMS_WEAK, exclude=exclude)
         if m:
@@ -420,6 +465,26 @@ def judge_excerpt_in_study(port: Mapping, texts: Sequence[Mapping] | None,
         at = text.lower().find(quote)
         if at >= 0:
             return _near_phrase(text, at, at + len(quote), STUDY_TERMS)
+    return False
+
+
+def judge_excerpt_on_other_row(port: Mapping, texts: Sequence[Mapping] | None,
+                               whitelist: Sequence[str] | None) -> bool:
+    """The judge's verified excerpt is a row of a list and doesn't name this port: the judge
+    read a neighbour's row. An excerpt that is not found in the texts is not judged here."""
+    from app.agents import registry_check as rc
+
+    judge = port.get("judge") if isinstance(port.get("judge"), Mapping) else {}
+    excerpt = judge.get("quoted_excerpt")
+    if not isinstance(excerpt, str) or not excerpt.strip():
+        return False
+    quote = excerpt.strip().lower()
+    for text in _official_texts(texts, whitelist):
+        at = text.lower().find(quote)
+        if at >= 0 and any(lo <= at < hi for lo, hi in list_row_spans(text)):
+            tokens = rc._tokens(excerpt)
+            return not (_name_spans(excerpt, tokens, port.get("name"))
+                        or next(rc.name_spans(excerpt, tokens, commune_key(port.get("name"))), None))
     return False
 
 
@@ -557,6 +622,15 @@ def _mention_in_zone(text: str, ns: int, ne: int, own: set[str], other: set[str]
 CLEARANCE_LIST_TERMS = ("points de clearance", "point de clearance",
                         "clearance points", "clearance point")
 CLEARANCE_QUOTE_CHARS = 200
+# Rows of a list, read from its structure (``list_row_spans``): a phone number or an email
+# closes a row of a clearance list, and a table of border control posts gives each post its
+# TRACES code (country, place, then a digit and a letter for the kind of post).
+_CONTACT = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+|\(?\+\)?\s?\d{2,3}(?:[ .-]\d{2,3}){2,}")
+_POST_CODE = re.compile(r"\b[A-Z]{2} [A-Z]{3} \d[A-Z]?\b")
+ROW_LIST_MIN_ROWS = 3
+ROW_LIST_MIN_CODES = 5
+ROW_MIN_CHARS = 12  # less is the comma between two contacts of one row
+ROW_MAX_CHARS = 300
 _COMMUNE_ARTICLE = re.compile(r"^(?:l[ae]s?\s+|l['’])", re.I)
 _PRIVATE_USE = re.compile("[\ue000-\uf8ff]")  # PDF icon glyphs (phone, mail) in the list
 _HOURS = re.compile(r"\d{1,2}h(?:\d{2})?")
@@ -815,7 +889,7 @@ def clearance_row_mention(name, text: str | None, mrgid: int | None = None,
     communautaire de l'Étang Z'abricots Bureau du Port : ZAC de l'Etang Z'Abricots" has no
     entry term of its own, and the list's title is not in its text, so ``entry_mention`` finds
     a row only when another row's "capitainerie" or "douanes" happens to be near. Evidence for
-    the judge, which decides; a row alone lifts nothing (``entry_mentions`` is unchanged). A
+    the judge, which decides; a row alone lifts nothing (``entry_mentions`` with ``rows=False``). A
     row that is not a clearance point gets none: it can't reach C2 (§10.2)."""
     from app.agents import registry_check as rc
 
@@ -959,8 +1033,9 @@ def judge_outcome(port: dict) -> str | None:
 def _lifts_above_c1(port: dict, whitelist: Sequence[str] | None,
                     texts: Sequence[Mapping] | None = None,
                     zone: Mapping | None = None) -> bool:
-    if judge_outcome(port) == JUDGE_SUPPORTED and not judge_excerpt_in_study(port, texts,
-                                                                             whitelist):
+    if (judge_outcome(port) == JUDGE_SUPPORTED
+            and not judge_excerpt_in_study(port, texts, whitelist)
+            and not judge_excerpt_on_other_row(port, texts, whitelist)):
         return True
     return _corroborated_llm_extraction(port, whitelist, texts, zone)
 

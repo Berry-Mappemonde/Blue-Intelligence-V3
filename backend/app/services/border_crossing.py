@@ -112,6 +112,26 @@ def orden_int_rows(text: str) -> list[dict]:
     return out
 
 
+ROW_MAX_CHARS = 80  # a numbered item or a post's cell; a longer one is a sentence
+
+
+def row_spans(text: str | None) -> list[tuple[int, int]]:
+    """(start, end) of each row of a border crossing list, in any form of the text: numbered
+    items and "Puerto …" cells, as ``annex4_rows`` and ``orden_int_rows`` read them, wherever
+    they are. None when the text is not such a list."""
+    t = text or ""
+    if not is_border_crossing_list(t):
+        return []
+    spans = [m.span() for m in _ITEM.finditer(t)]
+    start = 0
+    for end_mark in [*_SEGMENT_END.finditer(t), None]:
+        end = end_mark.start() if end_mark else len(t)
+        if t[start:end].startswith(("Puerto ", "Puerto\u00a0")):
+            spans.append((start, end))
+        start = end_mark.end() if end_mark else end
+    return [(a, b) for a, b in spans if b - a <= ROW_MAX_CHARS]
+
+
 _LEADING_PUERTO = re.compile(r"^Puerto\s+(?:de|del)\s+(?=\S)", re.I)
 
 
