@@ -5,12 +5,11 @@ A gold file lists, per zone (mrgid), the PoEs (``poe``) and the rejected names
 reads it, never writes it.
 
 Per zone and overall:
-  - C2 precision: run ports at C2 or above that match a gold PoE / C2+ ports that
-    match any gold entry (PoE or rejected). A C2+ port that matches nothing is listed
-    in ``unmatched`` and left out of the ratio, not counted as right or wrong;
+  - C2 precision: run ports at C2 or above that match a gold PoE / all C2+ ports;
   - C2 recall: gold PoEs matched by a C2+ run port / gold PoEs;
   - any-level recall: gold PoEs matched by a run port at any level / gold PoEs;
-  - wrong C2s: C2+ run ports that match a rejected name, with their quote;
+  - wrong C2s: C2+ run ports that match a rejected name, or no gold entry at all, with their
+    quote. The gold lists a zone's PoEs, so a C2 outside it is a claim the gold doesn't back;
   - C2 via a point, unproven (``c2_via_point_unproven``, also counted as wrong C2s): a C2+
     record that matches a gold PoE only through one of its clearance-point names (#60),
     when the evidence that gave the C2 is not that point's row (``_point_proof``);
@@ -271,6 +270,11 @@ def score_ports(ports: list[dict], gold: dict, aliases: dict | None = None) -> d
             if g is None:
                 unmatched.append({"name": p["name"], "level": p["level"],
                                   "candidates": candidates})
+                if _is_c2(p["level"]):
+                    c2_judged += 1
+                    wrong_c2.append({"name": p["name"], "level": p["level"], "gold": None,
+                                     "quote": p["quote"], "url": p["url"],
+                                     "gold_note": "matches no gold entry"})
                 continue
             if g["kind"] == "poe":
                 found_any.add(g["name"])
@@ -371,7 +375,8 @@ def format_report(score: dict) -> str:
         lines.append(f"\n{z['zone']} ({z['mrgid']}): C2 precision {r(z['c2_precision'])}, "
                      f"C2 recall {r(z['c2_recall'])}, any-level recall {r(z['any_level_recall'])}")
         for w in z["wrong_c2"]:
-            lines.append(f"  WRONG C2  {w['name']} = gold not_poe {w['gold']!r}  quote: {w['quote'][:160]!r}")
+            what = f"gold not_poe {w['gold']!r}" if w["gold"] else "no gold entry"
+            lines.append(f"  WRONG C2  {w['name']} = {what}  quote: {w['quote'][:160]!r}")
         for u in z.get("c2_via_point_unproven") or []:
             lines.append(f"  C2 UNPROVEN {u['name']} = gold {u['gold']!r} via {', '.join(u['points'])}: "
                          f"{u['reason']}  quote: {(u['quote'] or '')[:160]!r}")

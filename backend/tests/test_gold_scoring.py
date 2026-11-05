@@ -117,8 +117,36 @@ def test_unmatched_names_are_listed_not_guessed(gold):
     score = gs.score_ports(ports, gold)
     z = _zone(score, CN)
     assert [u["name"] for u in z["unmatched"]] == ["Puerto Calero", "Marina Rubicón"]
-    # an unmatched C2 is neither right nor wrong
-    assert z["c2_precision"]["of"] == 0 and not z["wrong_c2"]
+
+
+def test_a_c2_that_matches_no_gold_entry_is_a_wrong_c2(gold):
+    ports = [_p(CN, "Puerto Calero", "C2"), _p(CN, "Marina Rubicón", "C1")]
+    score = gs.score_ports(ports, gold)
+    z = _zone(score, CN)
+    assert [(w["name"], w["gold"]) for w in z["wrong_c2"]] == [("Puerto Calero", None)]
+    assert z["c2_precision"]["n"] == 0 and z["c2_precision"]["of"] == 1
+    assert score["overall"]["wrong_c2"] == 1
+    assert "WRONG C2  Puerto Calero = no gold entry" in gs.format_report(score)
+
+
+def test_a_name_that_matches_several_gold_entries_at_c2_is_a_wrong_c2_too(gold):
+    zone = gold["zones"][0]
+    names = [e["name"] for e in zone["poe"][:2]]
+    index = gs._GoldIndex(zone, {})
+    index.match = lambda run_names: (None, names)
+    port = _p(int(zone["mrgid"]), "Two At Once", "C2")
+    original = gs._GoldIndex
+    gs._GoldIndex = lambda z, a: index if z is zone else original(z, a)
+    try:
+        score = gs.score_ports([port], {"zones": [zone]}, {})
+    finally:
+        gs._GoldIndex = original
+    assert score["overall"]["wrong_c2"] == 1
+
+
+def test_a_c1_that_matches_no_gold_entry_is_no_wrong_c2(gold):
+    score = gs.score_ports([_p(CN, "Marina Rubicón", "C1")], gold)
+    assert score["overall"]["wrong_c2"] == 0 and score["overall"]["unmatched"] == 1
 
 
 def test_clearance_points_and_merged_names_after_50(gold):
