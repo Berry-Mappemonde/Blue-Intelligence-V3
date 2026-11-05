@@ -376,6 +376,66 @@ def marinas_to_slim_geojson(docs: Iterable[dict]) -> dict:
     }
 
 
+MARINA_FICHES_MAX_IDS = 200
+MARINA_FICHE_ENRICH_FIELDS = (
+    "canal_vhf",
+    "places_visiteurs",
+    "tirant_eau_max_metres",
+    "score_protection_meteo",
+    "services_disponibles",
+    "telephone_capitainerie",
+    "resume_avis",
+    "website",
+    "maps_place_url",
+)
+
+
+def parse_marina_fiche_osm_ids(raw: str) -> list[str]:
+    ids: list[str] = []
+    for part in (raw or "").split(","):
+        piece = part.strip()
+        if piece:
+            ids.append(piece)
+    return ids
+
+
+def _marina_fiche_field_source(doc: dict, field: str, field_sources: dict) -> str:
+    if field == "website":
+        return str(doc.get("website_source") or field_sources.get("website") or "openstreetmap")
+    if field == "maps_place_url":
+        return str(
+            doc.get("maps_place_source")
+            or field_sources.get("maps_place_url")
+            or "openstreetmap"
+        )
+    return str(field_sources.get(field) or doc.get("enrichment_source") or "openstreetmap")
+
+
+def marina_export_fiche(doc: dict) -> dict:
+    """Public escale slice: ``slim_feature`` plus sourced enrichment fields."""
+    feature = slim_feature(doc)
+    field_sources = doc.get("field_sources") or {}
+    enrichment: dict[str, dict] = {}
+    for field in MARINA_FICHE_ENRICH_FIELDS:
+        if field == "website":
+            value = official_website(doc)
+        elif field == "maps_place_url":
+            value = doc.get("maps_place_url")
+        else:
+            value = doc.get(field)
+        if value in (None, "", [], {}):
+            continue
+        enrichment[field] = {
+            "value": value,
+            "source": _marina_fiche_field_source(doc, field, field_sources),
+        }
+    return {
+        "osm_id": doc.get("osm_id"),
+        "feature": feature,
+        "enrichment": enrichment,
+    }
+
+
 async def upsert_world_marina(coll, cand: dict, now_iso: str) -> str:
     from app.services.isolated_runs import identity_query, run_doc_id, stamp
     osm_id = cand["osm_id"]
