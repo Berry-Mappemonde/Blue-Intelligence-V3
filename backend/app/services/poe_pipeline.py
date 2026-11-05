@@ -1003,6 +1003,11 @@ def entry_list_queries(zone: dict, exceptions: dict | None = None) -> list[tuple
         tpl, place = ENTRY_LIST_QUERIES.get(lang), local_place_name(zone, lang)
         if tpl and place:
             out.append((lang, tpl.format(place=place)))
+    # The act is in the zone's gazette: the first language's query, on that gazette, so that one
+    # general search is not all that stands between a run and its list.
+    from app.services.authority_roles import zone_gazettes
+    if out:
+        out += [(out[0][0], f"site:{host} {out[0][1]}") for host in zone_gazettes(zone)]
     return out
 
 
@@ -1173,6 +1178,13 @@ def zone_catalog(text: str, zone: dict | None) -> tuple[list[dict], bool]:
     # A list of border crossing points (Schengen Handbook Annex 4, Orden INT/859/2023
     # Annex V) designates the zone's sea posts; only rows confirmed in the zone are kept.
     from app.services import border_crossing
+    if zone and not scope:
+        # A State's own decree: its sea posts are the zone's, on record or not.
+        for r in border_crossing.designated_post_rows(text):
+            if r["name"].casefold() not in seen:
+                seen.add(r["name"].casefold())
+                ports.append({"name": r["name"], "city": None, "extraction_engine": "border_list",
+                              "note": f"poste frontalier maritime (décret) : {r['row']}"})
     if zone and border_crossing.is_border_crossing_list(text):
         kept, _dropped = border_crossing.zone_rows(text, zone, border_crossing.zone_state_name(zone))
         for r in kept:
@@ -1229,9 +1241,13 @@ def legal_phrase_scope(zone: dict | None) -> dict | None:
     words = {t.replace(" ", "") for t in own} | {
         t.split()[-1] for t in own
         if len(t.split()[-1]) >= 6 and t.split()[-1] not in v3_certify.GENERIC_NAME_WORDS}
+    # The publishers of the State's border-crossing lists (its gazette, the Handbook) are
+    # national too: a list of the State's posts names every province's.
+    from app.services.territory_ref import schengen_publishers, schengen_state
     return {"own": own, "other": v3_certify._other_territory_terms(own), "words": words,
             "iso2": str(terr.get("iso2") or "").lower(),
-            "national": sorted(_national_labels(sov, load_exceptions(), eez_iso2_set()))}
+            "national": sorted(_national_labels(sov, load_exceptions(), eez_iso2_set())
+                               | set(schengen_publishers(schengen_state(sov, zone.get("mrgid")))))}
 
 
 def _national_document(url: str | None, scope: dict) -> bool:
@@ -2153,6 +2169,16 @@ def _return_extract_calls(n: int) -> None:
 
 
 _SOURCE_TAG_RE = re.compile(r"\[SOURCE: ([^\]\s]+)\]")
+
+
+async def _gazette_page_link(url: str, log) -> str | None:
+    """The full-text link of a gazette's page, read from its HTML. Tavily gives a page's text
+    with no links, so the stub of run b60354 led nowhere; ``keep_raw`` skips Tavily."""
+    try:
+        page = await extract_cascade(url, min_chars=200, keep_raw=True, log=log)
+    except Exception:  # noqa: BLE001 — the stub stays: the zone goes on without its act
+        return None
+    return full_text_link(page.get("html") or "", url)
 
 
 async def _wait_for_nightshift(log, stop_at: float | None = None) -> None:
@@ -3771,8 +3797,8 @@ async def _collect_texts(official: list[dict], log, rec=None, max_fetch: int | N
                                chars=len(sub["text"]), level=sub["level"])
                     text = (text + "\n" + sub["text"]).strip()
         # A gazette stub: its act is read in this same slot (not counted in the cap).
-        if res.get("html") and len(res["text"] or "") < gazette_stub and _on_publisher(url, gazettes):
-            act = full_text_link(res["html"], url)
+        if len(res["text"] or "") < gazette_stub and _on_publisher(url, gazettes):
+            act = full_text_link(res.get("html") or "", url) or await _gazette_page_link(url, log)
             if act and act not in seen_urls:
                 seen_urls.add(act)
                 try:
@@ -3950,12 +3976,41 @@ async def deferred_outside_zone(port: dict, port_ev: dict, zone: dict, geom, pre
     cands = await cached_nominatim_candidates(port, zone)
     if not cands:
         return None
+    if all(_is_street(c) for c in cands):
+        return "seule une rue porte ce nom"
     inland = inland_exception_flags(port_ev, zone, official_list=True)
     checked = [_spatial_cand(c["lat"], c["lon"], "nominatim", geom, prepared, inland)
-               for c in cands if c.get("lat") is not None]
+               for c in cands if c.get("lat") is not None and not _is_street(c)]
     if not checked or any(c.get("validated") for c in checked):
         return None
     return "géocode en cache hors du polygone"
+
+
+def _is_street(meta: dict | None) -> bool:
+    """A street named after a port is not that port: Calle Bilbao in Telde (run b60354)."""
+    return (meta or {}).get("osm_class") == "highway"
+
+
+async def name_outside_zone(port: dict, port_ev: dict, zone: dict, geom, prepared) -> str | None:
+    """Why a name the geocoders placed nowhere in this territory is not the territory's, or
+    None to keep it: looked up alone, it is a place of the sovereign's outside the polygon. A
+    name on record in the zone (``border_crossing.in_zone``), or found nowhere, is kept: that
+    says nothing against it. Only a territory with a sovereign elsewhere has a mainland."""
+    if (geom is None and prepared is None) or not legal_phrase_scope(zone):
+        return None
+    from app.core import geo
+    from app.services import border_crossing
+    if border_crossing.in_zone(port.get("name") or "", zone)[0]:
+        return None
+    rows = await geo._nominatim_rows(port.get("name"), geo.nominatim_countrycodes(zone), limit=5)
+    places = [r for r in rows or [] if r.get("lat") is not None
+              and not _is_street({"osm_class": r.get("class")})]
+    if not places:
+        return None
+    inland = inland_exception_flags(port_ev, zone, official_list=True)
+    checked = [_spatial_cand(float(r["lat"]), float(r["lon"]), "nominatim", geom, prepared, inland)
+               for r in places]
+    return None if any(c.get("validated") for c in checked) else "lieu du même nom hors du polygone"
 
 
 LLM_GEOCODE_PORT_TIMEOUT_S = 30.0  # one port's LLM geocode (formalities.llm_geocode_port_timeout_s)
@@ -4362,16 +4417,28 @@ async def _extract_and_geocode(zone: dict, context: str, used_sources: list[dict
                 f"écarté (pas de géocode LLM)")
             await emit(rec, "geocode", port=p["name"], arbitration="area_hit", kept=False)
             continue
-        cands = []
+        cands, street = [], False
         for source in ("nominatim", "geonames"):
             coords = geo.get(source)
             if not coords:
                 continue
             meta = geo.get(f"{source}_meta") or {}
+            if _is_street(meta):
+                street = True
+                geo = {**geo, source: None}
+                continue
             inland = inland_exception_flags(port_ev, zone, meta)
             cands.append(_spatial_cand(
                 coords[0], coords[1], source, geom, prepared, inland))
-        rows.append({"port": p, "norm": norm, "geo": geo, "hint": None,
+        if not cands:
+            outside = await name_outside_zone(p, port_ev, zone, geom, prepared)
+            if outside:
+                log(f"  ⚓ {p['name']} → hors de ce polygone VLIZ (mrgid {mrgid}) — écarté "
+                    f"({outside})")
+                await emit(rec, "geocode", port=p["name"], arbitration="outside_zone",
+                           reason=outside, street=street, kept=False)
+                continue
+        rows.append({"port": p, "norm": norm, "geo": geo, "hint": "street_only" if street else None,
                      "cands": cands, "port_ev": port_ev})
 
     # LLM geocode budget (run d7963f: Cape Verde took 3,960 s for an 1,800 s zone, ~44 min
@@ -4772,8 +4839,21 @@ def judge_batches(zone: dict, docs: list[dict], raw: str, used_sources: list[dic
                 if (r.get("url"), r["snippet"]) not in seen:
                     seen.add((r.get("url"), r["snippet"]))
                     texts.append({"url": r.get("url"), "text": r["snippet"],
-                                  "list_row": r.get("list_row")})
+                                  "list_row": r.get("list_row"), "port_key": r.get("port_key")})
         out.append((ports, texts[:poe_judge.MAX_TEXTS]))
+    return out
+
+
+def _judge_retry(ports: list[dict], texts: list[dict]) -> list[tuple[list[dict], list[dict]]]:
+    """A failed call asked again, in two halves, each with its own texts: a smaller question is
+    what got an answer from a call that gave nothing. One port is asked as it was. A text two
+    ports share goes with the port it was first found for."""
+    if len(ports) < 2:
+        return [(ports, texts)]
+    out = []
+    for half in (ports[:len(ports) // 2], ports[len(ports) // 2:]):
+        keys = {registry_check.port_key(d.get("name")) for d in half}
+        out.append((half, [t for t in texts if t.get("port_key") in keys] or texts))
     return out
 
 
@@ -4869,8 +4949,9 @@ async def _judge_zone_run(zone: dict, docs: list[dict], raw: str, used_sources: 
     were reserved from the zone's share of ``formalities.extract_max_llm_calls`` before
     extraction (``_reserve_judge_call``), else taken from what is left, and, through the
     generator, land on the run's Token Factory USD ledger. Each call is recorded in
-    ``summary["calls"]``, with its ``finish_reason``. A batch that fails leaves its ports
-    without a verdict and the other batches stand. Skipped, with the reason recorded (log,
+    ``summary["calls"]``, with its ``finish_reason`` and the start of its answer. A call that
+    gives no verdict (a timeout, or ``{"ports": []}``) is asked once more, in two halves; what
+    still fails leaves its ports without a verdict and the other batches stand. Skipped, with the reason recorded (log,
     ``judge`` run event, ``poe_run_zones.judge``), when ``formalities.judge_in_runs`` is
     false, the cap is reached, there is no official text, no time is left, or no call gives a
     verdict. ``port.judge`` and the levels are written to the run collections only.
@@ -4922,7 +5003,9 @@ async def _judge_zone_run(zone: dict, docs: list[dict], raw: str, used_sources: 
     cert_texts = certify_texts(raw, used_sources)
     judged, calls, reasons = {}, [], []
     loop = asyncio.get_running_loop()
-    for ports, texts in batches or [(docs, [])]:
+    queue = [(ports, texts, False) for ports, texts in batches or [(docs, [])]]
+    while queue:
+        ports, texts, retry = queue.pop(0)
         timeout_s = _judge_timeout_s()
         if timeout_s < JUDGE_MIN_TIME_S:
             reasons.append("no time left before the zone deadline")
@@ -4940,8 +5023,12 @@ async def _judge_zone_run(zone: dict, docs: list[dict], raw: str, used_sources: 
             calls.append({"ports": len(ports), "texts": len(texts), "judged": len(got),
                           "provider": llm.get("provider"), "served_model": llm.get("served_model"),
                           "finish_reason": llm.get("finish_reason"),
+                          "raw_answer": llm.get("raw_answer"), "retry": retry,
                           "seconds": round(loop.time() - started, 1), "reason": why,
                           "attempts": llm.get("attempts")})
+            if why and not retry and why not in poe_judge.DELIBERATE_SKIPS:
+                log(f"juge Nemotron: appel sans verdict ({why}), reposé en deux")
+                queue += [(*half, True) for half in _judge_retry(ports, texts)]
         summary["provider"] = summary["provider"] or llm.get("provider")
         summary["served_model"] = summary["served_model"] or llm.get("served_model")
         summary["json_repaired"] = summary.get("json_repaired") or bool(llm.get("json_repaired"))

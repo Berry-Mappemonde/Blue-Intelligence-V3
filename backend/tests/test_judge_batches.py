@@ -122,21 +122,22 @@ def test_an_excerpt_is_verified_against_the_call_s_own_texts(judge):
 
 def test_a_failed_call_leaves_the_other_verdicts(judge):
     _, answers = judge
-    answers.append(asyncio.TimeoutError())
+    # The first batch, then both of its halves, fail; the second batch answers.
+    answers.extend([asyncio.TimeoutError(), None, asyncio.TimeoutError(), asyncio.TimeoutError()])
     docs = [_doc(n) for n in NAMES]
     summary = _run(docs)
     assert summary["status"] == "ok" and summary["failed"] is False
-    assert summary["failed_calls"] == 1 and summary["judged"] == 2
+    assert summary["failed_calls"] == 3 and summary["judged"] == 2
     assert summary["ports_without_verdict"] == NAMES[:8]
     assert docs[9]["judge"]["verdict"] == "poe" and "judge" not in docs[0]
 
 
 def test_every_call_failing_fails_the_judge(judge):
     _, answers = judge
-    answers.extend([asyncio.TimeoutError(), asyncio.TimeoutError()])
+    answers.extend([asyncio.TimeoutError()] * 6)  # two batches, then their four halves
     summary = _run([_doc(n) for n in NAMES])
     assert summary["status"] == "skipped" and summary["failed"] is True
-    assert summary["failed_calls"] == 2 and len(summary["ports_without_verdict"]) == 10
+    assert summary["failed_calls"] == 6 and len(summary["ports_without_verdict"]) == 10
 
 
 def test_finish_reason_is_stored_on_every_answer(judge):

@@ -111,8 +111,10 @@ def _list_row_mention(doc: dict, name: str, variants: list, zone: dict, cache: d
             continue
         for start, end in registry_check.name_spans(text, cache[key], variant):
             row = v3_certify.own_row(text, start, end)
-            if row and any(border_crossing.in_zone(n, zone)[0]
-                           for n in border_crossing._row_forms(name)):
+            # A decree's post needs no record: a candidate of the zone stands on the State's text.
+            if row and (border_crossing.is_designated_post(row[0])
+                        or any(border_crossing.in_zone(n, zone)[0]
+                               for n in border_crossing._row_forms(name))):
                 return {"matched_name": name, "snippet": row[0], "gap": 0,
                         "list_row": row[1]}
     return None

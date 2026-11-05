@@ -36,6 +36,8 @@ MAX_EXCERPT_CHARS = 400
 MAX_TEXTS = 20
 TRACE_TEXT_CHARS = 200  # reason / excerpt length in the trace event (port.judge keeps them whole)
 GATE_REFUSED = 'formalities.extract_max_llm_calls reached'
+NO_VERDICT = 'no usable answer'
+RAW_ANSWER_CHARS = 2000  # of an answer, kept on the call: it is what tells why it gave nothing
 # One strict re-ask after a reply that was not valid JSON, even once repaired (#34's
 # extraction recovery, applied to the judge: runs f3993a / 608d85 lost the Canaries'
 # and Martinique's verdicts to one invalid Nightshift answer).
@@ -160,13 +162,17 @@ async def ask(zone_name: str, ports: list[dict], texts: list[dict], run_id: str,
     llm = _llm(result, recovery)
     if result['provider'] == 'sample':
         return llm, {}, result.get('fallback_reason') or 'no provider answered'
-    return llm, parse_judgments(result.get('parsed'), texts), None
+    judgments = parse_judgments(result.get('parsed'), texts)
+    # Valid JSON, finish_reason "stop", no verdict: {"ports": []} for candidates that were all
+    # named. A failed call, not an answer (runs b60354: the Canaries' posts, Saint Lucia).
+    return llm, judgments, None if judgments else NO_VERDICT
 
 
 def _llm(result: dict | None, recovery: dict) -> dict:
     result = result or {}
     return dict(provider=result.get('provider'), served_model=result.get('model'),
-                finish_reason=result.get('finish_reason'), **recovery)
+                finish_reason=result.get('finish_reason'),
+                raw_answer=(result.get('text') or '')[:RAW_ANSWER_CHARS], **recovery)
 
 
 def _invalid_json(result: dict | None, att: dict) -> bool:

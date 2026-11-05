@@ -62,7 +62,8 @@ def _fetched(queue, max_fetch=14):
 def test_cape_verde_queries_come_from_its_language_and_name():
     assert poe.entry_list_queries(CV) == [
         ("pt", "postos de fronteira habilitados Cabo Verde decreto-lei"),
-        ("en", "designated ports of entry Cape Verde border posts customs regulations")]
+        ("en", "designated ports of entry Cape Verde border posts customs regulations"),
+        ("pt", "site:incv.cv postos de fronteira habilitados Cabo Verde decreto-lei")]
 
 
 def test_other_zones_outside_schengen_get_theirs():
@@ -138,7 +139,7 @@ def test_the_search_step_sends_them_and_tags_what_they_find(monkeypatch):
     assert GAZETTE in [c["url"] for c in official]
     langs = {p["lang"] for s, p in rec.events if s == "search" and p.get("lang", "").startswith("entry")}
     assert langs == {"entry-list-pt", "entry-list-en"}
-    assert any("liste nationale des postes d'entrée: 2 requête(s)" in m for m in logs)
+    assert any("liste nationale des postes d'entrée: 3 requête(s)" in m for m in logs)
     assert any(e[0] == "designating_lists" and GAZETTE in str(e[1]) for e in rec.events)
 
 

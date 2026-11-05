@@ -104,6 +104,16 @@ once in total, across all resumes: a zone is errored when its last
 runs without a trace). A zone already retried (a `unit_start` line with
 `retry: true`) or that already has ports stored for the run is not retried.
 
+## Gazette acts
+
+A zone's gazette (`gazettes` in `whitelist_sources.json`) gets its own list-discovery query,
+on that host. A gazette page shorter than `formalities.gazette_stub_chars` is a stub: its act
+is read in the same fetch slot. Tavily gives a page's text with no links, so the link is read
+from the page's HTML when the text has none. A decree's items ("h) Fronteira marítima – Porto
+de Porto Novo, situado na Ilha de Santo Antão;") are read as rows, with no LLM, and each goes
+to the judge as its own text. A port-dues tariff is not a designation, so it is no route to
+those ports.
+
 ## Nightshift outages
 
 One failed completion is not an outage. Nightshift rotates its cloud models, so a call can
@@ -119,8 +129,10 @@ In a run, each zone gets NemotronJudge calls (`agents/poe_judge.py`) after extra
 after the other, on the official snippets the zone already fetched
 (`evidence_store.build_records`): at most `formalities.judge_ports_per_call` ports per call
 (default 8), each call with its own ports' texts (`poe_pipeline.judge_batches`). Every call is
-in `poe_run_zones.judge.calls`, with its `finish_reason`. A failed call leaves its ports
-without a verdict, and the other verdicts stand. Its verdicts (`parse_judgments` shape) go on
+in `poe_run_zones.judge.calls`, with its `finish_reason`. A call that gives no verdict
+(a timeout, or a valid `{"ports": []}`) is asked once more in two halves, each with its own
+texts, and the start of every answer is stored in `raw_answer`. What still fails leaves its
+ports without a verdict, and the other verdicts stand. Its verdicts (`parse_judgments` shape) go on
 `port.judge` and feed the C-level (`v3_certify`, PLAN-V3 §5): `poe` with a
 verified excerpt lifts to C2, `not_poe` caps at C1. Ports and levels are written
 to `poe_run_ports` only; live `poe_ports` never gets them.
@@ -203,7 +215,8 @@ does not match. Each attempt is recorded under `poe_runs.uploads`.
 
 `app/services/gold_score.py` scores a run per zone and overall: C2 precision and recall,
 any-level recall, wrong C2s (with their quote), missed gold PoEs, C1 noise (ports below C2
-that match a rejected name) and unmatched run names (listed, never guessed). A run port is
+that match a rejected name, or no gold entry at all) and unmatched run names (listed, never
+guessed). A run port is
 matched by its name, its `merged_names` and its `clearance_points` names, aliases included.
 A gold PoE matched by any of them wins over a rejected name, the port's own name included:
 Fort-de-France is rejected as a name, and is a PoE through its marina. Two marinas named

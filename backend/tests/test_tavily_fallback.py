@@ -128,21 +128,22 @@ CANARIES = {"mrgid": 8364, "name": "Canary Islands", "geoname": "Canary Islands"
 @pytest.mark.parametrize("zone", [CV, CANARIES])
 def test_list_discovery_takes_one_tavily_call_per_zone(providers, zone):
     queries, tavily, out = _discovery_calls(providers, zone)
-    assert len(queries) == 2
+    assert len(queries) >= 2
     assert tavily == queries[:1], "the zone's language goes first"
-    assert [engine for _r, engine in out] == ["tavily", "searxng"]
-    assert out[0][0] and not out[1][0]
+    assert [engine for _r, engine in out] == ["tavily"] + ["searxng"] * (len(queries) - 1)
+    assert out[0][0] and not any(res for res, _engine in out[1:])
 
 
 def test_the_cap_is_a_run_rule(providers):
     queries, tavily, _ = _discovery_calls(
-        providers, CV, {"tavily.list_discovery_per_zone": {"value": 2}})
-    assert tavily == queries
+        providers, CV, {"tavily.list_discovery_per_zone": {"value": 3}})
+    # Tavily takes a site: query as include_domains, without the operator.
+    assert tavily == [q.split(" ", 1)[1] if q.startswith("site:") else q for q in queries]
 
 
 def test_the_cap_can_be_zero(providers):
     _q, tavily, out = _discovery_calls(providers, CV, {"tavily.list_discovery_per_zone": {"value": 0}})
-    assert tavily == [] and [engine for _r, engine in out] == ["searxng", "searxng"]
+    assert tavily == [] and {engine for _r, engine in out} == {"searxng"}
 
 
 def test_a_query_searxng_answers_uses_no_tavily_call(providers):
@@ -152,7 +153,7 @@ def test_a_query_searxng_answers_uses_no_tavily_call(providers):
     answers["tavily"] = lambda q, inc: [_hit("https://www.imp.cv/b", "tavily")]
     out = asyncio.run(poe._list_discovery_search([q for _l, q in poe.entry_list_queries(CV)],
                                                  lambda m: None))
-    assert [engine for _r, engine in out] == ["searxng", "tavily"]
+    assert [engine for _r, engine in out] == ["searxng", "tavily", "searxng"]
     assert len(calls["tavily"]) == 1
 
 
