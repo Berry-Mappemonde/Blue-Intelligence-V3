@@ -104,6 +104,16 @@ once in total, across all resumes: a zone is errored when its last
 runs without a trace). A zone already retried (a `unit_start` line with
 `retry: true`) or that already has ports stored for the run is not retried.
 
+## Gazette acts
+
+A zone's gazette (`gazettes` in `whitelist_sources.json`) gets its own list-discovery query,
+on that host. A gazette page shorter than `formalities.gazette_stub_chars` is a stub: its act
+is read in the same fetch slot. Tavily gives a page's text with no links, so the link is read
+from the page's HTML when the text has none. A decree's items ("h) Fronteira marítima – Porto
+de Porto Novo, situado na Ilha de Santo Antão;") are read as rows, with no LLM, and each goes
+to the judge as its own text. A port-dues tariff is not a designation, so it is no route to
+those ports.
+
 ## Nightshift outages
 
 One failed completion is not an outage. Nightshift rotates its cloud models, so a call can

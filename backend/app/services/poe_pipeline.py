@@ -1003,6 +1003,11 @@ def entry_list_queries(zone: dict, exceptions: dict | None = None) -> list[tuple
         tpl, place = ENTRY_LIST_QUERIES.get(lang), local_place_name(zone, lang)
         if tpl and place:
             out.append((lang, tpl.format(place=place)))
+    # The act is in the zone's gazette: the first language's query, on that gazette, so that one
+    # general search is not all that stands between a run and its list.
+    from app.services.authority_roles import zone_gazettes
+    if out:
+        out += [(out[0][0], f"site:{host} {out[0][1]}") for host in zone_gazettes(zone)]
     return out
 
 
@@ -1173,6 +1178,13 @@ def zone_catalog(text: str, zone: dict | None) -> tuple[list[dict], bool]:
     # A list of border crossing points (Schengen Handbook Annex 4, Orden INT/859/2023
     # Annex V) designates the zone's sea posts; only rows confirmed in the zone are kept.
     from app.services import border_crossing
+    if zone and not scope:
+        # A State's own decree: its sea posts are the zone's, on record or not.
+        for r in border_crossing.designated_post_rows(text):
+            if r["name"].casefold() not in seen:
+                seen.add(r["name"].casefold())
+                ports.append({"name": r["name"], "city": None, "extraction_engine": "border_list",
+                              "note": f"poste frontalier maritime (décret) : {r['row']}"})
     if zone and border_crossing.is_border_crossing_list(text):
         kept, _dropped = border_crossing.zone_rows(text, zone, border_crossing.zone_state_name(zone))
         for r in kept:
@@ -2157,6 +2169,16 @@ def _return_extract_calls(n: int) -> None:
 
 
 _SOURCE_TAG_RE = re.compile(r"\[SOURCE: ([^\]\s]+)\]")
+
+
+async def _gazette_page_link(url: str, log) -> str | None:
+    """The full-text link of a gazette's page, read from its HTML. Tavily gives a page's text
+    with no links, so the stub of run b60354 led nowhere; ``keep_raw`` skips Tavily."""
+    try:
+        page = await extract_cascade(url, min_chars=200, keep_raw=True, log=log)
+    except Exception:  # noqa: BLE001 — the stub stays: the zone goes on without its act
+        return None
+    return full_text_link(page.get("html") or "", url)
 
 
 async def _wait_for_nightshift(log, stop_at: float | None = None) -> None:
@@ -3775,8 +3797,8 @@ async def _collect_texts(official: list[dict], log, rec=None, max_fetch: int | N
                                chars=len(sub["text"]), level=sub["level"])
                     text = (text + "\n" + sub["text"]).strip()
         # A gazette stub: its act is read in this same slot (not counted in the cap).
-        if res.get("html") and len(res["text"] or "") < gazette_stub and _on_publisher(url, gazettes):
-            act = full_text_link(res["html"], url)
+        if len(res["text"] or "") < gazette_stub and _on_publisher(url, gazettes):
+            act = full_text_link(res.get("html") or "", url) or await _gazette_page_link(url, log)
             if act and act not in seen_urls:
                 seen_urls.add(act)
                 try:

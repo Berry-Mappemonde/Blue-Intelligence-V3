@@ -34,8 +34,12 @@ DATA = Path(__file__).resolve().parents[2] / "data"
 
 LIST_MARKERS = re.compile(
     r"border crossing points?|puestos? fronterizos?|points? de passage frontaliers?"
-    r"|valichi di frontiera|grenz(?:ü|ue)bergangsstellen|pontos? de passagem fronteiri",
+    r"|valichi di frontiera|grenz(?:ü|ue)bergangsstellen|pontos? de passagem fronteiri"
+    r"|fronteira mar[ií]tima\s*[–—-]",
     re.I)
+# "h) Fronteira marítima – Porto de Porto Novo, situado na Ilha de Santo Antão;": a decree's item.
+_DESIGNATED_POST = re.compile(
+    r"\b[a-z]\)\s*Fronteira mar[ií]tima\s*[–—-]\s*([^;,]+?),\s*situad[oa][^;]*?(?:;|\.(?=\s|$))", re.I)
 _SEA_HEADING = re.compile(r"(?im)^\s*(?:sea borders|fronteras mar[ií]timas|fronti[eè]res maritimes)\b")
 _OTHER_HEADING = re.compile(r"(?im)^\s*(?:air borders|land borders|airports|fronteras (?:a[ée]reas|terrestres))\b")
 _ITEM = re.compile(r"\((\d{1,3})\)\s*([^\n(]+?(?:\([^)\n]*\))?)\s*(?=\(\d{1,3}\)|\n|$)")
@@ -120,7 +124,8 @@ ROW_MAX_CHARS = 80  # a numbered item or a post's cell; a longer one is a senten
 def row_spans(text: str | None) -> list[tuple[int, int]]:
     """(start, end) of each row of a border crossing list, in any form of the text: numbered
     items and "Puerto …" cells, as ``annex4_rows`` and ``orden_int_rows`` read them, wherever
-    they are. None when the text is not such a list."""
+    they are, and a decree's items (``designated_post_rows``). None when the text is not such
+    a list."""
     t = text or ""
     if not is_border_crossing_list(t):
         return []
@@ -135,7 +140,22 @@ def row_spans(text: str | None) -> list[tuple[int, int]]:
             spans.append((start + lead, end))
         before = t[start:end]
         start = end_mark.end() if end_mark else end
-    return [(a, b) for a, b in spans if b - a <= ROW_MAX_CHARS]
+    return ([(a, b) for a, b in spans if b - a <= ROW_MAX_CHARS]
+            + [m.span() for m in _DESIGNATED_POST.finditer(t)])
+
+
+def designated_post_rows(text: str | None) -> list[dict]:
+    """The sea posts a decree opens, one item each. -> [{name, row}], once per post: the act
+    may give the list twice, as amended and in its consolidated text."""
+    out = {}
+    for m in _DESIGNATED_POST.finditer(text or ""):
+        name = " ".join(m.group(1).split())
+        out.setdefault(name.casefold(), {"name": name, "row": " ".join(m.group(0).split())})
+    return list(out.values())
+
+
+def is_designated_post(row: str | None) -> bool:
+    return bool(_DESIGNATED_POST.fullmatch((row or "").strip()))
 
 
 _LEADING_PUERTO = re.compile(r"^Puerto\s+(?:de|del)\s+(?=\S)", re.I)
