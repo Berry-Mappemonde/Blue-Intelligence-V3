@@ -7,6 +7,7 @@ and none of 47. And #63 stands: a row reaches C2 only through a "poe" on its own
 import asyncio
 import json
 import re
+from pathlib import Path
 
 import httpx
 import pytest
@@ -248,7 +249,7 @@ def test_the_judge_waits_out_a_back_off(judge, monkeypatch):
 # --- #63 stands -----------------------------------------------------------------------------
 
 def _flat_list():
-    sources = json.loads((__import__("pathlib").Path(__file__).resolve().parent / "fixtures"
+    sources = json.loads((Path(__file__).resolve().parent / "fixtures"
                           / "martinique_51697e_sources.json").read_text(encoding="utf-8"))
     return next(s for s in sources["sources"] if "liste-points-clearance" in s["url"])
 
@@ -266,9 +267,18 @@ def _row_record():
             "spatial_kind": "in_eez", "confidence": 60}, source
 
 
+ROW = ("Régie Port de Plaisance Marina de la pointe du bout \uf028(+)596 596 660 774 "
+       "\uf028(+)596 596 600 50 \uf02a marina.3ilets@marina3ilets.fr")
+
+
 @pytest.mark.parametrize("excerpt,level", [
     (BRIGADE, "C1"),
     ("Régie Port de Plaisance Marina de la pointe du bout", "C2"),
+    (ROW, "C2"),
+    ("Trois-ilets " + ROW, "C2"),  # with its commune heading
+    (ROW + " Trinité Brigade de surveillance", "C1"),  # into the next row
+    (ROW + " Trinité", "C1"),  # the next commune's heading is another entry's too
+    ("phm.glaciere@hotmail.fr Trois-ilets " + ROW, "C1"),  # from the row above
 ])
 def test_a_poe_quoting_a_neighbouring_row_gives_no_c2(monkeypatch, excerpt, level):
     record, source = _row_record()
@@ -292,3 +302,37 @@ def test_a_poe_quoting_a_neighbouring_row_gives_no_c2(monkeypatch, excerpt, leve
     assert record["judge"]["verdict"] == "poe" and record["judge"]["excerpt_verified"] is True
     out = vc.assess_port(record, whitelist=whitelist, texts=[source], zone=MARTINIQUE)
     assert out["confidence_level"] == level
+
+
+@pytest.mark.parametrize("name,row,next_row", [
+    ("Capitainerie Marina - Pointe Bateau",
+     "Le François Capitainerie Marina - Pointe Bateau", " Le Marin Port de plaisance"),
+    ("Port de plaisance Capitainerie du port (nouvelle extension)",
+     "Le Marin Port de plaisance Capitainerie du port (nouvelle extension)", " Station-service CAP"),
+])
+def test_a_row_with_hours_ends_after_its_hours(name, row, next_row):
+    text = _flat_list()["text"]
+    start = text.index(row)
+    stop = text.index(next_row.strip(), start + len(row))
+    own = text[start:stop].strip()
+    assert not vc._leaves_its_point_row(name, text, start, start + len(own))
+    assert vc._leaves_its_point_row(name, text, start, stop + len(next_row))
+
+
+def test_the_same_holds_on_the_list_in_its_other_form():
+    text = (Path(__file__).resolve().parent / "fixtures"
+            / "douane_liste_points_clearance.txt").read_text(encoding="utf-8")
+    text = "".join(ln for ln in text.splitlines(True) if not ln.startswith("# FIXTURE "))
+    start = text.index("Régie Port de Plaisance")
+    mail = text.index("marina3ilets.fr", start) + len("marina3ilets.fr")
+    assert not vc._leaves_its_point_row(REGIE, text, start, mail)
+    assert vc._leaves_its_point_row(REGIE, text, start, text.index("Brigade", start) + 7)
+
+
+def test_an_excerpt_on_prose_is_not_held_to_a_row():
+    text = ("Les plaisanciers font leur clearance à la marina du Vieux Bassin, point de clearance "
+            "de la commune, ouvert tous les jours aux équipages.")
+    port = {"name": "Marina du Vieux Bassin", "judge": {
+        "verdict": "poe", "excerpt_verified": True,
+        "quoted_excerpt": "leur clearance à la marina du Vieux Bassin, point de clearance"}}
+    assert not vc.judge_excerpt_on_other_row(port, [{"url": URL, "text": text}], WHITELIST)
