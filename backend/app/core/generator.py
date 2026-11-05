@@ -59,10 +59,12 @@ PROBE_TIMEOUT_S = 3.0
 PROBE_TTL_S = 60
 GENERATE_BUDGET_S = 150.0  # hard cap for the whole call before sample
 MIN_ATTEMPT_S = 5.0        # do not start a provider with less time than this
+NIGHTSHIFT_DOWN_AFTER = 3  # default of formalities.nightshift_down_after
 SECRET_ENV = ('METERLESS_RUNTIME_TOKEN', 'MODEL_API_KEY', 'NVIDIA_API_KEY', 'NEBIUS_API_KEY')
 _THINK_BLOCK = re.compile(r'<think>.*?</think>', re.S | re.I)
 _THINK_END = '</think>'
 _probe_cache = {}  # One configuration at a time; includes a credential fingerprint.
+_outages = {}  # Outage answers in a row, per configuration; a success clears it.
 _probe_locks = weakref.WeakKeyDictionary()
 
 
@@ -142,14 +144,38 @@ def _is_outage(reason: str) -> bool:
     return reason.startswith('http_5') or reason in ('timeout', 'offline')
 
 
+def _identity(base: str, key: str) -> tuple:
+    return (base, hashlib.sha256((key or '').encode()).hexdigest())
+
+
+def _down_after() -> int:
+    """Outage answers in a row before Nightshift is backed off from
+    (formalities.nightshift_down_after)."""
+    from app.core.run_rules import get_rule
+    return max(1, int(get_rule('formalities.nightshift_down_after', NIGHTSHIFT_DOWN_AFTER)))
+
+
 def _mark_down(base: str, key: str, reason: str) -> None:
-    """Back off from Nightshift after an outage answer to a completion (run d7963f: its
-    /models probe stayed "ready" while every completion returned 502, so each port of a
-    zone waited out its own retries). The cached probe is set to the failure: for
-    PROBE_TTL_S, generate() and nightshift_ready() skip Nightshift without a call."""
-    identity = (base, hashlib.sha256((key or '').encode()).hexdigest())
-    _probe_cache.clear()
-    _probe_cache[identity] = (time.monotonic(), f'down_{reason}')
+    """Back off from Nightshift after ``_down_after`` outage answers in a row (run d7963f: its
+    /models probe stayed "ready" while every completion returned 502, so each port of a zone
+    waited out its own retries). The cached probe is set to the failure: for PROBE_TTL_S,
+    generate() and nightshift_ready() skip Nightshift without a call.
+
+    One failed call is not an outage: in runs f7d809 and ed2de4 a single 502 or timeout blocked
+    every batch behind it while other calls still succeeded. The count stays up after the
+    back-off, so the first failure after it backs off again; a success clears it."""
+    identity = _identity(base, key)
+    _outages[identity] = _outages.get(identity, 0) + 1
+    if _outages[identity] >= _down_after():
+        _probe_cache.clear()
+        _probe_cache[identity] = (time.monotonic(), f'down_{reason}')
+
+
+def nightshift_down_for() -> float:
+    """Seconds left of the back-off from Nightshift; 0 when it is not backed off from."""
+    now = time.monotonic()
+    return max([PROBE_TTL_S - (now - at) for at, status in _probe_cache.values()
+                if str(status).startswith('down_')] or [0.0], default=0.0)
 
 
 async def nightshift_ready() -> bool:
@@ -301,6 +327,7 @@ async def generate(prompt, system=None, *, json_mode=False, role='json', run_id=
                                                  min(REQUEST_TIMEOUT_S, deadline - time.monotonic()),
                                                  max_tokens=out_tokens)
                         provider = 'nightshift'
+                        _outages.pop(_identity(base, key), None)
                     except _ProviderFailure as exc:
                         reasons.append(f'nightshift: {exc}')
                         if _is_outage(str(exc)):

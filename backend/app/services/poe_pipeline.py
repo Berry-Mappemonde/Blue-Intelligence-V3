@@ -2155,6 +2155,18 @@ def _return_extract_calls(n: int) -> None:
 _SOURCE_TAG_RE = re.compile(r"\[SOURCE: ([^\]\s]+)\]")
 
 
+async def _wait_for_nightshift(log, stop_at: float | None = None) -> None:
+    """Wait out the back-off from Nightshift, up to ``stop_at``: a retry sent during it fails
+    without a call, and a failed batch has only that one retry."""
+    from app.core import generator
+    wait = generator.nightshift_down_for()
+    if stop_at is not None:
+        wait = min(wait, stop_at - asyncio.get_running_loop().time())
+    if wait > 0:
+        log(f"Nightshift en pause: {wait:.0f} s d'attente avant de relancer")
+        await asyncio.sleep(wait)
+
+
 async def _read_attempt(text: str, zone: dict, settings, log, att: dict,
                         label: str = "lecture") -> list[dict]:
     """One reader call inside its own ``llm.extract_attempt`` scope: a reply that is not
@@ -2321,6 +2333,7 @@ async def _extract_primary(context: str, zone: dict, log, rec=None,
         strict = sum(bool(attempts.get(i, {}).get("invalid_json")) for i in retried)
         log(f"{len(retried)} lot(s) en échec relancé(s) une fois"
             + (f", dont {strict} en « JSON seul » strict (JSON invalide)" if strict else ""))
+        await _wait_for_nightshift(log, stop_at)
         late = await read_all(retried)
         if late:
             state["deadline_hit"] = True

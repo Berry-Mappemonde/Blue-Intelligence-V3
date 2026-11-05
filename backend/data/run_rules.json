@@ -2028,6 +2028,33 @@
       "group": "budget"
     },
     {
+      "id": "formalities.nightshift_down_after",
+      "mode": "formalities",
+      "kind": "budget",
+      "value": 3,
+      "numeric": "int",
+      "unit": "failures",
+      "interval": [
+        1,
+        20
+      ],
+      "vary": true,
+      "principle": "Réponses en panne d'affilée (5xx, timeout, hors ligne) avant de laisser Nightshift de côté 60 s. Une seule ne suffit pas : dans les runs f7d809 et ed2de4, un 502 ou un timeout isolé a fait échouer les lots suivants alors que d'autres appels aboutissaient.",
+      "cdc": "docs/RUNS.md",
+      "code": [
+        "app/core/generator.py:_mark_down"
+      ],
+      "title": {
+        "fr": "Échecs d'affilée avant la pause Nightshift",
+        "en": "Failures in a row before the Nightshift pause"
+      },
+      "help": {
+        "fr": "Plus bas = on renonce plus vite à Nightshift. Plus haut = plus d'attente si Nightshift est vraiment en panne.",
+        "en": "Lower gives up on Nightshift sooner. Higher waits longer when Nightshift is really down."
+      },
+      "group": "budget"
+    },
+    {
       "id": "formalities.extract_output_tokens",
       "mode": "formalities",
       "kind": "budget",

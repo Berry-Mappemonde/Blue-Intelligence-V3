@@ -169,7 +169,7 @@ def test_fast_llm_geocode_is_unchanged(monkeypatch):
 
 # --- 2. Nightshift 5xx: back off, no retries per port --------------------------------------
 
-def test_nightshift_502_marks_it_down_for_the_next_calls(monkeypatch, tmp_path):
+def test_nightshift_502s_in_a_row_mark_it_down_for_the_next_calls(monkeypatch, tmp_path):
     for name in ("SAMPLE_MODE", "METERLESS_MODEL", "MODEL_NAME", "MODEL_BASE_URL", "LLM_PROVIDER",
                  "NEBIUS_API_KEY", "NVIDIA_API_KEY"):
         monkeypatch.delenv(name, raising=False)
@@ -180,6 +180,7 @@ def test_nightshift_502_marks_it_down_for_the_next_calls(monkeypatch, tmp_path):
     monkeypatch.setattr(generator, "RETRY_BACKOFF_S", 0.01)
     generator._probe_cache.clear()
     generator._probe_locks.clear()
+    generator._outages.clear()
     posts: list[int] = []
 
     def handler(request):
@@ -192,16 +193,18 @@ def test_nightshift_502_marks_it_down_for_the_next_calls(monkeypatch, tmp_path):
     monkeypatch.setattr(generator.httpx, "AsyncClient",
                         lambda **kw: original(transport=httpx.MockTransport(handler), **kw))
     try:
-        first = asyncio.run(generator.generate("Santiago?", json_mode=True, run_id="t1"))
-        assert first["provider"] == "sample" and "http_502" in first["fallback_reason"]
-        assert len(posts) == 2  # the request and its single retry
+        for run_id in ("t1", "t2", "t3"):
+            first = asyncio.run(generator.generate("Santiago?", json_mode=True, run_id=run_id))
+            assert first["provider"] == "sample" and "http_502" in first["fallback_reason"]
+        assert len(posts) == 6  # three calls, each with its single retry
         assert asyncio.run(generator.nightshift_ready()) is False
-        second = asyncio.run(generator.generate("Fogo?", json_mode=True, run_id="t2"))
-        assert len(posts) == 2  # backed off: no completion sent while marked down
+        second = asyncio.run(generator.generate("Fogo?", json_mode=True, run_id="t4"))
+        assert len(posts) == 6  # backed off: no completion sent while marked down
         assert "down_http_502" in second["fallback_reason"]
     finally:
         generator._probe_cache.clear()
         generator._probe_locks.clear()
+        generator._outages.clear()
 
 
 # --- 3. island / region names are not ports ---------------------------------------------

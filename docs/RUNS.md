@@ -104,6 +104,15 @@ once in total, across all resumes: a zone is errored when its last
 runs without a trace). A zone already retried (a `unit_start` line with
 `retry: true`) or that already has ports stored for the run is not retried.
 
+## Nightshift outages
+
+One failed completion is not an outage. Nightshift rotates its cloud models, so a call can
+return 502 or time out while the next one succeeds. `generator` backs off from Nightshift for
+60 s only after `formalities.nightshift_down_after` outage answers in a row (default 3), and a
+success clears the count. A failed call first goes to the next provider of the cascade (NIM,
+then OpenRouter and Claude for extraction) when a key is set. A failed batch that is retried
+during a back-off waits for it to end, up to the extraction deadline.
+
 ## Judge
 
 In a run, each zone gets one NemotronJudge call (`agents/poe_judge.py`) after
