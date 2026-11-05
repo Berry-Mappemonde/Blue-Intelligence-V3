@@ -4742,6 +4742,20 @@ def judge_texts(zone: dict, docs: list[dict], raw: str, used_sources: list[dict]
     return out[:poe_judge.MAX_TEXTS]
 
 
+def judge_ports_with_text(zone: dict, docs: list[dict], raw: str, used_sources: list[dict],
+                          whitelist: list[str] | None = None) -> tuple[list[dict], list[dict]]:
+    """(the ports the zone holds official text for, those texts). The judge is asked about
+    these only: a port with no text would come back "not mentioned", which reads as a
+    contradiction and caps it (run f7d809: 20 of the Canaries' 21 "not_poe")."""
+    texts = judge_texts(zone, docs, raw, used_sources, whitelist)
+    records = evidence_store.build_records(
+        zone.get("mrgid"), [d.get("name") for d in docs or []],
+        evidence_store.documents_from_context(raw, used_sources),
+        places=registry_check.zone_names(zone), whitelist=whitelist, zone=zone)
+    keys = {r.get("port_key") for r in records}
+    return [d for d in docs or [] if registry_check.port_key(d.get("name")) in keys], texts
+
+
 def _take_one_call_quietly() -> bool:
     """One call from the zone's share. A refusal does not mark the extraction ``capped``."""
     state = _zone_extract.get()
@@ -4856,10 +4870,12 @@ async def _judge_zone_run(zone: dict, docs: list[dict], raw: str, used_sources: 
         return done(summary)
 
     try:
-        texts = await asyncio.to_thread(judge_texts, zone, docs, raw, used_sources, whitelist)
+        asked, texts = await asyncio.to_thread(judge_ports_with_text, zone, docs, raw,
+                                               used_sources, whitelist)
     except Exception as e:  # noqa: BLE001 — the judge is advisory, the zone must finish
-        texts = []
+        asked, texts = [], []
         log(f"juge Nemotron: extraits non construits ({type(e).__name__})")
+    summary["ports_without_text"] = [d.get("name") for d in docs if d not in asked]
     summary["evidence_texts"] = len(texts)
     timeout_s = _judge_timeout_s()
     if texts and timeout_s < JUDGE_MIN_TIME_S:
@@ -4870,7 +4886,7 @@ async def _judge_zone_run(zone: dict, docs: list[dict], raw: str, used_sources: 
     name = zone.get("name") or zone.get("geoname") or str(zone.get("mrgid"))
     cert_texts = certify_texts(raw, used_sources)
     llm, judged, reason = await poe_judge.ask(
-        name, docs, texts, run.run_id, timeout_s, gate=_take_judge_call)
+        name, asked, texts, run.run_id, timeout_s, gate=_take_judge_call)
     summary.update(provider=llm.get("provider"), served_model=llm.get("served_model"),
                    json_repaired=bool(llm.get("json_repaired")),
                    strict_retry=bool(llm.get("strict_retry")), attempts=llm.get("attempts"))
@@ -4892,8 +4908,8 @@ async def _judge_zone_run(zone: dict, docs: list[dict], raw: str, used_sources: 
     # ports it left without a verdict. A repaired cut-off answer lists its missing ports too.
     summary["failed"] = bool(reason) and reason not in poe_judge.DELIBERATE_SKIPS
     summary["ports_without_verdict"] = (
-        [d.get("name") for d in docs if not d.get("judge")]
-        if (summary["failed"] or (not reason and summary["judged"] < len(docs))) else [])
+        [d.get("name") for d in asked if not d.get("judge")]
+        if (summary["failed"] or (not reason and summary["judged"] < len(asked))) else [])
     await emit(rec, "judge", **summary)
     return done(summary)
 

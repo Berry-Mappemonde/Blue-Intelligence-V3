@@ -122,6 +122,9 @@ extraction, on the official snippets the zone already fetched
 verified excerpt lifts to C2, `not_poe` caps at C1. Ports and levels are written
 to `poe_run_ports` only; live `poe_ports` never gets them.
 
+The judge is asked only about ports the zone holds official text for. A port with no text
+gets no verdict and is listed in `ports_without_text`.
+
 The call comes from the zone's share of `formalities.extract_max_llm_calls`.
 When the zone has official text (and the rule is on, outside SAMPLE_MODE), one
 call of the share is reserved for the judge before extraction starts, so the
