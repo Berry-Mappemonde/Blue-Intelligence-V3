@@ -165,7 +165,8 @@ async def ask(zone_name: str, ports: list[dict], texts: list[dict], run_id: str,
 
 def _llm(result: dict | None, recovery: dict) -> dict:
     result = result or {}
-    return dict(provider=result.get('provider'), served_model=result.get('model'), **recovery)
+    return dict(provider=result.get('provider'), served_model=result.get('model'),
+                finish_reason=result.get('finish_reason'), **recovery)
 
 
 def _invalid_json(result: dict | None, att: dict) -> bool:

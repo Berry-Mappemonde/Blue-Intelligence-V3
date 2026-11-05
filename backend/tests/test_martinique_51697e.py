@@ -96,8 +96,8 @@ def _run_zone(monkeypatch):
         return None
 
     async def judge(name, docs, texts, run_id, timeout_s, gate=None):
-        seen["judged"] = [d.get("name") for d in docs]
-        seen["texts"] = texts
+        seen.setdefault("judged", []).extend(d.get("name") for d in docs)
+        seen.setdefault("texts", []).extend(texts)
         return {"provider": "stub"}, {}, "stub"
 
     class Rec:
