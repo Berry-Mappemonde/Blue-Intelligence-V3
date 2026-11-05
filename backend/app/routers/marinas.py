@@ -7,7 +7,8 @@ import time
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, Body, HTTPException
+from fastapi import APIRouter, Body, HTTPException, Query
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from app.config import ROUTE_FILE
@@ -24,8 +25,11 @@ from app.services.marina_enrich import ENRICH_FIELDS, enrich_marina
 from app.services.marina_maps_place import is_google_place_url, resolve_maps_places
 from app.services.marina_world import (
     SLIM_PROJECTION,
+    MARINA_FICHES_MAX_IDS,
     marinas_to_slim_geojson,
+    marina_export_fiche,
     official_website,
+    parse_marina_fiche_osm_ids,
     build_world_marinas as run_build_world_marinas,
 )
 from app.services.swarm_pipeline import now_iso
@@ -274,6 +278,48 @@ async def export_marinas():
     fc = marinas_to_slim_geojson(docs)
     return export_response(fc, "marinas", "marinas.geojson",
                            license_note="© OpenStreetMap contributors (ODbL)")
+
+
+ODBL_ATTRIBUTION = "© OpenStreetMap contributors (ODbL)"
+
+
+@router.get("/export/marinas/fiches")
+async def export_marina_fiches(osm_ids: str = Query(default="", alias="osm_ids")):
+    """Capped public marina fiches for stopover sheets (never the full world dump)."""
+    ids = parse_marina_fiche_osm_ids(osm_ids)
+    if not ids:
+        raise HTTPException(400, "osm_ids required")
+    if len(ids) > MARINA_FICHES_MAX_IDS:
+        raise HTTPException(400, f"at most {MARINA_FICHES_MAX_IDS} osm_ids")
+    projection = {
+        "osm_id": 1,
+        "name": 1,
+        "lat": 1,
+        "lon": 1,
+        "source": 1,
+        "website": 1,
+        "website_status": 1,
+        "website_source": 1,
+        "image": 1,
+        "tags": 1,
+        "maps_place_url": 1,
+        "maps_place_source": 1,
+        "field_sources": 1,
+        "enrichment_source": 1,
+        **{field: 1 for field in ENRICH_FIELDS},
+    }
+    docs = await db.marinas.find({"osm_id": {"$in": ids}}, projection).to_list(
+        length=len(ids)
+    )
+    by_osm = {str(d.get("osm_id")): d for d in docs if d.get("osm_id")}
+    fiches = [marina_export_fiche(by_osm[oid]) for oid in ids if oid in by_osm]
+    return JSONResponse(
+        {
+            "attribution": ODBL_ATTRIBUTION,
+            "license": "ODbL",
+            "fiches": fiches,
+        }
+    )
 
 class MarinasBuildBody(BaseModel):
     clear_before: bool = False
