@@ -290,7 +290,7 @@ def test_readers_send_the_configured_caps(monkeypatch):
 
     asyncio.run(readers())
     assert seen == {"openrouter": 2500, "nvidia": 2500}
-    assert generator._output_tokens("extract") == 2000 and generator._output_tokens("judge") == 2000
+    assert generator._output_tokens("extract") == 2000 and generator._output_tokens("judge") == 4000
 
     snap = snapshot_for_run(mode="formalities", overrides={"formalities.extract_output_tokens": 4000,
                                                            "formalities.extract_output_tokens_fallback": 6000})
@@ -299,6 +299,8 @@ def test_readers_send_the_configured_caps(monkeypatch):
         asyncio.run(readers())
         assert seen == {"openrouter": 6000, "nvidia": 6000}
         assert generator._output_tokens("extract") == 4000
-        assert generator._output_tokens("judge") == generator.MAX_OUTPUT_TOKENS == 2000
+        # The judge has its own rule (formalities.judge_output_tokens), not the readers'.
+        assert generator._output_tokens("judge") == generator.JUDGE_OUTPUT_TOKENS == 4000
+        assert generator._output_tokens("json") == generator.MAX_OUTPUT_TOKENS == 2000
     finally:
         reset_rules(token)

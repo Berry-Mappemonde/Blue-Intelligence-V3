@@ -26,6 +26,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 
 from app.adapters.zetaris import ZetarisClient
 from app.agents import registry_check
@@ -71,7 +72,8 @@ def build_records(mrgid: int | None, port_names: list[str], documents: list[dict
         variants = registry_check.grounding_variants(name, places=places)
         best: dict[str, tuple[int, dict]] = {}
         for doc in official:
-            mention = (registry_check.entry_mention(doc["text"], variants)
+            mention = (_list_row_mention(doc, name, variants, zone or {"mrgid": mrgid}, rows_cache)
+                       or registry_check.entry_mention(doc["text"], variants)
                        or v3_certify.clearance_row_mention(name, doc["text"], mrgid, places))
             if not mention:
                 mention = _border_row_mention(doc, name, zone or {"mrgid": mrgid}, rows_cache)
@@ -81,10 +83,39 @@ def build_records(mrgid: int | None, port_names: list[str], documents: list[dict
                           domain=registry_check._domain(doc["url"]), matched_name=mention["matched_name"],
                           snippet=mention["snippet"], content_sha256=doc.get("sha256") or sha256_text(doc["text"]),
                           fetched_at=doc.get("fetched_at"), extract_level=doc.get("extract_level"))
+            if mention.get("list_row"):
+                record["list_row"] = mention["list_row"]
             if doc["url"] not in best or mention["gap"] < best[doc["url"]][0]:
                 best[doc["url"]] = (mention["gap"], record)
         records += [r for _, r in sorted(best.values(), key=lambda item: item[0])][:MAX_PER_PORT]
     return records
+
+
+def _list_row_mention(doc: dict, name: str, variants: list, zone: dict, cache: dict) -> dict | None:
+    """A mention for ``name`` when it heads a row of this document's border crossing list or
+    table of posts, in the zone: the row's own text, whatever the form of the document. The
+    nearest entry word to a row is often its neighbour's, so this comes before
+    ``entry_mention``. Rows are read from the text (``v3_certify.list_row_spans``), not from
+    ``zone_rows``, which reads no row of a list that reaches us as flat text."""
+    from app.services import border_crossing
+    text = doc.get("text") or ""
+    if not v3_certify.list_row_spans(text):
+        return None
+    key = ("tokens", doc.get("url"), id(text))
+    if key not in cache:
+        cache[key] = registry_check._tokens(text)
+    # "Arrecife (Lanzarote)": the island in brackets heads its airport's row, not the port's.
+    aside = {t for part in re.findall(r"\((.*?)\)", name) for t, _, _ in registry_check._tokens(part)}
+    for variant in variants:
+        if set(variant) <= aside:
+            continue
+        for start, end in registry_check.name_spans(text, cache[key], variant):
+            row = v3_certify.own_row(text, start, end)
+            if row and any(border_crossing.in_zone(n, zone)[0]
+                           for n in border_crossing._row_forms(name)):
+                return {"matched_name": name, "snippet": row[0], "gap": 0,
+                        "list_row": row[1]}
+    return None
 
 
 BORDER_ROW_SNIPPET_CHARS = 200  # each side of a border-crossing row

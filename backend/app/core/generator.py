@@ -53,16 +53,19 @@ NVIDIA_URL = 'https://integrate.api.nvidia.com/v1/chat/completions'
 DEFAULT_TRACE_LOG_DIR = Path(__file__).resolve().parents[3] / 'logs'
 REQUEST_TIMEOUT_S = 90.0   # per provider: one request plus its retry share this
 MAX_RETRIES = 1
-MAX_OUTPUT_TOKENS = 2000   # every role but "extract" (formalities.extract_output_tokens)
+MAX_OUTPUT_TOKENS = 2000   # every role but "extract" and "judge" (formalities.*_output_tokens)
+JUDGE_OUTPUT_TOKENS = 4000  # default of formalities.judge_output_tokens
 RETRY_BACKOFF_S = 1.0
 PROBE_TIMEOUT_S = 3.0
 PROBE_TTL_S = 60
 GENERATE_BUDGET_S = 150.0  # hard cap for the whole call before sample
 MIN_ATTEMPT_S = 5.0        # do not start a provider with less time than this
+NIGHTSHIFT_DOWN_AFTER = 3  # default of formalities.nightshift_down_after
 SECRET_ENV = ('METERLESS_RUNTIME_TOKEN', 'MODEL_API_KEY', 'NVIDIA_API_KEY', 'NEBIUS_API_KEY')
 _THINK_BLOCK = re.compile(r'<think>.*?</think>', re.S | re.I)
 _THINK_END = '</think>'
 _probe_cache = {}  # One configuration at a time; includes a credential fingerprint.
+_outages = {}  # Outage answers in a row, per configuration; a success clears it.
 _probe_locks = weakref.WeakKeyDictionary()
 
 
@@ -142,14 +145,38 @@ def _is_outage(reason: str) -> bool:
     return reason.startswith('http_5') or reason in ('timeout', 'offline')
 
 
+def _identity(base: str, key: str) -> tuple:
+    return (base, hashlib.sha256((key or '').encode()).hexdigest())
+
+
+def _down_after() -> int:
+    """Outage answers in a row before Nightshift is backed off from
+    (formalities.nightshift_down_after)."""
+    from app.core.run_rules import get_rule
+    return max(1, int(get_rule('formalities.nightshift_down_after', NIGHTSHIFT_DOWN_AFTER)))
+
+
 def _mark_down(base: str, key: str, reason: str) -> None:
-    """Back off from Nightshift after an outage answer to a completion (run d7963f: its
-    /models probe stayed "ready" while every completion returned 502, so each port of a
-    zone waited out its own retries). The cached probe is set to the failure: for
-    PROBE_TTL_S, generate() and nightshift_ready() skip Nightshift without a call."""
-    identity = (base, hashlib.sha256((key or '').encode()).hexdigest())
-    _probe_cache.clear()
-    _probe_cache[identity] = (time.monotonic(), f'down_{reason}')
+    """Back off from Nightshift after ``_down_after`` outage answers in a row (run d7963f: its
+    /models probe stayed "ready" while every completion returned 502, so each port of a zone
+    waited out its own retries). The cached probe is set to the failure: for PROBE_TTL_S,
+    generate() and nightshift_ready() skip Nightshift without a call.
+
+    One failed call is not an outage: in runs f7d809 and ed2de4 a single 502 or timeout blocked
+    every batch behind it while other calls still succeeded. The count stays up after the
+    back-off, so the first failure after it backs off again; a success clears it."""
+    identity = _identity(base, key)
+    _outages[identity] = _outages.get(identity, 0) + 1
+    if _outages[identity] >= _down_after():
+        _probe_cache.clear()
+        _probe_cache[identity] = (time.monotonic(), f'down_{reason}')
+
+
+def nightshift_down_for() -> float:
+    """Seconds left of the back-off from Nightshift; 0 when it is not backed off from."""
+    now = time.monotonic()
+    return max([PROBE_TTL_S - (now - at) for at, status in _probe_cache.values()
+                if str(status).startswith('down_')] or [0.0], default=0.0)
 
 
 async def nightshift_ready() -> bool:
@@ -170,7 +197,10 @@ async def nightshift_ready() -> bool:
 
 
 def _output_tokens(role):
-    """max_tokens of one completion; the port-extraction role reads its run rule."""
+    """max_tokens of one completion; the extraction and judge roles read their run rules."""
+    if role == 'judge':
+        from app.core.run_rules import get_rule
+        return int(get_rule('formalities.judge_output_tokens', JUDGE_OUTPUT_TOKENS))
     if role != 'extract':
         return MAX_OUTPUT_TOKENS
     from app.core.llm import extract_output_tokens
@@ -193,6 +223,7 @@ async def _complete(client, url, headers, model, prompt, system, json_mode, budg
     try:
         body = response.json()
         text = body['choices'][0]['message']['content']
+        finish_reason = body['choices'][0].get('finish_reason')
         served_model = body['model']
         usage = body.get('usage') if isinstance(body.get('usage'), dict) else None
         if isinstance(text, str):
@@ -201,7 +232,7 @@ async def _complete(client, url, headers, model, prompt, system, json_mode, budg
             raise ValueError
     except (ValueError, KeyError, IndexError, TypeError):
         raise _ProviderFailure('invalid_response') from None
-    result = dict(text=text, model=served_model)
+    result = dict(text=text, model=served_model, finish_reason=finish_reason)
     if usage:
         result['usage'] = usage
     if json_mode:
@@ -237,7 +268,8 @@ def _trace(result, prompt, role, requested_model):
                  requested_model=requested_model, served_model=result['model'],
                  duration_ms=result['duration_ms'], status=result['status'],
                  input_summary={'prompt': prompt[:200], 'role': role},
-                 fallback_reason=result.get('fallback_reason'))
+                 fallback_reason=result.get('fallback_reason'),
+                 finish_reason=result.get('finish_reason'))
     # Redact before truncating too, so even a key straddling the 200-char limit
     # cannot appear as a prefix in a prompt preview.
     preview = prompt
@@ -301,6 +333,7 @@ async def generate(prompt, system=None, *, json_mode=False, role='json', run_id=
                                                  min(REQUEST_TIMEOUT_S, deadline - time.monotonic()),
                                                  max_tokens=out_tokens)
                         provider = 'nightshift'
+                        _outages.pop(_identity(base, key), None)
                     except _ProviderFailure as exc:
                         reasons.append(f'nightshift: {exc}')
                         if _is_outage(str(exc)):

@@ -402,6 +402,70 @@ def _without_list_rows(text: str) -> str:
     return out
 
 
+def _point_rows(text: str) -> list[tuple[int, int]]:
+    """(start, end) of each entry of a clearance list, end to end: from where the entry above
+    stops, so with the commune heading above its name, through its contacts and its hours. An
+    entry's hours follow its contacts, so they stand in the stretch before the next contact."""
+    marks = [m.span() for m in _CONTACT.finditer(text)]
+    blocks: list[list[int]] = []
+    for start, end in marks:
+        if blocks and start - blocks[-1][1] < ROW_MIN_CHARS:
+            blocks[-1][1] = end
+        else:
+            blocks.append([start, end])
+    rows, start = [], 0
+    for i, (_, end) in enumerate(blocks):
+        stop = blocks[i + 1][0] if i + 1 < len(blocks) else len(text)
+        hours = list(_ROW_TAIL.finditer(text, end, stop))
+        end = hours[-1].end() if hours else end
+        rows.append((start, end))
+        start = end
+    return rows
+
+
+def _located(quote: str, text: str) -> tuple[int, int] | None:
+    """Where a verified excerpt stands in ``text``, quotes, case and spacing aside."""
+    from app.agents.poe_judge import _PUNCTUATION
+
+    words = quote.translate(_PUNCTUATION).split()
+    match = re.search(r"\s+".join(map(re.escape, words)), text.translate(_PUNCTUATION), re.I)
+    return match.span() if words and match else None
+
+
+def _leaves_its_point_row(name, text: str, start: int, end: int) -> bool:
+    """The excerpt at [start, end) of a clearance list holds part of another point's entry: it
+    names no port of this record, or doesn't fit in the entry that holds the name."""
+    from app.agents import registry_check as rc
+
+    tokens = rc._tokens(text)
+    spans = _name_spans(text, tokens, name) + list(rc.name_spans(text, tokens, commune_key(name)))
+    held = [s for s, e in spans if start <= s and e <= end]
+    return not any(lo <= start and end <= hi and any(lo <= s < hi for s in held)
+                   for lo, hi in _point_rows(text))
+
+
+def own_row(text: str, start: int, end: int) -> tuple[str, str] | None:
+    """(the row's own text, what it is a row of) for a mention at [start, end) that heads a row
+    of a border crossing list or of a table of posts; None otherwise. A clearance list's rows
+    go through ``clearance_row_mention``, which keeps the commune above them.
+
+    In a table the row runs from the name to the next post's code, past its own code, so
+    nothing of the post above it comes along."""
+    from app.services import border_crossing
+
+    span = next(((lo, hi) for lo, hi in border_crossing.row_spans(text) if lo <= start < hi), None)
+    if span:
+        return " ".join(text[span[0]:span[1]].split()), LIST_ROW_BORDER
+    codes = list(_POST_CODE.finditer(text))
+    if len(codes) < ROW_LIST_MIN_CODES:
+        return None
+    after = [m for m in codes if m.start() >= end]
+    if not after or after[0].start() - end > ROW_CODE_GAP_CHARS:
+        return None
+    stop = after[1].start() if len(after) > 1 else len(text)
+    return " ".join(text[start:min(stop, start + ROW_MAX_CHARS)].split()), LIST_ROW_POSTS
+
+
 def entry_mentions(name, texts: Sequence[str], places: tuple = (),
                    exclude: tuple = NOT_DESIGNATING_TERMS, rows: bool = True
                    ) -> list[tuple[str, int, int]]:
@@ -470,18 +534,20 @@ def judge_excerpt_in_study(port: Mapping, texts: Sequence[Mapping] | None,
 
 def judge_excerpt_on_other_row(port: Mapping, texts: Sequence[Mapping] | None,
                                whitelist: Sequence[str] | None) -> bool:
-    """The judge's verified excerpt is a row of a list and doesn't name this port: the judge
-    read a neighbour's row. An excerpt that is not found in the texts is not judged here."""
+    """The judge's verified excerpt is not this port's own row of a list: it doesn't name the
+    port, or, on a clearance list, it runs into another point's entry (the commune heading above
+    the row is allowed). An excerpt that is not found in the texts is not judged here."""
     from app.agents import registry_check as rc
 
     judge = port.get("judge") if isinstance(port.get("judge"), Mapping) else {}
     excerpt = judge.get("quoted_excerpt")
     if not isinstance(excerpt, str) or not excerpt.strip():
         return False
-    quote = excerpt.strip().lower()
     for text in _official_texts(texts, whitelist):
-        at = text.lower().find(quote)
-        if at >= 0 and any(lo <= at < hi for lo, hi in list_row_spans(text)):
+        place = _located(excerpt, text)
+        if place and is_clearance_list(rc._tokens(text)) and _contact_rows(text):
+            return _leaves_its_point_row(port.get("name"), text, *place)
+        if place and any(lo <= place[0] < hi for lo, hi in list_row_spans(text)):
             tokens = rc._tokens(excerpt)
             return not (_name_spans(excerpt, tokens, port.get("name"))
                         or next(rc.name_spans(excerpt, tokens, commune_key(port.get("name"))), None))
@@ -627,10 +693,14 @@ CLEARANCE_QUOTE_CHARS = 200
 # TRACES code (country, place, then a digit and a letter for the kind of post).
 _CONTACT = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+|\(?\+\)?\s?\d{2,3}(?:[ .-]\d{2,3}){2,}")
 _POST_CODE = re.compile(r"\b[A-Z]{2} [A-Z]{3} \d[A-Z]?\b")
+_ROW_TAIL = re.compile(r"\d{1,2}h(?:\d{2})?(?:\s+ferm[ée]s?\b)?", re.I)  # an entry's hours
 ROW_LIST_MIN_ROWS = 3
 ROW_LIST_MIN_CODES = 5
 ROW_MIN_CHARS = 12  # less is the comma between two contacts of one row
 ROW_MAX_CHARS = 300
+ROW_CODE_GAP_CHARS = 40  # a post's name and its code stand side by side
+LIST_ROW_BORDER = "row of an official list of border crossing points"
+LIST_ROW_POSTS = "row of an official table of border control posts"
 _COMMUNE_ARTICLE = re.compile(r"^(?:l[ae]s?\s+|l['’])", re.I)
 _PRIVATE_USE = re.compile("[\ue000-\uf8ff]")  # PDF icon glyphs (phone, mail) in the list
 _HOURS = re.compile(r"\d{1,2}h(?:\d{2})?")

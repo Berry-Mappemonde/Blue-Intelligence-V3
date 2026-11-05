@@ -2155,6 +2155,18 @@ def _return_extract_calls(n: int) -> None:
 _SOURCE_TAG_RE = re.compile(r"\[SOURCE: ([^\]\s]+)\]")
 
 
+async def _wait_for_nightshift(log, stop_at: float | None = None) -> None:
+    """Wait out the back-off from Nightshift, up to ``stop_at``: a retry sent during it fails
+    without a call, and a failed batch has only that one retry."""
+    from app.core import generator
+    wait = generator.nightshift_down_for()
+    if stop_at is not None:
+        wait = min(wait, stop_at - asyncio.get_running_loop().time())
+    if wait > 0:
+        log(f"Nightshift en pause: {wait:.0f} s d'attente avant de relancer")
+        await asyncio.sleep(wait)
+
+
 async def _read_attempt(text: str, zone: dict, settings, log, att: dict,
                         label: str = "lecture") -> list[dict]:
     """One reader call inside its own ``llm.extract_attempt`` scope: a reply that is not
@@ -2321,6 +2333,7 @@ async def _extract_primary(context: str, zone: dict, log, rec=None,
         strict = sum(bool(attempts.get(i, {}).get("invalid_json")) for i in retried)
         log(f"{len(retried)} lot(s) en échec relancé(s) une fois"
             + (f", dont {strict} en « JSON seul » strict (JSON invalide)" if strict else ""))
+        await _wait_for_nightshift(log, stop_at)
         late = await read_all(retried)
         if late:
             state["deadline_hit"] = True
@@ -4697,6 +4710,9 @@ async def _persist_zone(db, zone: dict, docs: list[dict], status: str,
 
 
 JUDGE_MIN_TIME_S = 5.0  # below this, no judge call before the zone deadline
+JUDGE_PORTS_PER_CALL = 8  # default of formalities.judge_ports_per_call
+JUDGE_RESERVED_CALLS = 4  # default of formalities.judge_reserved_calls
+JUDGE_SHARE_DIVISOR = 4  # the reservation takes at most this fraction of the zone's share
 
 
 def certify_texts(raw: str | None, used_sources: list[dict]) -> list[dict]:
@@ -4725,8 +4741,40 @@ def judge_texts(zone: dict, docs: list[dict], raw: str, used_sources: list[dict]
         key = (r.get("url"), r.get("snippet"))
         if r.get("snippet") and key not in seen:
             seen.add(key)
-            out.append({"url": r.get("url"), "text": r["snippet"]})
+            out.append({"url": r.get("url"), "text": r["snippet"], "list_row": r.get("list_row")})
     return out[:poe_judge.MAX_TEXTS]
+
+
+def judge_batches(zone: dict, docs: list[dict], raw: str, used_sources: list[dict],
+                  whitelist: list[str] | None = None) -> list[tuple[list[dict], list[dict]]]:
+    """[(ports, their texts)], one per judge call: ports the zone holds official text for, at
+    most ``formalities.judge_ports_per_call`` per call, each with its own texts only. A port
+    with no text is left out: it would come back "not mentioned", which reads as a
+    contradiction and caps it (run f7d809: 20 of the Canaries' 21 "not_poe"). One call for a
+    whole zone was cut off too: run ed2de4 got 3 verdicts of 5, 4 of 13 and none of 47."""
+    from app.agents import poe_judge
+    from app.core.run_rules import get_rule
+    records = evidence_store.build_records(
+        zone.get("mrgid"), [d.get("name") for d in docs or []],
+        evidence_store.documents_from_context(raw, used_sources),
+        places=registry_check.zone_names(zone), whitelist=whitelist, zone=zone)
+    by_port: dict = {}
+    for r in records:
+        if r.get("snippet"):
+            by_port.setdefault(r.get("port_key"), []).append(r)
+    asked = [d for d in docs or [] if registry_check.port_key(d.get("name")) in by_port]
+    size = max(1, int(get_rule("formalities.judge_ports_per_call", JUDGE_PORTS_PER_CALL)))
+    out = []
+    for i in range(0, len(asked), size):
+        ports, texts, seen = asked[i:i + size], [], set()
+        for d in ports:
+            for r in by_port[registry_check.port_key(d.get("name"))]:
+                if (r.get("url"), r["snippet"]) not in seen:
+                    seen.add((r.get("url"), r["snippet"]))
+                    texts.append({"url": r.get("url"), "text": r["snippet"],
+                                  "list_row": r.get("list_row")})
+        out.append((ports, texts[:poe_judge.MAX_TEXTS]))
+    return out
 
 
 def _take_one_call_quietly() -> bool:
@@ -4750,10 +4798,12 @@ def has_official_text(raw: str, used_sources: list[dict],
 
 def _reserve_judge_call(raw: str, used_sources: list[dict], log,
                         whitelist: list[str] | None = None) -> bool:
-    """Run mode, before extraction: set one call of the zone's share aside for the judge,
-    so the readers can never use it. Only when the judge would run (rule on, not
-    SAMPLE_MODE) and the zone has official text. The call is counted as used; the judge
-    consumes it (``_take_judge_call``), otherwise ``_release_judge_call`` gives it back."""
+    """Run mode, before extraction: set ``formalities.judge_reserved_calls`` of the zone's
+    share aside for the judge, so the readers can never use them. Only when the judge would
+    run (rule on, not SAMPLE_MODE) and the zone has official text. The calls are counted as
+    used; the judge consumes them (``_take_judge_call``), and ``_release_judge_call`` gives
+    back what is left. They take a quarter of the share at most, one at least: the readers come
+    first in a small share."""
     from app.core.run_rules import get_rule
     state = _zone_extract.get()
     if state is None:
@@ -4769,23 +4819,34 @@ def _reserve_judge_call(raw: str, used_sources: list[dict], log,
     if not _take_one_call_quietly():
         log("juge Nemotron: aucun appel libre à réserver dans la part de la ZEE")
         return False
-    state["judge_reserved"] = True
-    log("juge Nemotron: 1 appel réservé sur la part de la ZEE avant l'extraction")
+    wanted = int(get_rule("formalities.judge_reserved_calls", JUDGE_RESERVED_CALLS))
+    wanted = min(wanted, (state.get("allowance") or 0) // JUDGE_SHARE_DIVISOR)
+    reserved = 1
+    while reserved < wanted and _take_one_call_quietly():
+        reserved += 1
+    state["judge_reserved"] = reserved
+    log(f"juge Nemotron: {reserved} appel(s) réservé(s) sur la part de la ZEE avant l'extraction")
     return True
 
 
 def _release_judge_call() -> None:
-    """Give back a reserved judge call the judge did not use (skipped, or zone error)."""
+    """Give back the reserved judge calls the judge did not use (skipped, or zone error)."""
     state = _zone_extract.get()
-    if state is not None and state.pop("judge_reserved", False):
-        _return_extract_calls(1)
+    left = state.pop("judge_reserved", 0) if state is not None else 0
+    if left:
+        _return_extract_calls(left)
 
 
 def _take_judge_call() -> bool:
-    """The judge's call: the one reserved before extraction, else one from what is left
-    of the zone's share. A refusal does not mark the extraction ``capped``."""
+    """One judge call: from those reserved before extraction, else from what is left of the
+    zone's share. A refusal does not mark the extraction ``capped``."""
     state = _zone_extract.get()
-    if state is not None and state.pop("judge_reserved", False):
+    left = (state or {}).get("judge_reserved", 0)
+    if left:
+        if left > 1:
+            state["judge_reserved"] = left - 1
+        else:
+            state.pop("judge_reserved")
         return True
     return _take_one_call_quietly()
 
@@ -4803,14 +4864,16 @@ async def _judge_zone_run(zone: dict, docs: list[dict], raw: str, used_sources: 
                           whitelist: list[str], run, log, rec=None) -> dict:
     """Run mode only: NemotronJudge on this zone's ports, then the C-level again.
 
-    One judge call per zone (agents.poe_judge.ask, output of parse_judgments), on the
-    official snippets already fetched. The call was reserved from the zone's share of
-    ``formalities.extract_max_llm_calls`` before extraction (``_reserve_judge_call``),
-    else taken from what is left, and, through the generator, lands on the run's
-    Token Factory USD ledger. Skipped, with the reason recorded (log, ``judge`` run event,
-    ``poe_run_zones.judge``), when ``formalities.judge_in_runs`` is false, the cap is
-    reached, there is no official text, no time is left, or the judge has no answer.
-    ``port.judge`` and the levels are written to the run collections only.
+    One judge call per batch of ports (``judge_batches``; agents.poe_judge.ask, output of
+    parse_judgments), one after the other, each on its ports' official snippets. The calls
+    were reserved from the zone's share of ``formalities.extract_max_llm_calls`` before
+    extraction (``_reserve_judge_call``), else taken from what is left, and, through the
+    generator, land on the run's Token Factory USD ledger. Each call is recorded in
+    ``summary["calls"]``, with its ``finish_reason``. A batch that fails leaves its ports
+    without a verdict and the other batches stand. Skipped, with the reason recorded (log,
+    ``judge`` run event, ``poe_run_zones.judge``), when ``formalities.judge_in_runs`` is
+    false, the cap is reached, there is no official text, no time is left, or no call gives a
+    verdict. ``port.judge`` and the levels are written to the run collections only.
     """
     from app.agents import poe_judge
     from app.agents.registry_check import port_key
@@ -4843,26 +4906,50 @@ async def _judge_zone_run(zone: dict, docs: list[dict], raw: str, used_sources: 
         return done(summary)
 
     try:
-        texts = await asyncio.to_thread(judge_texts, zone, docs, raw, used_sources, whitelist)
+        batches = await asyncio.to_thread(judge_batches, zone, docs, raw, used_sources, whitelist)
     except Exception as e:  # noqa: BLE001 — the judge is advisory, the zone must finish
-        texts = []
+        batches = []
         log(f"juge Nemotron: extraits non construits ({type(e).__name__})")
-    summary["evidence_texts"] = len(texts)
-    timeout_s = _judge_timeout_s()
-    if texts and timeout_s < JUDGE_MIN_TIME_S:
+    asked = [d for ports, _ in batches for d in ports]
+    summary["ports_without_text"] = [d.get("name") for d in docs if d not in asked]
+    summary["evidence_texts"] = len({(t["url"], t["text"]) for _, texts in batches for t in texts})
+    if batches and _judge_timeout_s() < JUDGE_MIN_TIME_S:
         summary["reason"] = "no time left before the zone deadline"
         await emit(rec, "judge", **summary)
         return done(summary)
 
     name = zone.get("name") or zone.get("geoname") or str(zone.get("mrgid"))
     cert_texts = certify_texts(raw, used_sources)
-    llm, judged, reason = await poe_judge.ask(
-        name, docs, texts, run.run_id, timeout_s, gate=_take_judge_call)
-    summary.update(provider=llm.get("provider"), served_model=llm.get("served_model"),
-                   json_repaired=bool(llm.get("json_repaired")),
-                   strict_retry=bool(llm.get("strict_retry")), attempts=llm.get("attempts"))
+    judged, calls, reasons = {}, [], []
+    loop = asyncio.get_running_loop()
+    for ports, texts in batches or [(docs, [])]:
+        timeout_s = _judge_timeout_s()
+        if timeout_s < JUDGE_MIN_TIME_S:
+            reasons.append("no time left before the zone deadline")
+            break
+        if texts:
+            await _wait_for_nightshift(log, _extract_stop_time())
+            timeout_s = _judge_timeout_s()
+        started = loop.time()
+        llm, got, why = await poe_judge.ask(name, ports, texts, run.run_id, timeout_s,
+                                            gate=_take_judge_call)
+        judged.update(got)
+        if why:
+            reasons.append(why)
+        if texts:
+            calls.append({"ports": len(ports), "texts": len(texts), "judged": len(got),
+                          "provider": llm.get("provider"), "served_model": llm.get("served_model"),
+                          "finish_reason": llm.get("finish_reason"),
+                          "seconds": round(loop.time() - started, 1), "reason": why,
+                          "attempts": llm.get("attempts")})
+        summary["provider"] = summary["provider"] or llm.get("provider")
+        summary["served_model"] = summary["served_model"] or llm.get("served_model")
+        summary["json_repaired"] = summary.get("json_repaired") or bool(llm.get("json_repaired"))
+        summary["strict_retry"] = summary.get("strict_retry") or bool(llm.get("strict_retry"))
+        summary["attempts"] = (summary.get("attempts") or 0) + (llm.get("attempts") or 0) or None
+    summary["calls"] = calls
     for d in docs:
-        judgment = None if reason else judged.get(port_key(d.get("name")))
+        judgment = judged.get(port_key(d.get("name")))
         if judgment:
             d["judge"] = dict(judgment)
             summary["verdicts"][judgment["verdict"]] = summary["verdicts"].get(judgment["verdict"], 0) + 1
@@ -4870,17 +4957,19 @@ async def _judge_zone_run(zone: dict, docs: list[dict], raw: str, used_sources: 
             d.pop("judge", None)
         attach_confidence_level(d, whitelist=whitelist, texts=cert_texts, zone=zone)
     summary["judged"] = sum(summary["verdicts"].values())
-    if not reason and not summary["judged"]:
-        reason = "no usable answer"
+    # No verdict at all fails the zone's judge; a batch that failed beside others that answered
+    # leaves its ports listed, and the verdicts stand.
+    reason = None if summary["judged"] else (reasons[0] if reasons else "no usable answer")
     summary["status"] = "skipped" if reason else "ok"
     summary["reason"] = reason
+    summary["failed_calls"] = sum(1 for c in calls if c["reason"])
     # A failed call (invalid JSON after repair and retry, timeout, no provider, no usable
     # answer), not a decision (no official text, cap): listed in the run summary with the
     # ports it left without a verdict. A repaired cut-off answer lists its missing ports too.
     summary["failed"] = bool(reason) and reason not in poe_judge.DELIBERATE_SKIPS
     summary["ports_without_verdict"] = (
-        [d.get("name") for d in docs if not d.get("judge")]
-        if (summary["failed"] or (not reason and summary["judged"] < len(docs))) else [])
+        [d.get("name") for d in asked if not d.get("judge")]
+        if (summary["failed"] or (not reason and summary["judged"] < len(asked))) else [])
     await emit(rec, "judge", **summary)
     return done(summary)
 
@@ -5053,7 +5142,8 @@ async def generate_zone_poe(db, mrgid: int, logger=None, force: bool = False,
 
         # Run mode: the judge's call is set aside before the readers can use the share.
         if run is not None and _reserve_judge_call(raw, used_sources, log, whitelist):
-            await emit(rec, "judge_call_reserved")
+            await emit(rec, "judge_call_reserved",
+                       calls=(_zone_extract.get() or {}).get("judge_reserved"))
 
         # 4. Extraction + geocoding + spatial validation
         docs = await _extract_and_geocode(zone, context, used_sources, log, rec, run,

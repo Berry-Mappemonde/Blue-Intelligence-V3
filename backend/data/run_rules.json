@@ -2028,6 +2028,114 @@
       "group": "budget"
     },
     {
+      "id": "formalities.nightshift_down_after",
+      "mode": "formalities",
+      "kind": "budget",
+      "value": 3,
+      "numeric": "int",
+      "unit": "failures",
+      "interval": [
+        1,
+        20
+      ],
+      "vary": true,
+      "principle": "Réponses en panne d'affilée (5xx, timeout, hors ligne) avant de laisser Nightshift de côté 60 s. Une seule ne suffit pas : dans les runs f7d809 et ed2de4, un 502 ou un timeout isolé a fait échouer les lots suivants alors que d'autres appels aboutissaient.",
+      "cdc": "docs/RUNS.md",
+      "code": [
+        "app/core/generator.py:_mark_down"
+      ],
+      "title": {
+        "fr": "Échecs d'affilée avant la pause Nightshift",
+        "en": "Failures in a row before the Nightshift pause"
+      },
+      "help": {
+        "fr": "Plus bas = on renonce plus vite à Nightshift. Plus haut = plus d'attente si Nightshift est vraiment en panne.",
+        "en": "Lower gives up on Nightshift sooner. Higher waits longer when Nightshift is really down."
+      },
+      "group": "budget"
+    },
+    {
+      "id": "formalities.judge_ports_per_call",
+      "mode": "formalities",
+      "kind": "budget",
+      "value": 8,
+      "numeric": "int",
+      "unit": "ports",
+      "interval": [
+        1,
+        50
+      ],
+      "vary": true,
+      "principle": "Ports par appel du juge. Un appel par ZEE a été coupé : dans le run ed2de4, 3 verdicts sur 5, 4 sur 13, aucun sur 47.",
+      "cdc": "docs/RUNS.md",
+      "code": [
+        "app/services/poe_pipeline.py:judge_batches"
+      ],
+      "title": {
+        "fr": "Ports par appel du juge",
+        "en": "Ports per judge call"
+      },
+      "help": {
+        "fr": "Plus bas = plus d'appels, des réponses plus courtes.",
+        "en": "Lower means more calls and shorter answers."
+      },
+      "group": "budget"
+    },
+    {
+      "id": "formalities.judge_reserved_calls",
+      "mode": "formalities",
+      "kind": "budget",
+      "value": 4,
+      "numeric": "int",
+      "unit": "calls",
+      "interval": [
+        1,
+        20
+      ],
+      "vary": true,
+      "principle": "Appels réservés au juge sur la part de la ZEE avant l'extraction. Le reste est rendu au run. 4 appels couvrent 32 ports ayant un texte ; au-delà, le juge prend sur ce qui reste de la part.",
+      "cdc": "docs/RUNS.md",
+      "code": [
+        "app/services/poe_pipeline.py:_reserve_judge_call"
+      ],
+      "title": {
+        "fr": "Appels réservés au juge",
+        "en": "Calls reserved for the judge"
+      },
+      "help": {
+        "fr": "Les lecteurs ne peuvent pas les utiliser. Ce qui reste est rendu.",
+        "en": "The readers can't use them. What is left is given back."
+      },
+      "group": "budget"
+    },
+    {
+      "id": "formalities.judge_output_tokens",
+      "mode": "formalities",
+      "kind": "budget",
+      "value": 4000,
+      "numeric": "int",
+      "unit": "tokens",
+      "interval": [
+        1000,
+        16000
+      ],
+      "vary": true,
+      "principle": "max_tokens d'une réponse du juge, tokens de raisonnement compris. À 2 000, toutes les réponses faisaient 8 à 10 Ko, quel que soit le nombre de ports.",
+      "cdc": "docs/RUNS.md",
+      "code": [
+        "app/core/generator.py:_output_tokens"
+      ],
+      "title": {
+        "fr": "Réponse max du juge",
+        "en": "Max answer of the judge"
+      },
+      "help": {
+        "fr": "Taille maximale d'une réponse du juge. finish_reason dit si elle a été coupée.",
+        "en": "Largest answer of the judge. finish_reason says whether it was cut off."
+      },
+      "group": "budget"
+    },
+    {
       "id": "formalities.extract_output_tokens",
       "mode": "formalities",
       "kind": "budget",

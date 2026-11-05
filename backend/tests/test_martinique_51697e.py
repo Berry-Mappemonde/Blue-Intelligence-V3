@@ -96,8 +96,8 @@ def _run_zone(monkeypatch):
         return None
 
     async def judge(name, docs, texts, run_id, timeout_s, gate=None):
-        seen["judged"] = [d.get("name") for d in docs]
-        seen["texts"] = texts
+        seen.setdefault("judged", []).extend(d.get("name") for d in docs)
+        seen.setdefault("texts", []).extend(texts)
         return {"provider": "stub"}, {}, "stub"
 
     class Rec:
@@ -164,7 +164,7 @@ def test_the_judge_reads_the_rows_of_the_list(run_zone):
 
 @pytest.mark.parametrize("commune", ["Fort-de-France", "Le Marin", "Le Robert", "Trinité"])
 def test_the_arretes_communes_are_not_dropped_as_areas(run_zone, commune):
-    assert commune in run_zone.judged
+    assert commune in {d["name"] for d in run_zone.docs}
     assert not [p for s, p in run_zone.events
                 if s == "geocode" and p.get("arbitration") == "area_hit"]
 

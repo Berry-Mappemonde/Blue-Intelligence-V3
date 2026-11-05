@@ -77,8 +77,11 @@ def _normal(text: str | None) -> str:
 
 
 def excerpt_verified(excerpt: str | None, texts: list[dict]) -> bool:
-    """True only when the excerpt (quotes, case and spacing aside) is inside one evidence text."""
+    """True only when the excerpt (quotes, case and spacing aside) is inside one evidence text.
+    A list row quoted whole counts however short: "(34) Vigo" is all the row says."""
     quote = _normal(excerpt).strip(' "\'')
+    if quote and any(t.get('list_row') and quote == _normal(t['text']).strip(' "\'') for t in texts):
+        return True
     return len(quote) >= MIN_EXCERPT_CHARS and any(quote in _normal(t['text']) for t in texts)
 
 
@@ -86,7 +89,8 @@ def judge_prompt(zone_name: str, ports: list[dict], texts: list[dict]) -> str:
     names = list(dict.fromkeys(p.get('name') for p in ports if p.get('name')))
     lines = [f'Zone: {zone_name}', 'Candidate ports:'] + [f'- {name}' for name in names]
     lines.append('Official texts:')
-    lines += [f"[{i}] {t['url']}\n{t['text']}" for i, t in enumerate(texts, 1)]
+    lines += [f"[{i}] {t['url']}" + (f" ({t['list_row']})" if t.get('list_row') else '')
+              + f"\n{t['text']}" for i, t in enumerate(texts, 1)]
     lines.append('Return JSON: {"ports": [{"name": "<candidate name as given>", '
                  '"verdict": "poe|not_poe|unclear", "reason": "...", "quoted_excerpt": "..."}]}, '
                  'one entry per candidate port.')
@@ -161,7 +165,8 @@ async def ask(zone_name: str, ports: list[dict], texts: list[dict], run_id: str,
 
 def _llm(result: dict | None, recovery: dict) -> dict:
     result = result or {}
-    return dict(provider=result.get('provider'), served_model=result.get('model'), **recovery)
+    return dict(provider=result.get('provider'), served_model=result.get('model'),
+                finish_reason=result.get('finish_reason'), **recovery)
 
 
 def _invalid_json(result: dict | None, att: dict) -> bool:
